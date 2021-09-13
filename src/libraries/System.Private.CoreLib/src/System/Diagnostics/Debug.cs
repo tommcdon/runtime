@@ -86,6 +86,11 @@ namespace System.Diagnostics
         public static void Assert([DoesNotReturnIf(false)] bool condition, string? message) =>
             Assert(condition, message, string.Empty);
 
+        /// <summary>
+        /// Checks for a condition; if the condition is `false`, outputs messages and displays a message box that shows the call stack.
+        /// </summary>
+        /// <param name="condition">The conditional expression to evaluate. If the condition is `true`, the specified messages are not sent and the message box is not displayed.</param>
+        /// <param name="message">The message to send to the Listeners collection.</param>
         [Conditional("DEBUG")]
         public static void Assert([DoesNotReturnIf(false)] bool condition, [InterpolatedStringHandlerArgument("condition")] ref AssertInterpolatedStringHandler message) =>
             Assert(condition, message.ToStringAndClear());
@@ -99,6 +104,12 @@ namespace System.Diagnostics
             }
         }
 
+        /// <summary>
+        /// Checks for a condition; if the condition is `false`, outputs messages and displays a message box that shows the call stack.
+        /// </summary>
+        /// <param name="condition">The conditional expression to evaluate. If the condition is `true`, the specified messages are not sent and the message box is not displayed.</param>
+        /// <param name="message">The interpolated string to send to the Listeners collection.</param>
+        /// <param name="detailMessage">The detailed message to send to the Listeners collection.</param>
         [Conditional("DEBUG")]
         public static void Assert([DoesNotReturnIf(false)] bool condition, [InterpolatedStringHandlerArgument("condition")] ref AssertInterpolatedStringHandler message, [InterpolatedStringHandlerArgument("condition")] ref AssertInterpolatedStringHandler detailMessage) =>
             Assert(condition, message.ToStringAndClear(), detailMessage.ToStringAndClear());
