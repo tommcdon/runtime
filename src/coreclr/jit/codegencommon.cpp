@@ -2152,6 +2152,10 @@ void CodeGen::genGenerateMachineCode()
         {
             printf("; optimized code\n");
         }
+        else if (compiler->opts.compDbgEnC)
+        {
+            printf("; EnC code\n");
+        }
         else if (compiler->opts.compDbgCode)
         {
             printf("; debuggable code\n");
@@ -6766,15 +6770,17 @@ void CodeGen::genFinalizeFrame()
     {
         // We always save FP.
         noway_assert(isFramePointerUsed());
-#ifdef TARGET_AMD64
-        // On x64 we always save exactly RBP, RSI and RDI for EnC.
-        regMaskTP okRegs = (RBM_CALLEE_TRASH | RBM_FPBASE | RBM_RSI | RBM_RDI);
-        regSet.rsSetRegsModified(RBM_RSI | RBM_RDI);
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+        regMaskTP okRegs = (RBM_CALLEE_TRASH | RBM_FPBASE | RBM_ENC_CALLEE_SAVED);
+        if (RBM_ENC_CALLEE_SAVED != 0)
+        {
+            regSet.rsSetRegsModified(RBM_ENC_CALLEE_SAVED);
+        }
         noway_assert((regSet.rsGetModifiedRegsMask() & ~okRegs) == 0);
-#else  // !TARGET_AMD64
+#else  // !TARGET_AMD64 && !TARGET_ARM64
         // On x86 we save all callee saved regs so the saved reg area size is consistent
         regSet.rsSetRegsModified(RBM_INT_CALLEE_SAVED & ~RBM_FPBASE);
-#endif // !TARGET_AMD64
+#endif // !TARGET_AMD64 && !TARGET_ARM64
     }
 
     /* If we have any pinvoke calls, we might potentially trash everything */
@@ -8872,9 +8878,14 @@ void CodeGen::genCaptureFuncletPrologEpilogInfo()
         regMaskTP rsMaskSaveRegs = regSet.rsMaskCalleeSaved;
         unsigned  saveRegsCount  = genCountBits(rsMaskSaveRegs);
         unsigned  saveRegsSize   = saveRegsCount * REGSIZE_BYTES; // bytes of regs we're saving
+        unsigned  saveSizeWithPSP = saveRegsSize + REGSIZE_BYTES /* PSP sym */;
+        if (compiler->lvaMonAcquired != BAD_VAR_NUM)
+        {
+            saveSizeWithPSP += TARGET_POINTER_SIZE;
+        }
         assert(compiler->lvaOutgoingArgSpaceSize % REGSIZE_BYTES == 0);
         unsigned funcletFrameSize =
-            preSpillRegArgSize + saveRegsSize + REGSIZE_BYTES /* PSP slot */ + compiler->lvaOutgoingArgSpaceSize;
+            preSpillRegArgSize + saveSizeWithPSP + compiler->lvaOutgoingArgSpaceSize;
 
         unsigned funcletFrameSizeAligned  = roundUp(funcletFrameSize, STACK_ALIGN);
         unsigned funcletFrameAlignmentPad = funcletFrameSizeAligned - funcletFrameSize;

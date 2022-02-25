@@ -4116,24 +4116,36 @@ void CodeGen::genCreateAndStoreGCInfo(unsigned codeSize,
     {
         // what we have to preserve is called the "frame header" (see comments in VM\eetwain.cpp)
         // which is:
-        //  -return address
-        //  -saved off RBP
-        //  -saved 'this' pointer and bool for synchronized methods
+        //  -return address (saved lr)
+        //  -saved off FP
+        //  -all callee-preserved registers in case of varargs
+        //  -saved bool for synchronized methods
 
-        // 4 slots for RBP + return address + RSI + RDI
-        int preservedAreaSize = 4 * REGSIZE_BYTES;
+        int preservedAreaSize = (2 + genCountBits(RBM_ENC_CALLEE_SAVED)) * REGSIZE_BYTES;
+
+        if (compiler->info.compIsVarArgs)
+        {
+            // Varargs save all int registers between saved registers and PSP.
+            preservedAreaSize += MAX_REG_ARG * REGSIZE_BYTES;
+        }
 
         if (compiler->info.compFlags & CORINFO_FLG_SYNCH)
         {
-            if (!(compiler->info.compFlags & CORINFO_FLG_STATIC))
-                preservedAreaSize += REGSIZE_BYTES;
+            // bool in synchronized methods that tracks whether the lock has been taken (takes a full pointer sized slot)
+            preservedAreaSize += TARGET_POINTER_SIZE;
 
-            preservedAreaSize += 1; // bool for synchronized methods
+            // Verify that MonAcquired bool is at the bottom of the frame header
+            assert(compiler->lvaGetCallerSPRelativeOffset(compiler->lvaMonAcquired) == -preservedAreaSize);
         }
 
         // Used to signal both that the method is compiled for EnC, and also the size of the block at the top of the
         // frame
         gcInfoEncoder->SetSizeOfEditAndContinuePreservedArea(preservedAreaSize);
+        gcInfoEncoder->SetSizeOfEditAndContinueFixedStackFrame(genTotalFrameSize());
+
+        JITDUMP("EnC info:\n");
+        JITDUMP("  EnC preserved area size = %d\n", preservedAreaSize);
+        JITDUMP("  Fixed stack frame size = %d\n", genTotalFrameSize());
     }
 
 #endif // TARGET_ARM64
@@ -4653,6 +4665,8 @@ void CodeGen::genPushCalleeSavedRegisters()
     //      |-----------------------|
     //      |Callee saved registers | // not including FP/LR; multiple of 8 bytes
     //      |-----------------------|
+    //      |    MonitorAcquired    |
+    //      |-----------------------|
     //      |        PSP slot       | // 8 bytes (omitted in CoreRT ABI)
     //      |-----------------------|
     //      | locals, temps, etc.   |
@@ -4683,6 +4697,8 @@ void CodeGen::genPushCalleeSavedRegisters()
     //      |      Saved FP         | // 8 bytes
     //      |-----------------------|
     //      |Callee saved registers | // not including FP/LR; multiple of 8 bytes
+    //      |-----------------------|
+    //      |    MonitorAcquired    |
     //      |-----------------------|
     //      |        PSP slot       | // 8 bytes (omitted in CoreRT ABI)
     //      |-----------------------|
@@ -4781,7 +4797,7 @@ void CodeGen::genPushCalleeSavedRegisters()
             maskSaveRegsInt &= ~(RBM_FP | RBM_LR);                        // We've already saved FP/LR
             offset = (int)compiler->compLclFrameSize + 2 * REGSIZE_BYTES; // 2 for FP/LR
         }
-        else if (totalFrameSize <= 512)
+        else if ((totalFrameSize <= 512) && !compiler->opts.compDbgEnC)
         {
             // Case #2.
             //
@@ -4796,6 +4812,7 @@ void CodeGen::genPushCalleeSavedRegisters()
 
             if (genSaveFpLrWithAllCalleeSavedRegisters)
             {
+                assert(!compiler->opts.compDbgEnC);
                 JITDUMP("Frame type 4 (save FP/LR at top). #outsz=%d; #framesz=%d; LclFrameSize=%d\n",
                         unsigned(compiler->lvaOutgoingArgSpaceSize), totalFrameSize, compiler->compLclFrameSize);
 
