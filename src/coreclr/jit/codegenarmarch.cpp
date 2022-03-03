@@ -4812,7 +4812,6 @@ void CodeGen::genPushCalleeSavedRegisters()
 
             if (genSaveFpLrWithAllCalleeSavedRegisters)
             {
-                assert(!compiler->opts.compDbgEnC);
                 JITDUMP("Frame type 4 (save FP/LR at top). #outsz=%d; #framesz=%d; LclFrameSize=%d\n",
                         unsigned(compiler->lvaOutgoingArgSpaceSize), totalFrameSize, compiler->compLclFrameSize);
 
@@ -4932,6 +4931,7 @@ void CodeGen::genPushCalleeSavedRegisters()
             }
             else
             {
+                assert(!compiler->opts.compDbgEnC);
                 JITDUMP("Frame type 3 (save FP/LR at bottom). #outsz=%d; #framesz=%d; LclFrameSize=%d\n",
                         unsigned(compiler->lvaOutgoingArgSpaceSize), totalFrameSize, compiler->compLclFrameSize);
 
@@ -5086,15 +5086,22 @@ void CodeGen::genPushCalleeSavedRegisters()
         establishFramePointer = false;
 
         int remainingFrameSz = totalFrameSize - calleeSaveSpDelta;
-        assert(remainingFrameSz > 0);
-        assert((remainingFrameSz % 16) == 0); // this is guaranteed to be 16-byte aligned because each component --
-                                              // totalFrameSize and calleeSaveSpDelta -- is 16-byte aligned.
+        if (remainingFrameSz > 0)
+        {
+            assert((remainingFrameSz % 16) == 0); // this is guaranteed to be 16-byte aligned because each component --
+                                                  // totalFrameSize and calleeSaveSpDelta -- is 16-byte aligned.
 
-        JITDUMP("    remainingFrameSz=%d\n", remainingFrameSz);
+            JITDUMP("    remainingFrameSz=%d\n", remainingFrameSz);
 
-        // We've already established the frame pointer, so no need to report the stack pointer change to unwind info.
-        genStackPointerAdjustment(-remainingFrameSz, initReg, pInitRegZeroed, /* reportUnwindData */ false);
-        offset += remainingFrameSz;
+            // We've already established the frame pointer, so no need to report the stack pointer change to unwind info.
+            genStackPointerAdjustment(-remainingFrameSz, initReg, pInitRegZeroed, /* reportUnwindData */ false);
+            offset += remainingFrameSz;
+        }
+        else
+        {
+            // Should only have picked this frame type for EnC.
+            assert(compiler->opts.compDbgEnC);
+        }
     }
     else
     {
