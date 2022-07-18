@@ -4386,7 +4386,7 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     _ASSERTE( patch->IsActivated() );
     CORDbgSetInstruction((CORDB_ADDRESS_TYPE *)patchBypassRW, patch->opcode);
 
-    LOG((LF_CORDB, LL_EVERYTHING, "SetInstruction was called\n"));
+    LOG((LF_CORDB, LL_EVERYTHING, "DPS::DPS: SetInstruction was called\n"));
     //
     // Look at instruction to get some attributes
     //
@@ -4395,7 +4395,19 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
 
 #if defined(TARGET_AMD64)
 
-
+    LOG((LF_CORDB, LL_EVERYTHING, "DPS::DPS: *** Decoded Instruction IsCall=%d IsCond=%d IsAbsBranch=%d IsRelBranch=%d\n",
+        m_instrAttrib.m_fIsCall,
+        m_instrAttrib.m_fIsCond,
+        m_instrAttrib.m_fIsAbsBranch,
+        m_instrAttrib.m_fIsRelBranch
+        ));
+    LOG((LF_CORDB, LL_EVERYTHING, "DPS::DPS: *** Decoded Instruction **IsWrite=%d** cbInstr=0x%X cbDisp=0x%X **dwOffsetToDisp=0x%X** OperandSize=%d\n",
+        m_instrAttrib.m_fIsWrite,
+        m_instrAttrib.m_cbInstr,
+        m_instrAttrib.m_cbDisp,
+        m_instrAttrib.m_dwOffsetToDisp,
+        m_instrAttrib.m_cOperandSize
+        ));
     // The code below handles RIP-relative addressing on AMD64.  the original implementation made the assumption that
     // we are only using RIP-relative addressing to access read-only data (see VSW 246145 for more information).  this
     // has since been expanded to handle RIP-relative writes as well.
@@ -4434,6 +4446,7 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
                 // save the actual destination address and size so when we TriggerSingleStep() we can update the value
                 pSharedPatchBypassBufferRW->RipTargetFixup = (UINT_PTR)(patch->address + m_instrAttrib.m_cbInstr + dwOldDisp);
                 pSharedPatchBypassBufferRW->RipTargetFixupSize = m_instrAttrib.m_cOperandSize;
+                LOG((LF_CORDB, LL_EVERYTHING, "*** DPS::DPS: ***  Writing a fixup target RipTargetFixup=%X RipTargetFixupSize=%d\n", pSharedPatchBypassBufferRW->RipTargetFixup, pSharedPatchBypassBufferRW->RipTargetFixupSize));
             }
         }
     }
@@ -4508,8 +4521,19 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     //set eip to point to buffer...
     SetIP(context, (PCODE)patchBypassRX);
 
+    printf("*********************  context = 0x%llx, c = 0x%llx\n", (uint64_t)context, (uint64_t)&c);
+    //byte *b1 = nullptr;
+    //*b1 = 5;
+
+
     if (context ==(T_CONTEXT*) &c)
+    {
+        //while (true) { ::Sleep(200); printf("yep!"); }
+        //byte *b = nullptr;
+        //*b = 5;
+        //g_pDebugger->SendSetThreadContextNeeded(thread, context);
         thread->SetThreadContext(&c);
+    }
 
 
     LOG((LF_CORDB, LL_INFO10000, "DPS::DPS Bypass at 0x%p for opcode %p \n", patchBypassRX, patch->opcode));
@@ -4890,6 +4914,7 @@ bool DebuggerPatchSkip::TriggerSingleStep(Thread *thread, const BYTE *ip)
     _ASSERTE(m_pSharedPatchBypassBuffer);
     if (m_pSharedPatchBypassBuffer->RipTargetFixup)
     {
+        LOG((LF_CORDB,LL_INFO10000, "DPS::TSS: RIP-relative target fixup ****  m_pSharedPatchBypassBuffer->RipTargetFixupSize=%d\n",m_pSharedPatchBypassBuffer->RipTargetFixupSize));
         _ASSERTE(m_pSharedPatchBypassBuffer->RipTargetFixupSize);
 
         BYTE* bufferBypass = m_pSharedPatchBypassBuffer->BypassBuffer;

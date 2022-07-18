@@ -5550,6 +5550,11 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
         retVal = false;
     }
 
+    if (retVal)
+    {
+        g_pDebugger->SendSetThreadContextNeeded(thread, context);
+    }
+
     return retVal;
 }
 
@@ -16631,4 +16636,41 @@ void Debugger::StartCanaryThread()
 }
 #endif // DACCESS_COMPILE
 
+#ifndef DACCESS_COMPILE
+void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_TRIGGERS;
+        MODE_ANY;
+        PRECONDITION(CheckPointer(thread));
+        PRECONDITION(context != NULL);
+    }
+    CONTRACTL_END;
+
+    if (CORDBUnrecoverableError(this))
+        return;
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN\n"));
+
+    // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
+
+    DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN InitIPCEvent..\n"));
+    InitIPCEvent(ipce,
+        DB_IPCE_SET_THREADCONTEXT_NEEDED,
+        thread,
+        thread->GetDomain());
+
+    memcpy(&(ipce->SetThreadContextNeeded.context), context, sizeof(CONTEXT));
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent\n"));
+    g_pDebugger->SendRawEvent(ipce);
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent returned\n"));
+}
+#endif // DACCESS_COMPILE
+
 #endif //DEBUGGING_SUPPORTED
+

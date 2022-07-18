@@ -11139,6 +11139,44 @@ void CordbProcess::FilterClrNotification(
 
             HandleSyncCompleteReceived();
         }
+        else if (pManagedEvent->type == DB_IPCE_SET_THREADCONTEXT_NEEDED)
+        {
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Got DB_IPCE_SET_THREADCONTEXT_NEEDED\n"));
+
+            BOOL fSuccess;
+            HANDLE hThread = NULL;//GetDAC()->GetThreadHandle(pManagedEvent->vmThread);
+            fSuccess = DuplicateHandle(UnsafeGetProcessHandle(),
+                            GetDAC()->GetThreadHandle(pManagedEvent->vmThread),
+                            GetCurrentProcess(),
+                            &hThread,
+                            NULL,
+                            FALSE,
+                            DUPLICATE_SAME_ACCESS);
+
+            DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
+
+            CONTEXT context = { 0 };
+            memcpy(&context, &(pManagedEvent->SetThreadContextNeeded.context), sizeof(CONTEXT));
+            context.ContextFlags = CONTEXT_ALL /*| CONTEXT_XSTATE*/;
+            SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
+
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d\n", threadId,  (uint64_t)hThread, (context.EFlags & 0x100) != 0));
+
+            DWORD suspendCount = ::SuspendThread(hThread);
+
+            DWORD lastError = 0;
+            BOOL res = ::SetThreadContext(hThread, &context);
+            if (!res)
+            {
+                lastError = ::GetLastError();
+            }
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=0x%X\n", suspendCount, res, lastError));
+            ::ResumeThread(hThread);
+
+            //::Sleep(5000);
+
+            //LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Sleep done\n"));
+        }
         else
         {
             //
@@ -11548,8 +11586,8 @@ void CordbWin32EventThread::Win32EventLoop()
             break;
         }
 
-        LOG((LF_CORDB, LL_INFO100000, "W32ET::W32EL - got event , ret=%d, has w32 dbg event=%d\n",
-             dwStatus, fEventAvailable));
+        //LOG((LF_CORDB, LL_INFO100000, "W32ET::W32EL - got event , ret=%d, has w32 dbg event=%d\n",
+        //     dwStatus, fEventAvailable));
 
         // If we haven't timed out, or if it wasn't the thread control event
         // that was set, then a process has

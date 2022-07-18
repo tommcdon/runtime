@@ -2917,6 +2917,8 @@ public:
 private:
     HANDLE GetGarbageCollectionBlockerEvent() { return  GetLazyData()->m_garbageCollectionBlockerEvent; }
 
+public:
+    void SendSetThreadContextNeeded(Thread *thread, CONTEXT *context);
 };
 
 

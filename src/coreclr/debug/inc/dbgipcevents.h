@@ -2353,6 +2353,11 @@ struct MSLAYOUT DebuggerIPCEvent
             void * pMetadataStart;
             ULONG nMetadataSize;
         } MetadataUpdateRequest;
+
+        struct MSLAYOUT
+        {
+            CONTEXT context;
+        } SetThreadContextNeeded;
     };
 };
 
