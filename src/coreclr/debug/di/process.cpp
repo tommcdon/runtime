@@ -11153,25 +11153,34 @@ void CordbProcess::FilterClrNotification(
                             FALSE,
                             DUPLICATE_SAME_ACCESS);
 
+             _ASSERTE(fSuccess);
+
             DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
 
             CONTEXT context = { 0 };
-            memcpy(&context, &(pManagedEvent->SetThreadContextNeeded.context), sizeof(CONTEXT));
-            context.ContextFlags = CONTEXT_ALL /*| CONTEXT_XSTATE*/;
-            SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
+            //memcpy(&context, &(pManagedEvent->SetThreadContextNeeded.context), sizeof(CONTEXT));
+            _ASSERTE(pManagedEvent->SetThreadContextNeeded.context.ContextFlags == (CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS | CONTEXT_FLOATING_POINT | CONTEXT_DEBUG_REGISTERS));
+            fSuccess = CopyContext(&context, pManagedEvent->SetThreadContextNeeded.context.ContextFlags, &(pManagedEvent->SetThreadContextNeeded.context));
+            _ASSERTE(context.ContextFlags == pManagedEvent->SetThreadContextNeeded.context.ContextFlags);
+            //context.ContextFlags = contextFlags/*CONTEXT_ALL *//*| CONTEXT_XSTATE*/;
+            //SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
 
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d\n", threadId,  (uint64_t)hThread, (context.EFlags & 0x100) != 0));
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d\n", threadId,  (uint64_t)hThread, (context.EFlags & 0x100) != 0, fSuccess));
 
-            DWORD suspendCount = ::SuspendThread(hThread);
+            DWORD previousSuspendCount = ::SuspendThread(hThread);
 
             DWORD lastError = 0;
-            BOOL res = ::SetThreadContext(hThread, &context);
-            if (!res)
+            fSuccess = ::SetThreadContext(hThread, &context);
+            if (!fSuccess)
             {
                 lastError = ::GetLastError();
             }
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=0x%X\n", suspendCount, res, lastError));
-            ::ResumeThread(hThread);
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=0x%X\n", previousSuspendCount, fSuccess, lastError));
+
+            _ASSERTE(fSuccess);
+
+            fSuccess = ::ResumeThread(hThread) == previousSuspendCount;
+            _ASSERTE(fSuccess);
 
             //::Sleep(5000);
 
