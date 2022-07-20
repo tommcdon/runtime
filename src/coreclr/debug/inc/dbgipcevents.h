@@ -2356,7 +2356,8 @@ struct MSLAYOUT DebuggerIPCEvent
 
         struct MSLAYOUT
         {
-            CONTEXT context;
+            TADDR pContext;
+            DWORD size;
         } SetThreadContextNeeded;
     };
 };

@@ -16652,46 +16652,12 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     if (CORDBUnrecoverableError(this))
         return;
 
-    // CONTEXT* AllocateOSContextHelper(BYTE** contextBuffer)
-
-    DWORD contextFlags = CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS | CONTEXT_FLOATING_POINT | CONTEXT_DEBUG_REGISTERS;
-
-    // Determine if the processor supports AVX so we could
-    // retrieve extended registers
-    //DWORD64 FeatureMask = GetEnabledXStateFeatures();
-    //if ((FeatureMask & XSTATE_MASK_AVX) != 0)
-    //{
-    //    contextFlags = contextFlags | CONTEXT_XSTATE;
-    //}
 
     // Retrieve contextSize by passing NULL for Buffer
+
     DWORD contextSize = 0;
-    ULONG64 xStateCompactionMask = 0;//XSTATE_MASK_LEGACY | XSTATE_MASK_AVX;
-    // The initialize call should fail but return contextSize
-    BOOL success = g_pfnInitializeContext2 ?
-        g_pfnInitializeContext2(NULL, contextFlags, NULL, &contextSize, xStateCompactionMask) :
-        InitializeContext(NULL, contextFlags, NULL, &contextSize);
-
-    // Spec mentions that we may get a different error (it was observed on Windows7).
-    // In such case the contextSize is undefined.
-    //if (success || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-    //{
-    //    STRESS_LOG2(LF_SYNC, LL_INFO1000, "Debugger::SendSetThreadContextNeeded: Unexpected result from InitializeContext (success: %d, error: %d).\n",
-    //        success, GetLastError());
-    //    return;
-    //}
-
-
-    /*
-    DWORD contextSize = 0;
-    ULONG64 xStateCompactionMask = 0;
-    DWORD contextFlags = CONTEXT_FULL;
-    if (Thread::AreCetShadowStacksEnabled())
-    {
-        xStateCompactionMask = XSTATE_MASK_CET_U;
-        contextFlags |= CONTEXT_XSTATE;
-    }
-
+    ULONG64 xStateCompactionMask = XSTATE_MASK_LEGACY | XSTATE_MASK_AVX; // XSTATE_MASK_CET_U???
+    DWORD contextFlags = context->ContextFlags;
     // The initialize call should fail but return contextSize
     BOOL success = g_pfnInitializeContext2 ?
         g_pfnInitializeContext2(NULL, contextFlags, NULL, &contextSize, xStateCompactionMask) :
@@ -16699,38 +16665,75 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
 
+    // Allocate the context
+
     PVOID pBuffer = _alloca(contextSize);
+    PCONTEXT pFrameContext = NULL;
     success = g_pfnInitializeContext2 ?
         g_pfnInitializeContext2(pBuffer, contextFlags, &pFrameContext, &contextSize, xStateCompactionMask) :
         InitializeContext(pBuffer, contextFlags, &pFrameContext, &contextSize);
-    _ASSERTE(success);
-    */
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextSize=%d CONTEXT=%d ExceptionContextFlags=0x%X CONTEXT_COMPLETE=0x%X\n", contextSize, sizeof(CONTEXT), context->ContextFlags, CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_SEGMENTS | CONTEXT_FLOATING_POINT | CONTEXT_DEBUG_REGISTERS));
+    if (!success)
+    {
+        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+        _ASSERTE(!"InitializeContext failed");
+
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
+        UnrecoverableError(hr,
+            0,
+            FILE_DEBUG,
+            LINE_DEBUG,
+            false);
+
+        return;
+    }
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
+        contextSize,
+        context->ContextFlags,
+        CONTEXT_ALL | CONTEXT_XSTATE,
+        pBuffer,
+        pFrameContext));
+
+    _ASSERTE(pFrameContext->ContextFlags == contextFlags);
+
+    success = CopyContext(pFrameContext, contextFlags, context);
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
+    if (!success)
+    {
+        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+        _ASSERTE(!"CopyContext failed");
+
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from CopyContext (error: 0x%X [%d]).\n", hr, GetLastError()));
+        UnrecoverableError(hr,
+            0,
+            FILE_DEBUG,
+            LINE_DEBUG,
+            false);
+
+        return;
+    }
 
     // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
 
     DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
 
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN InitIPCEvent..\n"));
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X..\n", pFrameContext->ContextFlags));
     InitIPCEvent(ipce,
         DB_IPCE_SET_THREADCONTEXT_NEEDED,
         thread,
         thread->GetDomain());
 
-    //memcpy(&(ipce->SetThreadContextNeeded.context), context, sizeof(CONTEXT));
-    success = CopyContext(&(ipce->SetThreadContextNeeded.context), contextFlags, context);
-    if (!success)
-    {
-        STRESS_LOG2(LF_SYNC, LL_INFO1000, "Debugger::SendSetThreadContextNeeded: Unexpected result from InitializeContext (success: %d, error: %d).\n",
-            success, GetLastError());
-        return;
-    }
+    ipce->SetThreadContextNeeded.pContext = (TADDR)pFrameContext;
+    ipce->SetThreadContextNeeded.size = contextSize;
 
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent CopyContext=%s\n", success?"SUCCESS":"FAIL"));
     g_pDebugger->SendRawEvent(ipce);
+
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent returned\n"));
+    _ASSERTE(!"We failed to SetThreadContext from out of process!");
 }
 #endif // DACCESS_COMPILE
 
 #endif //DEBUGGING_SUPPORTED
+
+
 
