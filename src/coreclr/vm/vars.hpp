@@ -720,6 +720,12 @@ enum HostCallPreference
 typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
 extern PINITIALIZECONTEXT2 g_pfnInitializeContext2;
 
+typedef PVOID (WINAPI *PLOCATEXSTATEFEATURE)(PCONTEXT Context, DWORD FeatureId, PDWORD Length);
+extern PLOCATEXSTATEFEATURE g_pfnLocateXStateFeature;
+
+typedef BOOL (WINAPI *PSETXSTATEFEATURESMASK)(PCONTEXT Context, DWORD64 FeatureMask);
+extern PSETXSTATEFEATURESMASK g_pfnSetXStateFeaturesMask;
+
 #ifdef TARGET_X86
 typedef VOID(__cdecl* PRTLRESTORECONTEXT)(PCONTEXT ContextRecord, struct _EXCEPTION_RECORD* ExceptionRecord);
 extern PRTLRESTORECONTEXT g_pfnRtlRestoreContext;

@@ -11156,25 +11156,55 @@ void CordbProcess::FilterClrNotification(
             _ASSERTE(fSuccess);
 
             DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
-
             PCONTEXT pContext = (PCONTEXT)_alloca(pManagedEvent->SetThreadContextNeeded.size);
             HRESULT hr = GetDAC()->ReadContext(pManagedEvent->SetThreadContextNeeded.pContext, pManagedEvent->SetThreadContextNeeded.size, pContext);
+            if (FAILED(hr))
+            {
+                _ASSERTE(!"ReadContext failed");
+
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Unexpected result from ReadContext (error: 0x%X).\n", hr));
+
+                ThrowHR(hr);
+            }
+
+
             DWORD contextFlags = pContext->ContextFlags;
             DWORD contextSize = pManagedEvent->SetThreadContextNeeded.size;
-            ULONG64 xStateCompactionMask = XSTATE_MASK_LEGACY | XSTATE_MASK_AVX; // XSTATE_MASK_CET_U???
-
-            PVOID pBuffer = _alloca(contextSize);
-            PCONTEXT pFrameContext = NULL;
 
 //#ifdef TARGET_WINDOWS
             typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
             PINITIALIZECONTEXT2 pfnInitializeContext2 = NULL;
-//#endif
+
+            typedef PVOID (WINAPI *PLOCATEXSTATEFEATURE)(PCONTEXT Context, DWORD FeatureId, PDWORD Length);
+            PLOCATEXSTATEFEATURE pfnLocateXStateFeature = NULL;
+
+            typedef BOOL (WINAPI *PSETXSTATEFEATURESMASK)(PCONTEXT Context, DWORD64 FeatureMask);
+            PSETXSTATEFEATURESMASK pfnSetXStateFeaturesMask = NULL;
             HMODULE hm = GetModuleHandleW(_T("kernel32.dll"));
             if (hm != NULL)
             {
                 pfnInitializeContext2 = (PINITIALIZECONTEXT2)GetProcAddress(hm, "InitializeContext2");
+                pfnLocateXStateFeature = (PLOCATEXSTATEFEATURE)GetProcAddress(hm, "LocateXStateFeature");
+                pfnSetXStateFeaturesMask = (PSETXSTATEFEATURESMASK)GetProcAddress(hm, "SetXStateFeaturesMask");
             }
+//#endif
+
+            DWORD64 feature = 0;
+            if (pfnLocateXStateFeature != NULL)
+            {
+                for (int i = 0; i < 8; i++)
+                {
+                    if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
+                    {
+                        feature |= 1ui64 << i;
+                        LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - LocateXStateFeature %d %8.8X\n", i, feature));
+                    }
+                }
+            }
+
+            PVOID pBuffer = _alloca(contextSize);
+            PCONTEXT pFrameContext = NULL;
+            ULONG64 xStateCompactionMask = feature;//XSTATE_MASK_LEGACY | XSTATE_MASK_AVX | XSTATE_MASK_AVX512; // XSTATE_MASK_CET_U???
             BOOL success = pfnInitializeContext2 ?
                 pfnInitializeContext2(pBuffer, contextFlags, &pFrameContext, &contextSize, xStateCompactionMask) :
                 InitializeContext(pBuffer, contextFlags, &pFrameContext, &contextSize);
@@ -11197,6 +11227,12 @@ void CordbProcess::FilterClrNotification(
 
             _ASSERTE(pFrameContext->ContextFlags == contextFlags);
 
+            if (pfnSetXStateFeaturesMask != NULL && feature != 0)
+            {
+                success = pfnSetXStateFeaturesMask(pFrameContext, feature);
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+            }
+
             success = CopyContext(pFrameContext, contextFlags, pContext);
             LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
             if (!success)
@@ -11208,8 +11244,6 @@ void CordbProcess::FilterClrNotification(
 
                 ThrowHR(hr);
             }
-
-
 
             //CONTEXT context = { 0 };
             ////memcpy(&context, &(pManagedEvent->SetThreadContextNeeded.context), sizeof(CONTEXT));

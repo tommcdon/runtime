@@ -16652,11 +16652,45 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     if (CORDBUnrecoverableError(this))
         return;
 
+    // Known extended CPU state feature BITs
+    //
+    // 0    x87
+    // 1    SSE
+    // 2    AVX
+    // 3    BNDREGS (B0.LB-B3.LB B0.UB-B3.UB)
+    // 4    BNDCSR  (BNDCFGU + BNDSTATUS)       Persistent
+    // 5    KMASK   (KMASK [63:0][0-7])
+    // 6    ZMM_H   (ZMM_H[511:256][0-15])
+    // 7    ZMM     (ZMM[511:0][16-31])
+    // 8    IPT                                 Supervisor
+    // 10   PASID                               Supervisor
+    // 11   CET_U                               Supervisor
+    // 12   CET_S                               Supervisor (Cannot be used by NT! Only defined for SK intercept purposes!)
+    //
+    // 17   TILE_CONFIG
+    // 18   TILE_DATA                           XFD, Large
+    //
+    // 62   LWP                                 Persistent
+    //
+    // 63   RZ0                                 Reserved
+    //
 
-    // Retrieve contextSize by passing NULL for Buffer
+    DWORD64 feature = 0;
+    if (g_pfnLocateXStateFeature != NULL)
+    {
+        for (int i = 0; i < 8; i++)
+        {
+            if (g_pfnLocateXStateFeature(context, i, NULL) != NULL)
+            {
+                feature |= 1ui64 << i;
+                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
+            }
+        }
+    }
+
 
     DWORD contextSize = 0;
-    ULONG64 xStateCompactionMask = XSTATE_MASK_LEGACY | XSTATE_MASK_AVX; // XSTATE_MASK_CET_U???
+    ULONG64 xStateCompactionMask = feature;//XSTATE_MASK_LEGACY | XSTATE_MASK_AVX /*| XSTATE_MASK_MPX *//*| XSTATE_MASK_AVX512*/; // XSTATE_MASK_CET_U???
     DWORD contextFlags = context->ContextFlags;
     // The initialize call should fail but return contextSize
     BOOL success = g_pfnInitializeContext2 ?
@@ -16696,6 +16730,13 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     _ASSERTE(pFrameContext->ContextFlags == contextFlags);
 
+    if (g_pfnSetXStateFeaturesMask != NULL && feature != 0)
+    {
+        success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+        _ASSERTE(success);
+    }
+
     success = CopyContext(pFrameContext, contextFlags, context);
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
     if (!success)
@@ -16711,6 +16752,13 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
             false);
 
         return;
+    }
+
+    if (g_pfnLocateXStateFeature != NULL && g_pfnSetXStateFeaturesMask != NULL && feature != 0)
+    {
+        success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+        _ASSERTE(success);
     }
 
     // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
