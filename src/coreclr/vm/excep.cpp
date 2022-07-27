@@ -7511,6 +7511,7 @@ LONG WINAPI CLRVectoredExceptionHandlerShim(PEXCEPTION_POINTERS pExceptionInfo)
 
 
     DWORD dwCode = pExceptionInfo->ExceptionRecord->ExceptionCode;
+    STRESS_LOG1(LF_EH, LL_INFO100, "In CLRVectoredExceptionHandler: ExceptionCode 0x%8.8X\n", dwCode);
     if (dwCode == DBG_PRINTEXCEPTION_C || dwCode == EXCEPTION_VISUALCPP_DEBUGGER)
     {
         return EXCEPTION_CONTINUE_SEARCH;
@@ -7593,7 +7594,10 @@ LONG WINAPI CLRVectoredExceptionHandlerShim(PEXCEPTION_POINTERS pExceptionInfo)
     if (pThread || fExceptionInEE)
     {
         if (!bIsGCMarker)
+        {
+            STRESS_LOG0(LF_EH, LL_INFO100, "In CLRVectoredExceptionHandler: calling CLRVectoredExceptionHandler\n");
             result = CLRVectoredExceptionHandler(pExceptionInfo);
+        }
         else
             result = EXCEPTION_CONTINUE_EXECUTION;
 
@@ -7655,7 +7659,7 @@ LONG WINAPI CLRVectoredExceptionHandlerShim(PEXCEPTION_POINTERS pExceptionInfo)
                         pFrame = pFrame->Next();
                     }
                 }
-                STRESS_LOG0(LF_EH, LL_INFO100, "CLRVectoredExceptionHandlerShim: stack");
+                STRESS_LOG0(LF_EH, LL_INFO100, "CLRVectoredExceptionHandlerShim: stack\n");
                 while (count < 20 && sp < stopPoint)
                 {
                     if (IsIPInEE((BYTE*)*sp))

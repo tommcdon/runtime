@@ -1042,6 +1042,7 @@ void GCFrame::GcScanRoots(promote_func *fn, ScanContext* sc)
     for (UINT i = 0; i < m_numObjRefs; i++)
     {
         auto fromAddress = OBJECTREF_TO_UNCHECKED_OBJECTREF(m_pObjRefs[i]);
+        LOG((LF_GC, INFO3, "GC Protection Frame promoting" FMT_ADDR " m_MaybeInterior=%s\n", DBG_ADDR(fromAddress),m_MaybeInterior?"TRUE":"FALSE"));
         if (m_MaybeInterior)
         {
             PromoteCarefully(fn, pRefs + i, sc, GC_CALL_INTERIOR | CHECK_APP_DOMAIN);
