@@ -558,6 +558,8 @@ void CoreLibBinder::Check()
 {
     STANDARD_VM_CONTRACT;
 
+    LOG((LF_LOADER, LL_INFO10000, "In CoreLibBinder::Check %d\n",  ARRAY_SIZE(OffsetsAndSizes)));
+
     MethodTable * pMT = NULL;
 
     for (unsigned i = 0; i < ARRAY_SIZE(OffsetsAndSizes); i++)
@@ -566,6 +568,7 @@ void CoreLibBinder::Check()
 
         if (p->className != NULL)
         {
+            LOG((LF_LOADER, LL_INFO10000, "In CoreLibBinder::Check [%d] %s %s\n", i, p->classNameSpace, p->className));
             pMT = ClassLoader::LoadTypeByNameThrowing(GetModule()->GetAssembly(), p->classNameSpace, p->className).AsMethodTable();
 
             if (p->expectedClassSize == sizeof(NoClass))
