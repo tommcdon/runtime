@@ -65,6 +65,9 @@ PTR_MethodTable CoreLibBinder::LookupClassLocal(BinderClassID id)
     LPCUTF8 nameSpace = d->nameSpace;
     LPCUTF8 name = d->name;
 
+    LOG((LF_CLASSLOADER, LL_INFO1000, "LookupClassLocal %s.%s \n", nameSpace, name));
+
+
     LPCUTF8 nestedTypeMaybe = strchr(name, '+');
     if (nestedTypeMaybe == NULL)
     {
@@ -228,6 +231,9 @@ NOINLINE PTR_MethodTable CoreLibBinder::LookupClassIfExist(BinderClassID id)
     OVERRIDE_TYPE_LOAD_LEVEL_LIMIT(CLASS_LOADED);
 
     const CoreLibClassDescription *d = (&g_CoreLib)->m_classDescriptions + (int)id;
+
+    LOG((LF_CLASSLOADER, LL_INFO1000, "LookupClassIfExist %s.%s \n", d->nameSpace, d->name));
+
 
     PTR_MethodTable pMT = ClassLoader::LoadTypeByNameThrowing(GetModule()->GetAssembly(), d->nameSpace, d->name,
         ClassLoader::ReturnNullIfNotFound, ClassLoader::DontLoadTypes, CLASS_LOAD_UNRESTOREDTYPEKEY).AsMethodTable();
@@ -1208,6 +1214,8 @@ PTR_MethodTable CoreLibBinder::LoadPrimitiveType(CorElementType et)
     STANDARD_VM_CONTRACT;
 
     PTR_MethodTable pMT = g_CoreLib.m_pClasses[et];
+
+    LOG((LF_CLASSLOADER, LL_INFO1000, "LoadPrimitiveType et=%8.8X %s.%s pMT=%8.8X\n", et, ((&g_CoreLib)->m_classDescriptions + (int)et)->nameSpace, ((&g_CoreLib)->m_classDescriptions + (int)et)->name, pMT));
 
     // Primitive types hit cyclic reference on binder during type loading so we have to load them in two steps
     if (pMT == NULL)

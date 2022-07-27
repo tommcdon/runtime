@@ -2249,6 +2249,8 @@ TypeHandle ClassLoader::LoadTypeDefThrowing(Module *pModule,
                             NameHandle name(nameSpace, className);
                             name.SetTypeToken(pModule, typeDef);
                             name.SetTokenNotToLoad(tdAllAssemblies);
+                            LOG((LF_CLASSLOADER, LL_INFO1000, "LoadTypeDefThrowing %s.%s \n", nameSpace, className));
+
                             typeHnd = pAssembly->GetLoader()->LoadTypeHandleThrowing(&name, level);
                         }
                     }
@@ -2394,6 +2396,8 @@ TypeHandle ClassLoader::LoadTypeDefOrRefThrowing(ModuleBase *pModule,
                         // without respective TypeDef for unmanaged valuetypes,
                         // referenced only by pointers to them,
                         // so we can fail to load legally w/ no exception
+                        LOG((LF_CLASSLOADER, LL_INFO1000, "LoadTypeDefOrRefThrowing %s.%s \n", pszNameSpace, pszClassName));
+
                         typeHnd = ClassLoader::LoadTypeByNameThrowing(static_cast<Module*>(pFoundModule)->GetAssembly(),
                                                                       pszNameSpace,
                                                                       pszClassName,
