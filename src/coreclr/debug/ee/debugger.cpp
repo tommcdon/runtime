@@ -16652,6 +16652,36 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     if (CORDBUnrecoverableError(this))
         return;
 
+
+    // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
+    typedef struct _CONTEXT_CHUNK {
+        LONG Offset;
+        ULONG Length;
+    } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
+    typedef struct _CONTEXT_EX {
+        CONTEXT_CHUNK All;
+        CONTEXT_CHUNK Legacy;
+        CONTEXT_CHUNK XState;
+    } CONTEXT_EX, *PCONTEXT_EX;
+
+    PCONTEXT_EX pContextEx = (CONTEXT_EX*)&context[1];
+
+    //DWORD contextSize = pContextEx->All.Length;
+    //LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X size=%d CONTEXT=%d CONTEXT_EX=%d Legacy=%d XState=%d..\n",
+    //    context->ContextFlags,
+    //    contextSize,
+    //    sizeof(CONTEXT),
+    //    sizeof(CONTEXT_EX),
+    //    pContextEx->Legacy.Length,
+    //    pContextEx->XState.Length));
+    //_ASSERTE(contextSize == sizeof(CONTEXT_EX) + pContextEx->Legacy.Length + pContextEx->XState.Length);
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+        context->ContextFlags,
+        pContextEx->All.Length,
+        pContextEx->Legacy.Length,
+        pContextEx->XState.Length));
+
+#ifdef _DEBUG
     // Known extended CPU state feature BITs
     //
     // 0    x87
@@ -16687,25 +16717,25 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
             }
         }
     }
+#endif
 
-
-    DWORD contextSize = 0;
-    ULONG64 xStateCompactionMask = feature;//XSTATE_MASK_LEGACY | XSTATE_MASK_AVX /*| XSTATE_MASK_MPX *//*| XSTATE_MASK_AVX512*/; // XSTATE_MASK_CET_U???
+#if 0
     DWORD contextFlags = context->ContextFlags;
+    DWORD initContextSize = 0;
+
     // The initialize call should fail but return contextSize
-    BOOL success = g_pfnInitializeContext2 ?
-        g_pfnInitializeContext2(NULL, contextFlags, NULL, &contextSize, xStateCompactionMask) :
-        InitializeContext(NULL, contextFlags, NULL, &contextSize);
+    BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
 
     _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
 
-    // Allocate the context
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: InitializeContext ContextSize %d\n", initContextSize));
 
-    PVOID pBuffer = _alloca(contextSize);
+    // Allocate the context
+    //_ASSERTE(initContextSize == contextSize);
+
+    PVOID pBuffer = _alloca(initContextSize);
     PCONTEXT pFrameContext = NULL;
-    success = g_pfnInitializeContext2 ?
-        g_pfnInitializeContext2(pBuffer, contextFlags, &pFrameContext, &contextSize, xStateCompactionMask) :
-        InitializeContext(pBuffer, contextFlags, &pFrameContext, &contextSize);
+    success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
     if (!success)
     {
         HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
@@ -16722,7 +16752,7 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     }
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
-        contextSize,
+        initContextSize,
         context->ContextFlags,
         CONTEXT_ALL | CONTEXT_XSTATE,
         pBuffer,
@@ -16730,12 +16760,12 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     _ASSERTE(pFrameContext->ContextFlags == contextFlags);
 
-    if (g_pfnSetXStateFeaturesMask != NULL && feature != 0)
-    {
-        success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-        _ASSERTE(success);
-    }
+    //if (g_pfnSetXStateFeaturesMask != NULL && feature != 0)
+    //{
+    //    success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
+    //    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+    //    _ASSERTE(success);
+    //}
 
     success = CopyContext(pFrameContext, contextFlags, context);
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
@@ -16754,25 +16784,43 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
         return;
     }
 
-    if (g_pfnLocateXStateFeature != NULL && g_pfnSetXStateFeaturesMask != NULL && feature != 0)
+#ifdef _DEBUG
+    
+    if (g_pfnLocateXStateFeature != NULL)
     {
-        success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-        _ASSERTE(success);
+        DWORD64 feature = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            if (g_pfnLocateXStateFeature(pFrameContext, i, NULL) != NULL)
+            {
+                feature |= 1ui64 << i;
+                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
+            }
+        }
     }
+    {
+        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pFrameContext[1];
 
-    // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+            pFrameContext->ContextFlags,
+            pContextEx->All.Length,
+            pContextEx->Legacy.Length,
+            pContextEx->XState.Length));
+    }
+#endif
+
+#endif // #if 0
 
     DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
 
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X..\n", pFrameContext->ContextFlags));
+
     InitIPCEvent(ipce,
         DB_IPCE_SET_THREADCONTEXT_NEEDED,
         thread,
         thread->GetDomain());
 
-    ipce->SetThreadContextNeeded.pContext = (TADDR)pFrameContext;
-    ipce->SetThreadContextNeeded.size = contextSize;
+    ipce->SetThreadContextNeeded.pContext = (TADDR)/*pFrameContext*/context;
+    ipce->SetThreadContextNeeded.size = /*initContextSize*/pContextEx->All.Length;
 
     g_pDebugger->SendRawEvent(ipce);
 

@@ -2249,7 +2249,13 @@ public:
     )
     {
         WRAPPER_NO_CONTRACT;
-         return ::SetThreadContext (GetThreadHandle(), lpContext);
+        printf("********************* SetThreadContext %llx\n", (uint64_t)lpContext);
+        //while (true) { ::Sleep(200); printf("nope"); }
+        //{
+        //    byte *b = nullptr;
+        //    *b = 5;
+        //}
+        return ::SetThreadContext (GetThreadHandle(), lpContext);
     }
 #endif
 

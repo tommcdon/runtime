@@ -11143,6 +11143,17 @@ void CordbProcess::FilterClrNotification(
         {
             LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Got DB_IPCE_SET_THREADCONTEXT_NEEDED\n"));
 
+            // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
+            typedef struct _CONTEXT_CHUNK {
+                LONG Offset;
+                ULONG Length;
+            } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
+            typedef struct _CONTEXT_EX {
+                CONTEXT_CHUNK All;
+                CONTEXT_CHUNK Legacy;
+                CONTEXT_CHUNK XState;
+            } CONTEXT_EX, *PCONTEXT_EX;
+
             BOOL fSuccess;
             HANDLE hThread = NULL;//GetDAC()->GetThreadHandle(pManagedEvent->vmThread);
             fSuccess = DuplicateHandle(UnsafeGetProcessHandle(),
@@ -11154,6 +11165,13 @@ void CordbProcess::FilterClrNotification(
                             DUPLICATE_SAME_ACCESS);
 
             _ASSERTE(fSuccess);
+
+            
+//#define STACK_ALIGN_SHIFT   (4UL)
+//#define STACK_ALIGN         (1UI64 << STACK_ALIGN_SHIFT)
+//#define STACK_ROUND         (STACK_ALIGN - 1)
+//#define CONTEXT_ALIGN STACK_ALIGN
+//#define CONTEXT_LENGTH sizeof(CONTEXT)
 
             DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
             PCONTEXT pContext = (PCONTEXT)_alloca(pManagedEvent->SetThreadContextNeeded.size);
@@ -11171,6 +11189,7 @@ void CordbProcess::FilterClrNotification(
             DWORD contextFlags = pContext->ContextFlags;
             DWORD contextSize = pManagedEvent->SetThreadContextNeeded.size;
 
+//#if 0
 //#ifdef TARGET_WINDOWS
             typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
             PINITIALIZECONTEXT2 pfnInitializeContext2 = NULL;
@@ -11189,9 +11208,9 @@ void CordbProcess::FilterClrNotification(
             }
 //#endif
 
-            DWORD64 feature = 0;
             if (pfnLocateXStateFeature != NULL)
             {
+                DWORD64 feature = 0;
                 for (int i = 0; i < 8; i++)
                 {
                     if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
@@ -11202,12 +11221,17 @@ void CordbProcess::FilterClrNotification(
                 }
             }
 
-            PVOID pBuffer = _alloca(contextSize);
+            // The initialize call should fail but return contextSize
+            DWORD initContextSize = 0;
+            BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
+
+            _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification -  InitializeContext ContextSize %d\n", initContextSize));
+
+            PVOID pBuffer = _alloca(initContextSize);
             PCONTEXT pFrameContext = NULL;
-            ULONG64 xStateCompactionMask = feature;//XSTATE_MASK_LEGACY | XSTATE_MASK_AVX | XSTATE_MASK_AVX512; // XSTATE_MASK_CET_U???
-            BOOL success = pfnInitializeContext2 ?
-                pfnInitializeContext2(pBuffer, contextFlags, &pFrameContext, &contextSize, xStateCompactionMask) :
-                InitializeContext(pBuffer, contextFlags, &pFrameContext, &contextSize);
+            success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
             if (!success)
             {
                 HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
@@ -11218,8 +11242,9 @@ void CordbProcess::FilterClrNotification(
                 ThrowHR(hr);
             }
 
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextSize=%d InitContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
                 contextSize,
+                initContextSize,
                 pContext->ContextFlags,
                 CONTEXT_ALL | CONTEXT_XSTATE,
                 pBuffer,
@@ -11227,12 +11252,21 @@ void CordbProcess::FilterClrNotification(
 
             _ASSERTE(pFrameContext->ContextFlags == contextFlags);
 
-            if (pfnSetXStateFeaturesMask != NULL && feature != 0)
-            {
-                success = pfnSetXStateFeaturesMask(pFrameContext, feature);
-                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-            }
+            //if (pfnSetXStateFeaturesMask != NULL && feature != 0)
+            //{
+            //    success = pfnSetXStateFeaturesMask(pFrameContext, feature);
+            //    LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+            //}
 
+            {
+                PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pContext[1];
+
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - pContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+                    pContext->ContextFlags,
+                    pContextEx->All.Length,
+                    pContextEx->Legacy.Length,
+                    pContextEx->XState.Length));
+            }
             success = CopyContext(pFrameContext, contextFlags, pContext);
             LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
             if (!success)
@@ -11245,31 +11279,56 @@ void CordbProcess::FilterClrNotification(
                 ThrowHR(hr);
             }
 
+            {
+                PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pFrameContext[1];
+
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - pFrameContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+                    pFrameContext->ContextFlags,
+                    pContextEx->All.Length,
+                    pContextEx->Legacy.Length,
+                    pContextEx->XState.Length));
+            }
+
+            if (pfnLocateXStateFeature != NULL)
+            {
+                DWORD64 feature = 0;
+                for (int i = 0; i < 8; i++)
+                {
+                    if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
+                    {
+                        feature |= 1ui64 << i;
+                        LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - LocateXStateFeature %d %8.8X\n", i, feature));
+                    }
+                }
+            }
+
+            //if (pfnSetXStateFeaturesMask != NULL && feature != 0)
+            //{
+            //    success = pfnSetXStateFeaturesMask(pFrameContext, feature);
+            //    LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+            //}
+//#endif
+
             //CONTEXT context = { 0 };
             ////memcpy(&context, &(pManagedEvent->SetThreadContextNeeded.context), sizeof(CONTEXT));
             //fSuccess = CopyContext(&context, contextFlags, pContext);
             ////context.ContextFlags = contextFlags/*CONTEXT_ALL *//*| CONTEXT_XSTATE*/;
             ////SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
 
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0, fSuccess, GetLastError()));
+            //LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0, fSuccess, GetLastError()));
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0));
 
-            //_ASSERTE(context.ContextFlags == pContext.ContextFlags);
+            _ASSERTE(/*context.ContextFlags*/(CONTEXT_ALL|CONTEXT_XSTATE) == pContext->ContextFlags);
 
             DWORD previousSuspendCount = ::SuspendThread(hThread);
 
             DWORD lastError = 0;
-            //            status = m_dac->m_pMutableTarget->
-                //SetThreadContext(m_thread->GetOSThreadId(),
-                //                 contextSize,
-                //                 context);
             fSuccess = ::SetThreadContext(hThread, pFrameContext);
             if (!fSuccess)
             {
                 lastError = ::GetLastError();
             }
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=0x%X\n", previousSuspendCount, fSuccess, lastError));
-
-            _ASSERTE(fSuccess);
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=%d hr=0x%X\n", previousSuspendCount, fSuccess, lastError, HRESULT_FROM_WIN32(lastError)));
 
             fSuccess = ::ResumeThread(hThread) == previousSuspendCount + 1;
             _ASSERTE(fSuccess);

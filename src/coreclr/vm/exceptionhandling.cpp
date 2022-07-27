@@ -5221,6 +5221,7 @@ static inline BOOL HandleSingleStep(PCONTEXT pContext, PEXCEPTION_RECORD pExcept
 
 BOOL HandleHardwareException(PAL_SEHException* ex)
 {
+    printf("****HandleHardwareException: %llx\n",(unsigned __int64)ex->GetExceptionRecord()->ExceptionCode);
     _ASSERTE(IsSafeToHandleHardwareException(ex->GetContextRecord(), ex->GetExceptionRecord()));
 
     if (ex->GetExceptionRecord()->ExceptionCode == EXCEPTION_STACK_OVERFLOW)
