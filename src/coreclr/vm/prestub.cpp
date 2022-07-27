@@ -450,7 +450,9 @@ PCODE MethodDesc::GetPrecompiledCode(PrepareCodeConfig* pConfig, bool shouldTier
         pCode = GetPrecompiledR2RCode(pConfig);
         if (pCode != NULL)
         {
+            LOG((LF_ZAP, LL_INFO10000, "Myaaa!\n"));
             LOG_USING_R2R_CODE(this);
+            LOG((LF_ZAP, LL_INFO10000, "Myaaa2!\n"));
 
 #ifdef FEATURE_TIERED_COMPILATION
             // Finalize the optimization tier before SetNativeCode() is called
@@ -459,12 +461,14 @@ PCODE MethodDesc::GetPrecompiledCode(PrepareCodeConfig* pConfig, bool shouldTier
 
             if (pConfig->SetNativeCode(pCode, &pCode))
             {
+               LOG((LF_ZAP, LL_INFO10000, "Myaaa! SetNativeCode! shouldCountCalls=%d\n", shouldCountCalls));
 #ifdef FEATURE_CODE_VERSIONING
                 pConfig->SetGeneratedOrLoadedNewCode();
 #endif
 #ifdef FEATURE_TIERED_COMPILATION
                 if (shouldCountCalls)
                 {
+                    LOG((LF_ZAP, LL_INFO10000, "Myaaa! Call counting!\n"));
                     _ASSERTE(pConfig->GetCodeVersion().GetOptimizationTier() == NativeCodeVersion::OptimizationTier0);
                     pConfig->SetShouldCountCalls();
                 }
@@ -476,12 +480,15 @@ PCODE MethodDesc::GetPrecompiledCode(PrepareCodeConfig* pConfig, bool shouldTier
                 // of R2R code are also recorded.
                 if (pConfig->NeedsMulticoreJitNotification())
                 {
+                    LOG((LF_ZAP, LL_INFO10000, "Myaaa! NeedsMulticoreJitNotification\n"));
                     _ASSERTE(pConfig->GetCodeVersion().IsDefaultVersion());
                     _ASSERTE(!pConfig->IsForMulticoreJit());
 
                     MulticoreJitManager & mcJitManager = GetAppDomain()->GetMulticoreJitManager();
                     if (mcJitManager.IsRecorderActive())
                     {
+                        LOG((LF_ZAP, LL_INFO10000, "Myaaa! mcJitManager.IsRecorderActive()==true\n"));
+
                         if (MulticoreJitManager::IsMethodSupported(this))
                         {
                             mcJitManager.RecordMethodJitOrLoad(this);
