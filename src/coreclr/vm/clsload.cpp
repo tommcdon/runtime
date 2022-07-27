@@ -1414,6 +1414,8 @@ ClassLoader::LoadTypeHandleThrowing(
         SUPPORTS_DAC;
     } CONTRACT_END
 
+    LOG((LF_CLASSLOADER, LL_INFO1000, "LoadTypeHandleThrowing %s.%s \n", pName->GetNameSpace(), pName->GetName()));
+
     TypeHandle typeHnd;
     Module * pFoundModule = NULL;
     mdToken FoundCl;
