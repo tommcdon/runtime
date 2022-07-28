@@ -6342,6 +6342,12 @@ public:
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
 
+    HRESULT CacheLiveContext();
+
+    PCONTEXT GetCachedContext();
+
+    HRESULT ResetCachedContext();
+
 private:
     void ClearStackFrameCache();
 
@@ -6373,6 +6379,8 @@ private:
     // offload to the shim to support V2 scenarios.
     HANDLE                m_hCachedThread;
     HANDLE                m_hCachedOutOfProcThread;
+
+    PCONTEXT              m_pCachedContext;
 };
 
 /* ------------------------------------------------------------------------- *

@@ -11185,65 +11185,65 @@ void CordbProcess::FilterClrNotification(
                 ThrowHR(hr);
             }
 
-                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
-                    pContext->ContextFlags,
-                    pContext->Dr0,
-                    pContext->Dr1,
-                    pContext->Dr2,
-                    pContext->Dr3,
-                    pContext->Dr6,
-                    pContext->Dr7,
-                    pContext->Rax,
-                    pContext->Rcx,
-                    pContext->Rdx,
-                    pContext->Rbx,
-                    pContext->Rsp,
-                    pContext->Rbp,
-                    pContext->Rsi,
-                    pContext->Rdi,
-                    pContext->R8,
-                    pContext->R9,
-                    pContext->R10,
-                    pContext->R11,
-                    pContext->R12,
-                    pContext->R13,
-                    pContext->R14,
-                    pContext->R15,
-                    pContext->Rip));
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+                pContext->ContextFlags,
+                pContext->Dr0,
+                pContext->Dr1,
+                pContext->Dr2,
+                pContext->Dr3,
+                pContext->Dr6,
+                pContext->Dr7,
+                pContext->Rax,
+                pContext->Rcx,
+                pContext->Rdx,
+                pContext->Rbx,
+                pContext->Rsp,
+                pContext->Rbp,
+                pContext->Rsi,
+                pContext->Rdi,
+                pContext->R8,
+                pContext->R9,
+                pContext->R10,
+                pContext->R11,
+                pContext->R12,
+                pContext->R13,
+                pContext->R14,
+                pContext->R15,
+                pContext->Rip));
             DWORD contextFlags = pContext->ContextFlags;
             DWORD contextSize = pManagedEvent->SetThreadContextNeeded.size;
 
 //#if 0
-//#ifdef TARGET_WINDOWS
-            typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
-            PINITIALIZECONTEXT2 pfnInitializeContext2 = NULL;
+////#ifdef TARGET_WINDOWS
+//            typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
+//            PINITIALIZECONTEXT2 pfnInitializeContext2 = NULL;
+//
+//            typedef PVOID (WINAPI *PLOCATEXSTATEFEATURE)(PCONTEXT Context, DWORD FeatureId, PDWORD Length);
+//            PLOCATEXSTATEFEATURE pfnLocateXStateFeature = NULL;
+//
+//            typedef BOOL (WINAPI *PSETXSTATEFEATURESMASK)(PCONTEXT Context, DWORD64 FeatureMask);
+//            PSETXSTATEFEATURESMASK pfnSetXStateFeaturesMask = NULL;
+//            HMODULE hm = GetModuleHandleW(_T("kernel32.dll"));
+//            if (hm != NULL)
+//            {
+//                pfnInitializeContext2 = (PINITIALIZECONTEXT2)GetProcAddress(hm, "InitializeContext2");
+//                pfnLocateXStateFeature = (PLOCATEXSTATEFEATURE)GetProcAddress(hm, "LocateXStateFeature");
+//                pfnSetXStateFeaturesMask = (PSETXSTATEFEATURESMASK)GetProcAddress(hm, "SetXStateFeaturesMask");
+//            }
+////#endif
 
-            typedef PVOID (WINAPI *PLOCATEXSTATEFEATURE)(PCONTEXT Context, DWORD FeatureId, PDWORD Length);
-            PLOCATEXSTATEFEATURE pfnLocateXStateFeature = NULL;
-
-            typedef BOOL (WINAPI *PSETXSTATEFEATURESMASK)(PCONTEXT Context, DWORD64 FeatureMask);
-            PSETXSTATEFEATURESMASK pfnSetXStateFeaturesMask = NULL;
-            HMODULE hm = GetModuleHandleW(_T("kernel32.dll"));
-            if (hm != NULL)
-            {
-                pfnInitializeContext2 = (PINITIALIZECONTEXT2)GetProcAddress(hm, "InitializeContext2");
-                pfnLocateXStateFeature = (PLOCATEXSTATEFEATURE)GetProcAddress(hm, "LocateXStateFeature");
-                pfnSetXStateFeaturesMask = (PSETXSTATEFEATURESMASK)GetProcAddress(hm, "SetXStateFeaturesMask");
-            }
-//#endif
-
-            if (pfnLocateXStateFeature != NULL)
-            {
-                DWORD64 feature = 0;
-                for (int i = 0; i < 8; i++)
-                {
-                    if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
-                    {
-                        feature |= 1ui64 << i;
-                        LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - LocateXStateFeature %d %8.8X\n", i, feature));
-                    }
-                }
-            }
+            //if (pfnLocateXStateFeature != NULL)
+            //{
+            //    DWORD64 feature = 0;
+            //    for (int i = 0; i < 8; i++)
+            //    {
+            //        if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
+            //        {
+            //            feature |= 1ui64 << i;
+            //            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - LocateXStateFeature %d %8.8X\n", i, feature));
+            //        }
+            //    }
+            //}
 
             // The initialize call should fail but return contextSize
             DWORD initContextSize = 0;
@@ -11313,18 +11313,18 @@ void CordbProcess::FilterClrNotification(
                     pContextEx->XState.Length));
             }
 
-            if (pfnLocateXStateFeature != NULL)
-            {
-                DWORD64 feature = 0;
-                for (int i = 0; i < 8; i++)
-                {
-                    if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
-                    {
-                        feature |= 1ui64 << i;
-                        LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - LocateXStateFeature %d %8.8X\n", i, feature));
-                    }
-                }
-            }
+            //if (pfnLocateXStateFeature != NULL)
+            //{
+            //    DWORD64 feature = 0;
+            //    for (int i = 0; i < 8; i++)
+            //    {
+            //        if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
+            //        {
+            //            feature |= 1ui64 << i;
+            //            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - LocateXStateFeature %d %8.8X\n", i, feature));
+            //        }
+            //    }
+            //}
 
             //if (pfnSetXStateFeaturesMask != NULL && feature != 0)
             //{
@@ -11339,10 +11339,72 @@ void CordbProcess::FilterClrNotification(
             ////context.ContextFlags = contextFlags/*CONTEXT_ALL *//*| CONTEXT_XSTATE*/;
             ////SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
 
-            //LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0, fSuccess, GetLastError()));
+            ////LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0, fSuccess, GetLastError()));
             LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%16.16llX, SS enabled = %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0));
 
-            _ASSERTE(/*context.ContextFlags*/(CONTEXT_ALL|CONTEXT_XSTATE) == pFrameContext->ContextFlags);
+            //_ASSERTE(/*context.ContextFlags*/(CONTEXT_ALL|CONTEXT_XSTATE) == pFrameContext->ContextFlags);
+
+            //LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+            //    pFrameContext->ContextFlags,
+            //    pFrameContext->Dr0,
+            //    pFrameContext->Dr1,
+            //    pFrameContext->Dr2,
+            //    pFrameContext->Dr3,
+            //    pFrameContext->Dr6,
+            //    pFrameContext->Dr7,
+            //    pFrameContext->Rax,
+            //    pFrameContext->Rcx,
+            //    pFrameContext->Rdx,
+            //    pFrameContext->Rbx,
+            //    pFrameContext->Rsp,
+            //    pFrameContext->Rbp,
+            //    pFrameContext->Rsi,
+            //    pFrameContext->Rdi,
+            //    pFrameContext->R8,
+            //    pFrameContext->R9,
+            //    pFrameContext->R10,
+            //    pFrameContext->R11,
+            //    pFrameContext->R12,
+            //    pFrameContext->R13,
+            //    pFrameContext->R14,
+            //    pFrameContext->R15,
+            //    pFrameContext->Rip));
+
+
+
+            CordbThread *pThread = TryLookupThread(pManagedEvent->vmThread);
+            if (pThread == NULL)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Unexpected result from TryLookupThread\n"));
+                ThrowHR(E_UNEXPECTED);
+            }
+
+            DWORD previousSuspendCount = ::SuspendThread(hThread);
+            PCONTEXT pCachedContext = pThread->GetCachedContext();
+            if (pCachedContext == NULL)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Unexpected result from RestoreAndClearCachedContext\n"));
+                ThrowHR(E_UNEXPECTED);
+            }
+
+            //if ((pContext->EFlags & 0x100) != 0)
+            //{
+            //    //SetSSFlag(&pFrameContext);
+            //    pFrameContext->EFlags |= 0x100;
+            //}
+            //else
+            //{
+            //    pFrameContext->EFlags &= ~0x100;
+            //}
+            //pFrameContext->Rip = pContext->Rip;
+
+            _ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
+            _ASSERTE(pFrameContext->Rdi == pCachedContext->Rdi);
+            _ASSERTE(pFrameContext->Rsp == pCachedContext->Rsp);
+            _ASSERTE(pFrameContext->Rbp == pCachedContext->Rbp);
+            _ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
+            _ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
+            _ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
 
             LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
                 pFrameContext->ContextFlags,
@@ -11370,16 +11432,16 @@ void CordbProcess::FilterClrNotification(
                 pFrameContext->R15,
                 pFrameContext->Rip));
 
-
-            DWORD previousSuspendCount = ::SuspendThread(hThread);
-
             DWORD lastError = 0;
             fSuccess = ::SetThreadContext(hThread, pFrameContext);
             if (!fSuccess)
             {
                 lastError = ::GetLastError();
             }
+
             LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=%d hr=0x%X\n", previousSuspendCount, fSuccess, lastError, HRESULT_FROM_WIN32(lastError)));
+
+            pThread->ResetCachedContext();
 
             fSuccess = ::ResumeThread(hThread) == previousSuspendCount + 1;
             _ASSERTE(fSuccess);
@@ -11626,8 +11688,14 @@ HRESULT CordbProcess::Filter(
 
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
         }
-        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT && !m_fIsInteropDebugging)
+        else if (dwFirstChance && (pRecord->ExceptionCode == STATUS_BREAKPOINT || pRecord->ExceptionCode == STATUS_SINGLE_STEP))
         {
+            CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
+            if (pThread != NULL)
+            {
+                pThread->CacheLiveContext();
+            }
+
         }
 
     }
