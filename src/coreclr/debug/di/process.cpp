@@ -11185,7 +11185,31 @@ void CordbProcess::FilterClrNotification(
                 ThrowHR(hr);
             }
 
-
+                LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+                    pContext->ContextFlags,
+                    pContext->Dr0,
+                    pContext->Dr1,
+                    pContext->Dr2,
+                    pContext->Dr3,
+                    pContext->Dr6,
+                    pContext->Dr7,
+                    pContext->Rax,
+                    pContext->Rcx,
+                    pContext->Rdx,
+                    pContext->Rbx,
+                    pContext->Rsp,
+                    pContext->Rbp,
+                    pContext->Rsi,
+                    pContext->Rdi,
+                    pContext->R8,
+                    pContext->R9,
+                    pContext->R10,
+                    pContext->R11,
+                    pContext->R12,
+                    pContext->R13,
+                    pContext->R14,
+                    pContext->R15,
+                    pContext->Rip));
             DWORD contextFlags = pContext->ContextFlags;
             DWORD contextSize = pManagedEvent->SetThreadContextNeeded.size;
 
@@ -11242,7 +11266,7 @@ void CordbProcess::FilterClrNotification(
                 ThrowHR(hr);
             }
 
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextSize=%d InitContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextSize=%d InitContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%16.16llX pFrameContext=0x%16.16llX\n",
                 contextSize,
                 initContextSize,
                 pContext->ContextFlags,
@@ -11316,9 +11340,36 @@ void CordbProcess::FilterClrNotification(
             ////SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
 
             //LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0, fSuccess, GetLastError()));
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0));
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Set Thread Context - ID = 0x%X, HANDLE = 0x%16.16llX, SS enabled = %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0));
 
-            _ASSERTE(/*context.ContextFlags*/(CONTEXT_ALL|CONTEXT_XSTATE) == pContext->ContextFlags);
+            _ASSERTE(/*context.ContextFlags*/(CONTEXT_ALL|CONTEXT_XSTATE) == pFrameContext->ContextFlags);
+
+            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+                pFrameContext->ContextFlags,
+                pFrameContext->Dr0,
+                pFrameContext->Dr1,
+                pFrameContext->Dr2,
+                pFrameContext->Dr3,
+                pFrameContext->Dr6,
+                pFrameContext->Dr7,
+                pFrameContext->Rax,
+                pFrameContext->Rcx,
+                pFrameContext->Rdx,
+                pFrameContext->Rbx,
+                pFrameContext->Rsp,
+                pFrameContext->Rbp,
+                pFrameContext->Rsi,
+                pFrameContext->Rdi,
+                pFrameContext->R8,
+                pFrameContext->R9,
+                pFrameContext->R10,
+                pFrameContext->R11,
+                pFrameContext->R12,
+                pFrameContext->R13,
+                pFrameContext->R14,
+                pFrameContext->R15,
+                pFrameContext->Rip));
+
 
             DWORD previousSuspendCount = ::SuspendThread(hThread);
 
@@ -11574,6 +11625,9 @@ HRESULT CordbProcess::Filter(
             }
 
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
+        }
+        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT && !m_fIsInteropDebugging)
+        {
         }
 
     }

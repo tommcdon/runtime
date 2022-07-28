@@ -5526,6 +5526,32 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
     CONTRACTL_END;
 
+    LOG((LF_CORDB, LL_INFO10000, "D::FCNE                                  ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+        context->ContextFlags,
+        context->Dr0,
+        context->Dr1,
+        context->Dr2,
+        context->Dr3,
+        context->Dr6,
+        context->Dr7,
+        context->Rax,
+        context->Rcx,
+        context->Rdx,
+        context->Rbx,
+        context->Rsp,
+        context->Rbp,
+        context->Rsi,
+        context->Rdi,
+        context->R8,
+        context->R9,
+        context->R10,
+        context->R11,
+        context->R12,
+        context->R13,
+        context->R14,
+        context->R15,
+        context->Rip));
+
 
     // Ignore any notification exceptions sent from code:Debugger.SendRawEvent.
     // This is not a common case, but could happen in some cases described
@@ -16681,135 +16707,161 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
         pContextEx->Legacy.Length,
         pContextEx->XState.Length));
 
-#ifdef _DEBUG
-    // Known extended CPU state feature BITs
-    //
-    // 0    x87
-    // 1    SSE
-    // 2    AVX
-    // 3    BNDREGS (B0.LB-B3.LB B0.UB-B3.UB)
-    // 4    BNDCSR  (BNDCFGU + BNDSTATUS)       Persistent
-    // 5    KMASK   (KMASK [63:0][0-7])
-    // 6    ZMM_H   (ZMM_H[511:256][0-15])
-    // 7    ZMM     (ZMM[511:0][16-31])
-    // 8    IPT                                 Supervisor
-    // 10   PASID                               Supervisor
-    // 11   CET_U                               Supervisor
-    // 12   CET_S                               Supervisor (Cannot be used by NT! Only defined for SK intercept purposes!)
-    //
-    // 17   TILE_CONFIG
-    // 18   TILE_DATA                           XFD, Large
-    //
-    // 62   LWP                                 Persistent
-    //
-    // 63   RZ0                                 Reserved
-    //
+//#ifdef _DEBUG
+//    // Known extended CPU state feature BITs
+//    //
+//    // 0    x87
+//    // 1    SSE
+//    // 2    AVX
+//    // 3    BNDREGS (B0.LB-B3.LB B0.UB-B3.UB)
+//    // 4    BNDCSR  (BNDCFGU + BNDSTATUS)       Persistent
+//    // 5    KMASK   (KMASK [63:0][0-7])
+//    // 6    ZMM_H   (ZMM_H[511:256][0-15])
+//    // 7    ZMM     (ZMM[511:0][16-31])
+//    // 8    IPT                                 Supervisor
+//    // 10   PASID                               Supervisor
+//    // 11   CET_U                               Supervisor
+//    // 12   CET_S                               Supervisor (Cannot be used by NT! Only defined for SK intercept purposes!)
+//    //
+//    // 17   TILE_CONFIG
+//    // 18   TILE_DATA                           XFD, Large
+//    //
+//    // 62   LWP                                 Persistent
+//    //
+//    // 63   RZ0                                 Reserved
+//    //
+//
+//    DWORD64 feature = 0;
+//    if (g_pfnLocateXStateFeature != NULL)
+//    {
+//        for (int i = 0; i < 8; i++)
+//        {
+//            if (g_pfnLocateXStateFeature(context, i, NULL) != NULL)
+//            {
+//                feature |= 1ui64 << i;
+//                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
+//            }
+//        }
+//    }
+//#endif
 
-    DWORD64 feature = 0;
-    if (g_pfnLocateXStateFeature != NULL)
-    {
-        for (int i = 0; i < 8; i++)
-        {
-            if (g_pfnLocateXStateFeature(context, i, NULL) != NULL)
-            {
-                feature |= 1ui64 << i;
-                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
-            }
-        }
-    }
-#endif
+//#if 0
+//    DWORD contextFlags = context->ContextFlags;
+//    DWORD initContextSize = 0;
+//
+//    // The initialize call should fail but return contextSize
+//    BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
+//
+//    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+//
+//    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: InitializeContext ContextSize %d\n", initContextSize));
+//
+//    // Allocate the context
+//    //_ASSERTE(initContextSize == contextSize);
+//
+//    PVOID pBuffer = _alloca(initContextSize);
+//    PCONTEXT pFrameContext = NULL;
+//    success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
+//    if (!success)
+//    {
+//        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+//        _ASSERTE(!"InitializeContext failed");
+//
+//        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
+//        UnrecoverableError(hr,
+//            0,
+//            FILE_DEBUG,
+//            LINE_DEBUG,
+//            false);
+//
+//        return;
+//    }
+//
+//    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
+//        initContextSize,
+//        context->ContextFlags,
+//        CONTEXT_ALL | CONTEXT_XSTATE,
+//        pBuffer,
+//        pFrameContext));
+//
+//    _ASSERTE(pFrameContext->ContextFlags == contextFlags);
+//
+//    //if (g_pfnSetXStateFeaturesMask != NULL && feature != 0)
+//    //{
+//    //    success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
+//    //    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
+//    //    _ASSERTE(success);
+//    //}
+//
+//    success = CopyContext(pFrameContext, contextFlags, context);
+//    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
+//    if (!success)
+//    {
+//        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+//        _ASSERTE(!"CopyContext failed");
+//
+//        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from CopyContext (error: 0x%X [%d]).\n", hr, GetLastError()));
+//        UnrecoverableError(hr,
+//            0,
+//            FILE_DEBUG,
+//            LINE_DEBUG,
+//            false);
+//
+//        return;
+//    }
+//
+//#ifdef _DEBUG
+//    
+//    if (g_pfnLocateXStateFeature != NULL)
+//    {
+//        DWORD64 feature = 0;
+//        for (int i = 0; i < 8; i++)
+//        {
+//            if (g_pfnLocateXStateFeature(pFrameContext, i, NULL) != NULL)
+//            {
+//                feature |= 1ui64 << i;
+//                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
+//            }
+//        }
+//    }
+//    {
+//        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pFrameContext[1];
+//
+//        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+//            pFrameContext->ContextFlags,
+//            pContextEx->All.Length,
+//            pContextEx->Legacy.Length,
+//            pContextEx->XState.Length));
+//    }
+//#endif
+//
+//#endif // #if 0
 
-#if 0
-    DWORD contextFlags = context->ContextFlags;
-    DWORD initContextSize = 0;
-
-    // The initialize call should fail but return contextSize
-    BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
-
-    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
-
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: InitializeContext ContextSize %d\n", initContextSize));
-
-    // Allocate the context
-    //_ASSERTE(initContextSize == contextSize);
-
-    PVOID pBuffer = _alloca(initContextSize);
-    PCONTEXT pFrameContext = NULL;
-    success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
-    if (!success)
-    {
-        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-        _ASSERTE(!"InitializeContext failed");
-
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
-        UnrecoverableError(hr,
-            0,
-            FILE_DEBUG,
-            LINE_DEBUG,
-            false);
-
-        return;
-    }
-
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
-        initContextSize,
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN                                 ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
         context->ContextFlags,
-        CONTEXT_ALL | CONTEXT_XSTATE,
-        pBuffer,
-        pFrameContext));
-
-    _ASSERTE(pFrameContext->ContextFlags == contextFlags);
-
-    //if (g_pfnSetXStateFeaturesMask != NULL && feature != 0)
-    //{
-    //    success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
-    //    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-    //    _ASSERTE(success);
-    //}
-
-    success = CopyContext(pFrameContext, contextFlags, context);
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
-    if (!success)
-    {
-        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-        _ASSERTE(!"CopyContext failed");
-
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from CopyContext (error: 0x%X [%d]).\n", hr, GetLastError()));
-        UnrecoverableError(hr,
-            0,
-            FILE_DEBUG,
-            LINE_DEBUG,
-            false);
-
-        return;
-    }
-
-#ifdef _DEBUG
-    
-    if (g_pfnLocateXStateFeature != NULL)
-    {
-        DWORD64 feature = 0;
-        for (int i = 0; i < 8; i++)
-        {
-            if (g_pfnLocateXStateFeature(pFrameContext, i, NULL) != NULL)
-            {
-                feature |= 1ui64 << i;
-                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
-            }
-        }
-    }
-    {
-        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pFrameContext[1];
-
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
-            pFrameContext->ContextFlags,
-            pContextEx->All.Length,
-            pContextEx->Legacy.Length,
-            pContextEx->XState.Length));
-    }
-#endif
-
-#endif // #if 0
+        context->Dr0,
+        context->Dr1,
+        context->Dr2,
+        context->Dr3,
+        context->Dr6,
+        context->Dr7,
+        context->Rax,
+        context->Rcx,
+        context->Rdx,
+        context->Rbx,
+        context->Rsp,
+        context->Rbp,
+        context->Rsi,
+        context->Rdi,
+        context->R8,
+        context->R9,
+        context->R10,
+        context->R11,
+        context->R12,
+        context->R13,
+        context->R14,
+        context->R15,
+        context->Rip));
 
     DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
 
