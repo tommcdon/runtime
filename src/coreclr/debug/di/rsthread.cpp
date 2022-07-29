@@ -10841,7 +10841,7 @@ HRESULT CordbCodeEnum::Next(ULONG celt, ICorDebugCode *values[], ULONG *pceltFet
 }
 
 
-HRESULT CordbThread::CacheLiveContext(const EXCEPTION_RECORD * pRecord)
+HRESULT CordbThread::CacheLiveContext()
 {
     HRESULT hr;
     LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext\n"));
@@ -10993,8 +10993,6 @@ HRESULT CordbThread::CacheLiveContext(const EXCEPTION_RECORD * pRecord)
             m_pCachedContext->R14,
             m_pCachedContext->R15,
             m_pCachedContext->Rip));
-
-        HijackForFirstChanceException(m_pCachedContext, m_dwContextSize, pRecord);
     }
 
     return S_OK;
@@ -11011,31 +11009,31 @@ PCONTEXT CordbThread::GetCachedContext(DWORD *pContextSize)
         return NULL;
     }
 
-    LOG((LF_CORDB, LL_INFO10000, "RS RestoreAndClearCachedContext - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
-        m_pCachedContext->ContextFlags,
-        m_pCachedContext->Dr0,
-        m_pCachedContext->Dr1,
-        m_pCachedContext->Dr2,
-        m_pCachedContext->Dr3,
-        m_pCachedContext->Dr6,
-        m_pCachedContext->Dr7,
-        m_pCachedContext->Rax,
-        m_pCachedContext->Rcx,
-        m_pCachedContext->Rdx,
-        m_pCachedContext->Rbx,
-        m_pCachedContext->Rsp,
-        m_pCachedContext->Rbp,
-        m_pCachedContext->Rsi,
-        m_pCachedContext->Rdi,
-        m_pCachedContext->R8,
-        m_pCachedContext->R9,
-        m_pCachedContext->R10,
-        m_pCachedContext->R11,
-        m_pCachedContext->R12,
-        m_pCachedContext->R13,
-        m_pCachedContext->R14,
-        m_pCachedContext->R15,
-        m_pCachedContext->Rip));
+    //LOG((LF_CORDB, LL_INFO10000, "RS RestoreAndClearCachedContext - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+    //    m_pCachedContext->ContextFlags,
+    //    m_pCachedContext->Dr0,
+    //    m_pCachedContext->Dr1,
+    //    m_pCachedContext->Dr2,
+    //    m_pCachedContext->Dr3,
+    //    m_pCachedContext->Dr6,
+    //    m_pCachedContext->Dr7,
+    //    m_pCachedContext->Rax,
+    //    m_pCachedContext->Rcx,
+    //    m_pCachedContext->Rdx,
+    //    m_pCachedContext->Rbx,
+    //    m_pCachedContext->Rsp,
+    //    m_pCachedContext->Rbp,
+    //    m_pCachedContext->Rsi,
+    //    m_pCachedContext->Rdi,
+    //    m_pCachedContext->R8,
+    //    m_pCachedContext->R9,
+    //    m_pCachedContext->R10,
+    //    m_pCachedContext->R11,
+    //    m_pCachedContext->R12,
+    //    m_pCachedContext->R13,
+    //    m_pCachedContext->R14,
+    //    m_pCachedContext->R15,
+    //    m_pCachedContext->Rip));
 
     *pContextSize = m_dwContextSize;
     return m_pCachedContext;

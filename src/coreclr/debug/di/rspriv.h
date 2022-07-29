@@ -6342,7 +6342,7 @@ public:
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
 
-    HRESULT CacheLiveContext(const EXCEPTION_RECORD * pRecord);
+    HRESULT CacheLiveContext();
 
     PCONTEXT GetCachedContext(DWORD *pContextSize);
 

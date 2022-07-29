@@ -11385,12 +11385,12 @@ void CordbProcess::FilterClrNotification(
             //}
             //pFrameContext->Rip = pContext->Rip;
 
-            _ASSERTE(pFrameContext->Rcx = pCachedContext->Rcx);
-            _ASSERTE(pFrameContext->Rdx = pCachedContext->Rdx);
-            _ASSERTE(pFrameContext->R8 = pCachedContext->R8);
-            _ASSERTE(pFrameContext->R9 = pCachedContext->R9);
-            _ASSERTE(pFrameContext->Rsi = pCachedContext->Rsi);
-            _ASSERTE(pFrameContext->Rdi = pCachedContext->Rdi);
+            _ASSERTE(pFrameContext->Rcx == pCachedContext->Rcx);
+            _ASSERTE(pFrameContext->Rdx == pCachedContext->Rdx);
+            _ASSERTE(pFrameContext->R8 == pCachedContext->R8);
+            _ASSERTE(pFrameContext->R9 == pCachedContext->R9);
+            _ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
+            _ASSERTE(pFrameContext->Rdi == pCachedContext->Rdi);
             if (/*pFrameContext->Rip == pCachedContext->Rip && pFrameContext->Rsp == pCachedContext->Rsp*/(pContext->EFlags & 0x100) == 0)
             {
                 //LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Update RSI and RDI\n"));
@@ -11801,7 +11801,20 @@ HRESULT CordbProcess::Filter(
             CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
             if (pThread != NULL)
             {
-                pThread->CacheLiveContext(pRecord);
+                hr = pThread->CacheLiveContext();
+                IfFailThrow(hr);
+
+                DWORD dwContextSize;
+                PCONTEXT pContext = pThread->GetCachedContext(&dwContextSize);
+                if (pContext == NULL || dwContextSize < sizeof(T_CONTEXT))
+                {
+                    ThrowHR(E_UNEXPECTED);
+                }
+                if (pRecord->ExceptionCode == STATUS_BREAKPOINT)
+                {
+                    CORDbgAdjustPCForBreakInstruction((DT_CONTEXT*)pContext);
+                }
+                pThread->HijackForFirstChanceException(pContext, dwContextSize, pRecord);
             }
 
         }
