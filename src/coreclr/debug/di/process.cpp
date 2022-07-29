@@ -11141,24 +11141,7 @@ void CordbProcess::FilterClrNotification(
         }
         else if (pManagedEvent->type == DB_IPCE_SET_THREADCONTEXT_NEEDED)
         {
-            LOG((LF_CORDB, LL_INFO10000, "RS CordbProcess::FilterClrNotification - Got DB_IPCE_SET_THREADCONTEXT_NEEDED\n"));
-
-            // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
-            typedef struct _CONTEXT_CHUNK {
-                LONG Offset;
-                ULONG Length;
-            } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
-            typedef struct _CONTEXT_EX {
-                CONTEXT_CHUNK All;
-                CONTEXT_CHUNK Legacy;
-                CONTEXT_CHUNK XState;
-            } CONTEXT_EX, *PCONTEXT_EX;
-            
-//#define STACK_ALIGN_SHIFT   (4UL)
-//#define STACK_ALIGN         (1UI64 << STACK_ALIGN_SHIFT)
-//#define STACK_ROUND         (STACK_ALIGN - 1)
-//#define CONTEXT_ALIGN STACK_ALIGN
-//#define CONTEXT_LENGTH sizeof(CONTEXT)
+            LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Got DB_IPCE_SET_THREADCONTEXT_NEEDED\n"));
 
             DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
             PCONTEXT pContext = (PCONTEXT)_alloca(pManagedEvent->SetThreadContextNeeded.size);
@@ -11200,38 +11183,6 @@ void CordbProcess::FilterClrNotification(
             DWORD contextFlags = pContext->ContextFlags;
             DWORD contextSize = pManagedEvent->SetThreadContextNeeded.size;
 
-//#if 0
-////#ifdef TARGET_WINDOWS
-//            typedef BOOL(WINAPI* PINITIALIZECONTEXT2)(PVOID Buffer, DWORD ContextFlags, PCONTEXT* Context, PDWORD ContextLength, ULONG64 XStateCompactionMask);
-//            PINITIALIZECONTEXT2 pfnInitializeContext2 = NULL;
-//
-//            typedef PVOID (WINAPI *PLOCATEXSTATEFEATURE)(PCONTEXT Context, DWORD FeatureId, PDWORD Length);
-//            PLOCATEXSTATEFEATURE pfnLocateXStateFeature = NULL;
-//
-//            typedef BOOL (WINAPI *PSETXSTATEFEATURESMASK)(PCONTEXT Context, DWORD64 FeatureMask);
-//            PSETXSTATEFEATURESMASK pfnSetXStateFeaturesMask = NULL;
-//            HMODULE hm = GetModuleHandleW(_T("kernel32.dll"));
-//            if (hm != NULL)
-//            {
-//                pfnInitializeContext2 = (PINITIALIZECONTEXT2)GetProcAddress(hm, "InitializeContext2");
-//                pfnLocateXStateFeature = (PLOCATEXSTATEFEATURE)GetProcAddress(hm, "LocateXStateFeature");
-//                pfnSetXStateFeaturesMask = (PSETXSTATEFEATURESMASK)GetProcAddress(hm, "SetXStateFeaturesMask");
-//            }
-////#endif
-
-            //if (pfnLocateXStateFeature != NULL)
-            //{
-            //    DWORD64 feature = 0;
-            //    for (int i = 0; i < 8; i++)
-            //    {
-            //        if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
-            //        {
-            //            feature |= 1ui64 << i;
-            //            LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - LocateXStateFeature %d %8.8X\n", i, feature));
-            //        }
-            //    }
-            //}
-
             // The initialize call should fail but return contextSize
             DWORD initContextSize = 0;
             BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
@@ -11263,21 +11214,6 @@ void CordbProcess::FilterClrNotification(
 
             _ASSERTE(pFrameContext->ContextFlags == contextFlags);
 
-            //if (pfnSetXStateFeaturesMask != NULL && feature != 0)
-            //{
-            //    success = pfnSetXStateFeaturesMask(pFrameContext, feature);
-            //    LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-            //}
-
-            {
-                PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pContext[1];
-
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - pContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
-                    pContext->ContextFlags,
-                    pContextEx->All.Length,
-                    pContextEx->Legacy.Length,
-                    pContextEx->XState.Length));
-            }
             success = CopyContext(pFrameContext, contextFlags, pContext);
             LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
             if (!success)
@@ -11290,46 +11226,55 @@ void CordbProcess::FilterClrNotification(
                 ThrowHR(hr);
             }
 
-            {
-                PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pFrameContext[1];
-
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - pFrameContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
-                    pFrameContext->ContextFlags,
-                    pContextEx->All.Length,
-                    pContextEx->Legacy.Length,
-                    pContextEx->XState.Length));
-            }
-
-            //if (pfnLocateXStateFeature != NULL)
-            //{
-            //    DWORD64 feature = 0;
-            //    for (int i = 0; i < 8; i++)
-            //    {
-            //        if (pfnLocateXStateFeature(pContext, i, NULL) != NULL)
-            //        {
-            //            feature |= 1ui64 << i;
-            //            LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - LocateXStateFeature %d %8.8X\n", i, feature));
-            //        }
-            //    }
-            //}
-
-            //if (pfnSetXStateFeaturesMask != NULL && feature != 0)
-            //{
-            //    success = pfnSetXStateFeaturesMask(pFrameContext, feature);
-            //    LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-            //}
-//#endif
-
-            //CONTEXT context = { 0 };
-            ////memcpy(&context, &(pManagedEvent->SetThreadContextNeeded.context), sizeof(CONTEXT));
-            //fSuccess = CopyContext(&context, contextFlags, pContext);
-            ////context.ContextFlags = contextFlags/*CONTEXT_ALL *//*| CONTEXT_XSTATE*/;
-            ////SetXStateFeaturesMask(&context, XSTATE_MASK_AVX/*GetEnabledXStateFeatures()*/);
-
-            ////LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Set Thread Context - ID = 0x%X, HANDLE = 0x%llX, SS enabled = %d, fSuccess = %d %d\n", threadId,  (uint64_t)hThread, (pContext->EFlags & 0x100) != 0, fSuccess, GetLastError()));
             LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Set Thread Context - ID = 0x%X, SS enabled = %d\n", threadId,  /*(uint64_t)hThread,*/ (pContext->EFlags & 0x100) != 0));
 
-            //_ASSERTE(/*context.ContextFlags*/(CONTEXT_ALL|CONTEXT_XSTATE) == pFrameContext->ContextFlags);
+
+
+            //CordbThread *pThread = TryLookupThread(pManagedEvent->vmThread);
+            //if (pThread == NULL)
+            //{
+            //    LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Unexpected result from TryLookupThread\n"));
+            //    ThrowHR(E_UNEXPECTED);
+            //}
+
+            //DWORD size;
+            //PCONTEXT pCachedContext = pThread->GetCachedContext(&size);
+            //if (pCachedContext == NULL)
+            //{
+            //    LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Unexpected result from RestoreAndClearCachedContext\n"));
+            //    ThrowHR(E_UNEXPECTED);
+            //}
+
+
+            //_ASSERTE(pFrameContext->Rcx == pCachedContext->Rcx);
+            //_ASSERTE(pFrameContext->Rdx == pCachedContext->Rdx);
+            //_ASSERTE(pFrameContext->R8 == pCachedContext->R8);
+            //_ASSERTE(pFrameContext->R9 == pCachedContext->R9);
+            //_ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
+            //_ASSERTE(pFrameContext->Rdi == pCachedContext->Rdi);
+            //if (/*pFrameContext->Rip == pCachedContext->Rip && pFrameContext->Rsp == pCachedContext->Rsp*/(pContext->EFlags & 0x100) == 0)
+            //{
+            //    //LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Update RSI and RDI\n"));
+            //    //pFrameContext->Rsi = pCachedContext->Rsi;
+            //    //pFrameContext->Rdi = pCachedContext->Rdi;
+
+            //    //_ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
+            //    //_ASSERTE(pFrameContext->Rdi == pCachedContext->Rdi);
+            //    //_ASSERTE(pFrameContext->Rsp == pCachedContext->Rsp);
+            //    //_ASSERTE(pFrameContext->Rbp == pCachedContext->Rbp);
+            //    //_ASSERTE(pFrameContext->Rax == pCachedContext->Rax);
+            //    //_ASSERTE(pFrameContext->Rbx == pCachedContext->Rbx);
+            //    //_ASSERTE(pFrameContext->Rcx == pCachedContext->Rcx);
+            //    //_ASSERTE(pFrameContext->Rdx == pCachedContext->Rdx);
+            //    //_ASSERTE(pFrameContext->R8 == pCachedContext->R8);
+            //    //_ASSERTE(pFrameContext->R9 == pCachedContext->R9);
+            //    //_ASSERTE(pFrameContext->R10 == pCachedContext->R10);
+            //    //_ASSERTE(pFrameContext->R11 == pCachedContext->R11);
+            //    //_ASSERTE(pFrameContext->R12 == pCachedContext->R12);
+            //    //_ASSERTE(pFrameContext->R13 == pCachedContext->R13);
+            //    //_ASSERTE(pFrameContext->R14 == pCachedContext->R14);
+            //    //_ASSERTE(pFrameContext->R15 == pCachedContext->R15);
+            //}
 
             //LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
             //    pFrameContext->ContextFlags,
@@ -11356,104 +11301,6 @@ void CordbProcess::FilterClrNotification(
             //    pFrameContext->R14,
             //    pFrameContext->R15,
             //    pFrameContext->Rip));
-
-
-
-            CordbThread *pThread = TryLookupThread(pManagedEvent->vmThread);
-            if (pThread == NULL)
-            {
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Unexpected result from TryLookupThread\n"));
-                ThrowHR(E_UNEXPECTED);
-            }
-
-            DWORD size;
-            PCONTEXT pCachedContext = pThread->GetCachedContext(&size);
-            if (pCachedContext == NULL)
-            {
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Unexpected result from RestoreAndClearCachedContext\n"));
-                ThrowHR(E_UNEXPECTED);
-            }
-
-            //if ((pContext->EFlags & 0x100) != 0)
-            //{
-            //    //SetSSFlag(&pFrameContext);
-            //    pFrameContext->EFlags |= 0x100;
-            //}
-            //else
-            //{
-            //    pFrameContext->EFlags &= ~0x100;
-            //}
-            //pFrameContext->Rip = pContext->Rip;
-
-            _ASSERTE(pFrameContext->Rcx == pCachedContext->Rcx);
-            _ASSERTE(pFrameContext->Rdx == pCachedContext->Rdx);
-            _ASSERTE(pFrameContext->R8 == pCachedContext->R8);
-            _ASSERTE(pFrameContext->R9 == pCachedContext->R9);
-            _ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
-            _ASSERTE(pFrameContext->Rdi == pCachedContext->Rdi);
-            if (/*pFrameContext->Rip == pCachedContext->Rip && pFrameContext->Rsp == pCachedContext->Rsp*/(pContext->EFlags & 0x100) == 0)
-            {
-                //LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Update RSI and RDI\n"));
-                //pFrameContext->Rsi = pCachedContext->Rsi;
-                //pFrameContext->Rdi = pCachedContext->Rdi;
-
-                //_ASSERTE(pFrameContext->Rsi == pCachedContext->Rsi);
-                //_ASSERTE(pFrameContext->Rdi == pCachedContext->Rdi);
-                //_ASSERTE(pFrameContext->Rsp == pCachedContext->Rsp);
-                //_ASSERTE(pFrameContext->Rbp == pCachedContext->Rbp);
-                //_ASSERTE(pFrameContext->Rax == pCachedContext->Rax);
-                //_ASSERTE(pFrameContext->Rbx == pCachedContext->Rbx);
-                //_ASSERTE(pFrameContext->Rcx == pCachedContext->Rcx);
-                //_ASSERTE(pFrameContext->Rdx == pCachedContext->Rdx);
-                //_ASSERTE(pFrameContext->R8 == pCachedContext->R8);
-                //_ASSERTE(pFrameContext->R9 == pCachedContext->R9);
-                //_ASSERTE(pFrameContext->R10 == pCachedContext->R10);
-                //_ASSERTE(pFrameContext->R11 == pCachedContext->R11);
-                //_ASSERTE(pFrameContext->R12 == pCachedContext->R12);
-                //_ASSERTE(pFrameContext->R13 == pCachedContext->R13);
-                //_ASSERTE(pFrameContext->R14 == pCachedContext->R14);
-                //_ASSERTE(pFrameContext->R15 == pCachedContext->R15);
-            }
-
-            LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
-                pFrameContext->ContextFlags,
-                pFrameContext->Dr0,
-                pFrameContext->Dr1,
-                pFrameContext->Dr2,
-                pFrameContext->Dr3,
-                pFrameContext->Dr6,
-                pFrameContext->Dr7,
-                pFrameContext->Rax,
-                pFrameContext->Rcx,
-                pFrameContext->Rdx,
-                pFrameContext->Rbx,
-                pFrameContext->Rsp,
-                pFrameContext->Rbp,
-                pFrameContext->Rsi,
-                pFrameContext->Rdi,
-                pFrameContext->R8,
-                pFrameContext->R9,
-                pFrameContext->R10,
-                pFrameContext->R11,
-                pFrameContext->R12,
-                pFrameContext->R13,
-                pFrameContext->R14,
-                pFrameContext->R15,
-                pFrameContext->Rip));
-
-            
-            
-            //BOOL fSuccess;
-            //HANDLE hThread = NULL;
-            //fSuccess = DuplicateHandle(UnsafeGetProcessHandle(),
-            //                GetDAC()->GetThreadHandle(pManagedEvent->vmThread),
-            //                GetCurrentProcess(),
-            //                &hThread,
-            //                NULL,
-            //                FALSE,
-            //                DUPLICATE_SAME_ACCESS);
-
-            //_ASSERTE(fSuccess);
 
             HandleHolder hThread = OpenThread(
                 THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_QUERY_INFORMATION | THREAD_SUSPEND_RESUME,
@@ -11494,69 +11341,6 @@ void CordbProcess::FilterClrNotification(
                     }
                 }
             }
-
-
-            //DWORD previousSuspendCount = ::SuspendThread(hThread);
-
-            //DWORD lastError = 0;
-            //fSuccess = ::SetThreadContext(hThread, pFrameContext);
-            //if (!fSuccess)
-            //{
-            //    lastError = ::GetLastError();
-            //}
-
-            //LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=%d hr=0x%X\n", previousSuspendCount, fSuccess, lastError, HRESULT_FROM_WIN32(lastError)));
-
-            ////pThread->ResetCachedContext();
-
-            //fSuccess = ::ResumeThread(hThread) == previousSuspendCount + 1;
-            //_ASSERTE(fSuccess);
-
-            //::Sleep(5000);
-
-            //LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Set Thread Context Sleep done\n"));
-        }
-        else if (pManagedEvent->type == DB_IPCE_SET_THREADCONTEXT_NEEDED2)
-        {
-            DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
-            CordbThread *pThread = TryLookupThread(pManagedEvent->vmThread);
-            if (pThread == NULL)
-            {
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED2 - Unexpected result from TryLookupThread\n"));
-                ThrowHR(E_UNEXPECTED);
-            }
-
-            DWORD size;
-            PCONTEXT pCachedContext = pThread->GetCachedContext(&size);
-            _ASSERTE(size == pManagedEvent->SetThreadContextNeeded2.contextSize);
-
-            //PCONTEXT pContext = (PCONTEXT)_alloca(size);
-            HRESULT hr = GetDAC()->WriteData(
-                pManagedEvent->SetThreadContextNeeded2.pContext,
-                size,
-                (BYTE*)pCachedContext);
-            if (FAILED(hr))
-            {
-                _ASSERTE(!"WriteData failed");
-
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED2 - Unexpected result from WriteData (error: 0x%X).\n", hr));
-
-                ThrowHR(hr);
-            }
-
-            hr = GetDAC()->WriteData(
-                pManagedEvent->SetThreadContextNeeded2.pExceptionRecord,
-                sizeof(EXCEPTION_RECORD),
-                (BYTE*)pCachedContext);
-            if (FAILED(hr))
-            {
-                _ASSERTE(!"WriteData failed");
-
-                LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED2 - Unexpected result from WriteData (error: 0x%X).\n", hr));
-
-                ThrowHR(hr);
-            }
-
         }
         else
         {
@@ -11796,6 +11580,7 @@ HRESULT CordbProcess::Filter(
 
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
         }
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
         else if (dwFirstChance && (pRecord->ExceptionCode == STATUS_BREAKPOINT || pRecord->ExceptionCode == STATUS_SINGLE_STEP))
         {
             CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
@@ -11818,7 +11603,7 @@ HRESULT CordbProcess::Filter(
             }
 
         }
-
+#endif
     }
     PUBLIC_API_END(hr);
     // we may not find the correct mscordacwks so fail gracefully

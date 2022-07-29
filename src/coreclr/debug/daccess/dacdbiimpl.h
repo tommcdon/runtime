@@ -855,8 +855,7 @@ public:
         T_CONTEXT *                  pOriginalContext,
         ULONG32                      cbSizeContext,
         EHijackReason::EHijackReason reason,
-        void *                       pUserData,
-        CORDB_ADDRESS *              pRemoteContextAddr);
+        void *                       pUserData);
 
     // Return the filter CONTEXT on the LS.
     VMPTR_CONTEXT GetManagedStoppedContext(VMPTR_Thread vmThread);

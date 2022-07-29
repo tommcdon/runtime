@@ -5392,19 +5392,13 @@ void DacDbiInterfaceImpl::Hijack2(
     T_CONTEXT *                  pOriginalContext,
     ULONG32                      cbSizeContext,
     EHijackReason::EHijackReason reason,
-    void *                       pUserData,
-    CORDB_ADDRESS *              pRemoteContextAddr)
+    void *                       pUserData)
 {
     DD_ENTER_MAY_THROW;
 
-    HRESULT hr;
-
     _ASSERTE(EHijackReason::IsValid(reason));
 
-    //TODO also only supported on windows amd64
-#ifdef TARGET_UNIX 
-    _ASSERTE(!"Not supported on this platform");
-#endif
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
 
     Thread* pThread = NULL;
     if(!vmThread.IsNull())
@@ -5414,76 +5408,31 @@ void DacDbiInterfaceImpl::Hijack2(
     }
 
     TADDR pfnHijackFunction = GetHijackAddress();
-    
+
     //
     // Setup context for hijack
     //
-
-    // The initialize call should fail but return contextSize
-    DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
-    DWORD initContextSize = 0;
-    BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
-
-    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
-
-    LOG((LF_CORDB, LL_INFO10000, "RS Hijack2 -  InitializeContext ContextSize %d\n", initContextSize));
-
-    BYTE* pBuffer =  new (nothrow) BYTE[initContextSize];
-    if (pBuffer == NULL)
-    {
-        ThrowHR(E_OUTOFMEMORY);
-    }
-    PCONTEXT pFrameContext = NULL;
-    success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
-    if (!success)
-    {
-        hr = HRESULT_FROM_WIN32(GetLastError());
-        _ASSERTE(!"InitializeContext failed");
-
-        LOG((LF_CORDB, LL_INFO10000, "RS Hijack2 -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
-
-        ThrowHR(hr);
-    }
-
-    success = CopyContext(pFrameContext, contextFlags, pOriginalContext);
-    LOG((LF_CORDB, LL_INFO10000, "RS Hijack2 - CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
-    if (!success)
-    {
-        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-        _ASSERTE(!"CopyContext failed");
-
-        LOG((LF_CORDB, LL_INFO10000, "RS Hijack2 - Unexpected result from CopyContext (error: 0x%X [%d]).\n", hr, GetLastError()));
-
-        ThrowHR(hr);
-    }
+    T_CONTEXT ctx;
+    HRESULT hr = m_pTarget->GetThreadContext(
+        dwThreadId,
+        CONTEXT_FULL,
+        sizeof(ctx),
+        (BYTE*) &ctx);
+    IfFailThrow(hr);
 
     // Push pointers
     void* espContext = NULL;
     void* espRecord = NULL;
     const void* pData = pUserData;
 
-    CORDB_ADDRESS esp = GetSP(pFrameContext);
+    CORDB_ADDRESS esp = GetSP(&ctx);
 
 
     // Push on full Context and ExceptionRecord structures. We'll then push pointers to these,
     // and those pointers will serve as the actual args to the function.
     espContext = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, (BYTE*)pOriginalContext, cbSizeContext, TRUE));
+    espRecord  = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, pRecord, TRUE));
 
-    // If caller didn't pass an exception-record, then we're not being hijacked at an exception.
-    // We'll just pass NULL for the exception-record to the Hijack function.
-    if (pRecord != NULL)
-    {
-        espRecord  = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, pRecord, TRUE));
-    }
-
-    //if(pRemoteContextAddr != NULL)
-    //{
-    //    *pRemoteContextAddr = PTR_TO_CORDB_ADDRESS(espContext);
-    //}
-
-    //
-    // Push args onto the stack to be able to call the hijack function
-    //
 
     // Prototype of hijack is:
     //     void __stdcall ExceptionHijackWorker(CONTEXT * pContext, EXCEPTION_RECORD * pRecord, EHijackReason, void * pData)
@@ -5492,67 +5441,33 @@ void DacDbiInterfaceImpl::Hijack2(
     // Regarding stack overflow: We could do an explicit check against the thread's stack base limit.
     // However, we don't need an explicit overflow check because if the stack does overflow,
     // the hijack will just hit a regular stack-overflow exception.
-#if defined(TARGET_X86)  // TARGET
-    // X86 calling convention is to push args on the stack in reverse order.
-    // If we fail here, the stack is written, but esp hasn't been committed yet so it shouldn't matter.
-    PushHelper(&esp, &pData, TRUE);
-    PushHelper(&esp, &reason, TRUE);
-    PushHelper(&esp, &espRecord, TRUE);
-    PushHelper(&esp, &espContext, TRUE);
-#elif defined (TARGET_AMD64) // TARGET
+
     // AMD64 calling convention is to place first 4 parameters in: rcx, rdx, r8 and r9
-    pFrameContext->Rcx = (DWORD64) espContext;
-    pFrameContext->Rdx = (DWORD64) espRecord;
-    pFrameContext->R8  = (DWORD64) reason;
-    pFrameContext->R9  = (DWORD64) pData;
+    ctx.Rcx = (DWORD64) espContext;
+    ctx.Rdx = (DWORD64) espRecord;
+    ctx.R8  = (DWORD64) reason;
+    ctx.R9  = (DWORD64) pData;
 
     // Caller must allocate stack space to spill for args.
     // Push the arguments onto the outgoing argument homes.
     // Make sure we push pointer-sized values to keep the stack aligned.
-    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(pFrameContext->R9)), FALSE);
-    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(pFrameContext->R8)), FALSE);
-    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(pFrameContext->Rdx)), FALSE);
-    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(pFrameContext->Rcx)), FALSE);
-#elif defined(TARGET_ARM)
-    pFrameContext->R0 = (DWORD)espContext;
-    pFrameContext->R1 = (DWORD)espRecord;
-    pFrameContext->R2 = (DWORD)reason;
-    pFrameContext->R3 = (DWORD)pData;
-#elif defined(TARGET_ARM64)
-    pFrameContext->X0 = (DWORD64)espContext;
-    pFrameContext->X1 = (DWORD64)espRecord;
-    pFrameContext->X2 = (DWORD64)reason;
-    ctx.X3 = (DWORD64)pData;
-#else
-    PORTABILITY_ASSERT("Hijack2 is not implemented on this platform.");
-#endif
-    SetSP(pFrameContext, CORDB_ADDRESS_TO_TADDR(esp));
+    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(ctx.R9)), FALSE);
+    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(ctx.R8)), FALSE);
+    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(ctx.Rdx)), FALSE);
+    PushHelper(&esp, reinterpret_cast<SIZE_T *>(&(ctx.Rcx)), FALSE);
 
-    // @dbgtodo  cross-plat - not cross-platform safe
-    SetIP(pFrameContext, pfnHijackFunction);
+    SetSP(&ctx, CORDB_ADDRESS_TO_TADDR(esp));
+
+    SetIP(&ctx, pfnHijackFunction);
 
     //
     // Commit the context.
     //
-    //hr = m_pMutableTarget->SetThreadContext(dwThreadId, initContextSize, pFrameContext);
-    //IfFailThrow(hr);
-    HandleHolder hThread = OpenThread(
-        THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_QUERY_INFORMATION,
-        FALSE, // thread handle is not inheritable.
-        dwThreadId);
-
-    if (hThread != NULL)
-    {
-        DWORD lastError = 0;
-        success = ::SetThreadContext(hThread, pFrameContext);
-        if (!success)
-        {
-            lastError = ::GetLastError();
-        }
-
-        LOG((LF_CORDB, LL_INFO10000, "RS Hijack2 - Set Thread Context Completed: prevSuspendCount=%d SetThreadContext=%d GetLastError=%d hr=0x%X\n", previousSuspendCount, fSuccess, lastError, HRESULT_FROM_WIN32(lastError)));
-        _ASSERTE(success);
-    }
+    hr = m_pMutableTarget->SetThreadContext(dwThreadId, sizeof(ctx), reinterpret_cast<BYTE*> (&ctx));
+    IfFailThrow(hr);
+#else
+    ThrowHR(E_NOTIMPL);
+#endif
 }
 
 // Return the filter CONTEXT on the LS.

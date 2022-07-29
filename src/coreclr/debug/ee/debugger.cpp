@@ -13162,18 +13162,13 @@ void STDCALL ExceptionHijackWorker(
     void * pData)
 {
     STRESS_LOG0(LF_CORDB,LL_INFO100, "D::EHW: Enter ExceptionHijackWorker\n");
-    ::Sleep(1000);
 
     // We could have many different reasons for hijacking. Switch and invoke the proper hijacker.
     switch(reason)
     {
     case EHijackReason::kFirstChanceException:
         STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->FirstChanceExceptionWorker()\n");
-        ::Sleep(1000);
         g_pDebugger->FirstChanceExceptionWorker(pContext, pRecord, pData);
-        STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Nope!!!!!!!!!!!!\n");
-        ::Sleep(1000);
-        __debugbreak();
         break;
     case EHijackReason::kUnhandledException:
         STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
@@ -13461,24 +13456,6 @@ void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD
 
         LOG((LF_CORDB, LL_INFO10000, "D::FirstChanceExceptionWorker Got the thread. ContextSize=%d\n", contextSize));
 
-        //DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
-
-        //// Send a DB_IPCE_SET_THREADCONTEXT_NEEDED2 event to the Right Side
-        //InitIPCEvent(ipce,
-        //    DB_IPCE_SET_THREADCONTEXT_NEEDED2,
-        //    pThread,
-        //    pThread->GetDomain());
-
-        //PCONTEXT pContext = (PCONTEXT)malloc(contextSize);
-        //memset(pContext, 0, contextSize);
-        //EXCEPTION_RECORD exceptionRecord = { 0 };
-
-        //ipce->SetThreadContextNeeded2.pContext = (TADDR)pContext;
-        //ipce->SetThreadContextNeeded2.contextSize = contextSize;
-        //ipce->SetThreadContextNeeded2.pExceptionRecord = (TADDR)&exceptionRecord;
-
-        //g_pDebugger->SendRawEvent(ipce);
-
         // context and exception records should be populated
         _ASSERTE(pContext->ContextFlags != 0);
         _ASSERTE(pRecord->ExceptionCode != 0);
@@ -13503,12 +13480,12 @@ void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD
 
         LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: ExceptionCode = %8.8X\n", pRecord->ExceptionCode));
 
-        bool okay;
-        okay = g_pDebugger->FirstChanceNativeException(pRecord,
+        bool fFirstChanceNativeExceptionSucceeded;
+        fFirstChanceNativeExceptionSucceeded = g_pDebugger->FirstChanceNativeException(pRecord,
             pContext,
             pRecord->ExceptionCode,
             pThread);
-        _ASSERTE(okay == true);
+        _ASSERTE(fFirstChanceNativeExceptionSucceeded == true);
         LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: FirstChanceNativeException returned\n"));
     }
     EX_CATCH

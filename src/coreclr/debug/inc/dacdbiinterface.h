@@ -943,8 +943,7 @@ public:
         T_CONTEXT *                    pOriginalContext,
         ULONG32                      cbSizeContext,
         EHijackReason::EHijackReason reason,
-        void *                       pUserData,
-        CORDB_ADDRESS *              pRemoteContextAddr) = 0;
+        void *                       pUserData) = 0;
 
     //
     // Callback function for connection enumeration.

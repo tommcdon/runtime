@@ -483,11 +483,13 @@ void CordbThread::HijackForFirstChanceException(PCONTEXT pContext, DWORD dwSize,
     }
     CONTRACTL_END;
 
-    //_ASSERTE(m_pExceptionRecord != NULL);
+    _ASSERTE(pContext != NULL);
+    _ASSERTE(dwSize >= sizeof(CONTEXT));
+    _ASSERTE(pRecord != NULL);
 
+ #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
     ULONG32 dwThreadId = GetVolatileOSThreadID();
 
-    CORDB_ADDRESS LSContextAddr;
     GetProcess()->GetDAC()->Hijack2(
             m_vmThreadToken,
             dwThreadId,
@@ -495,10 +497,12 @@ void CordbThread::HijackForFirstChanceException(PCONTEXT pContext, DWORD dwSize,
             pContext,
             dwSize,
             EHijackReason::kFirstChanceException,
-            reinterpret_cast<void*>((uintptr_t)dwSize),
-            &LSContextAddr);
+            reinterpret_cast<void*>((uintptr_t)dwSize));
 
     GetProcess()->ContinueStatusChanged(dwThreadId, DBG_CONTINUE);
+#else
+    ThrowHR(E_NOTIMPL);
+#endif
 }
 
 
