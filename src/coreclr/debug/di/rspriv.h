@@ -6342,11 +6342,13 @@ public:
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
 
-    HRESULT CacheLiveContext();
+    HRESULT CacheLiveContext(const EXCEPTION_RECORD * pRecord);
 
-    PCONTEXT GetCachedContext();
+    PCONTEXT GetCachedContext(DWORD *pContextSize);
 
     HRESULT ResetCachedContext();
+
+    void HijackForFirstChanceException(PCONTEXT pContext, DWORD dwSize, const EXCEPTION_RECORD * pRecord);
 
 private:
     void ClearStackFrameCache();
@@ -6381,6 +6383,7 @@ private:
     HANDLE                m_hCachedOutOfProcThread;
 
     PCONTEXT              m_pCachedContext;
+    DWORD                 m_dwContextSize;
 };
 
 /* ------------------------------------------------------------------------- *

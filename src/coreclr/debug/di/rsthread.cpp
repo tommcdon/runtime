@@ -85,7 +85,8 @@ CordbThread::CordbThread(CordbProcess * pProcess, VMPTR_Thread vmThread) :
     m_userState(kInvalidUserState),
     m_hCachedThread(INVALID_HANDLE_VALUE),
     m_hCachedOutOfProcThread(INVALID_HANDLE_VALUE),
-    m_pCachedContext(NULL)
+    m_pCachedContext(NULL),
+    m_dwContextSize(0)
 {
     m_fHasUnhandledException = FALSE;
     m_pExceptionRecord = NULL;
@@ -471,6 +472,32 @@ void CordbThread::HijackForUnhandledException()
 
     // Notify debugger to clear the exception.
     // This will invoke the data-target.
+    GetProcess()->ContinueStatusChanged(dwThreadId, DBG_CONTINUE);
+}
+
+void CordbThread::HijackForFirstChanceException(PCONTEXT pContext, DWORD dwSize, const EXCEPTION_RECORD * pRecord)
+{
+    CONTRACTL
+    {
+        THROWS;
+    }
+    CONTRACTL_END;
+
+    //_ASSERTE(m_pExceptionRecord != NULL);
+
+    ULONG32 dwThreadId = GetVolatileOSThreadID();
+
+    CORDB_ADDRESS LSContextAddr;
+    GetProcess()->GetDAC()->Hijack2(
+            m_vmThreadToken,
+            dwThreadId,
+            pRecord,
+            pContext,
+            dwSize,
+            EHijackReason::kFirstChanceException,
+            reinterpret_cast<void*>((uintptr_t)dwSize),
+            &LSContextAddr);
+
     GetProcess()->ContinueStatusChanged(dwThreadId, DBG_CONTINUE);
 }
 
@@ -10814,7 +10841,7 @@ HRESULT CordbCodeEnum::Next(ULONG celt, ICorDebugCode *values[], ULONG *pceltFet
 }
 
 
-HRESULT CordbThread::CacheLiveContext()
+HRESULT CordbThread::CacheLiveContext(const EXCEPTION_RECORD * pRecord)
 {
     HRESULT hr;
     LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext\n"));
@@ -10826,12 +10853,13 @@ HRESULT CordbThread::CacheLiveContext()
     //    return E_UNEXPECTED;
     //}
 
+    BOOL success;
+    DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
     if (m_pCachedContext == NULL)
     {
-        // The initialize call should fail but return contextSize
         DWORD initContextSize = 0;
-        DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
-        BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
+        // The initialize call should fail but return contextSize
+        success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
 
         _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
 
@@ -10862,7 +10890,10 @@ HRESULT CordbThread::CacheLiveContext()
             pFrameContext));
 
         m_pCachedContext = pFrameContext;
+        m_dwContextSize = initContextSize;
     }
+
+    //m_CachedExceptionRecord = *pRecord;
 
     //HANDLE hThreadHandle = m_hCachedThread;
     //if (hThreadHandle == INVALID_HANDLE_VALUE)
@@ -10871,70 +10902,108 @@ HRESULT CordbThread::CacheLiveContext()
     //    return CORDBG_E_THREAD_NOT_SCHEDULED;
     //}
 
-    BOOL fSuccess;
-    HANDLE hThread = NULL;
-    fSuccess = DuplicateHandle(GetProcess()->UnsafeGetProcessHandle(),
-                    GetProcess()->GetDAC()->GetThreadHandle(m_vmThreadToken),
-                    GetCurrentProcess(),
-                    &hThread,
-                    NULL,
-                    FALSE,
-                    DUPLICATE_SAME_ACCESS);
+    //BOOL fSuccess;
+    //HANDLE hThread = NULL;
+    //fSuccess = DuplicateHandle(GetProcess()->UnsafeGetProcessHandle(),
+    //                GetProcess()->GetDAC()->GetThreadHandle(m_vmThreadToken),
+    //                GetCurrentProcess(),
+    //                &hThread,
+    //                NULL,
+    //                FALSE,
+    //                DUPLICATE_SAME_ACCESS);
 
-    _ASSERTE(fSuccess);
+    //_ASSERTE(fSuccess);
+    HandleHolder hThread = OpenThread(
+        THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_QUERY_INFORMATION | THREAD_SUSPEND_RESUME,
+        FALSE, // thread handle is not inheritable.
+        m_dwUniqueID);
 
-    DWORD previousSuspendCount = ::SuspendThread(hThread);
-
-    m_pCachedContext->ContextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
-
-    fSuccess = ::GetThreadContext(hThread, m_pCachedContext);
-    if (!fSuccess)
+    if (hThread != NULL)
     {
-        hr = HRESULT_FROM_WIN32(GetLastError());
+        DWORD initContextSize = m_dwContextSize;
+        memset(m_pCachedContext, 0, m_dwContextSize);
+        m_pCachedContext->ContextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
+        PCONTEXT pFrameContext = NULL;
+        BYTE* pBuffer = (BYTE*)m_pCachedContext;
+        success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
+        if (!success || (BYTE*)pFrameContext != pBuffer || initContextSize < m_dwContextSize)
+        {
+            hr = HRESULT_FROM_WIN32(GetLastError());
+            _ASSERTE(!"InitializeContext failed");
 
-        LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext - GetThreadContext failed with %8.8X\n", hr));
+            LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
 
-        return hr;
+            return hr;
+        }
+
+        DWORD previousSuspendCount = ::SuspendThread(hThread);
+        if (previousSuspendCount == (DWORD)-1)
+        {
+            LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Unexpected result from SuspendThread\n"));
+            ThrowHR(HRESULT_FROM_GetLastError());
+        }
+        else
+        {
+            DWORD lastError = 0;
+            success = ::GetThreadContext(hThread, m_pCachedContext);
+            if (!success)
+            {
+                lastError = ::GetLastError();
+            }
+
+            LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext - Get Thread Context Completed: Success=%d GetLastError=%d hr=0x%X\n", success, lastError, HRESULT_FROM_WIN32(lastError)));
+            _ASSERTE(success);
+
+            DWORD suspendCount = ::ResumeThread(hThread);
+            if (suspendCount == (DWORD)-1)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext - Unexpected result from ResumeThread\n"));
+                ThrowHR(HRESULT_FROM_GetLastError());
+            }
+
+            if (!success)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext - Unexpected result from GetThreadContext\n"));
+                ThrowHR(HRESULT_FROM_WIN32(lastError));
+            }
+        }
+
+        LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext - ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+            m_pCachedContext->ContextFlags,
+            m_pCachedContext->Dr0,
+            m_pCachedContext->Dr1,
+            m_pCachedContext->Dr2,
+            m_pCachedContext->Dr3,
+            m_pCachedContext->Dr6,
+            m_pCachedContext->Dr7,
+            m_pCachedContext->Rax,
+            m_pCachedContext->Rcx,
+            m_pCachedContext->Rdx,
+            m_pCachedContext->Rbx,
+            m_pCachedContext->Rsp,
+            m_pCachedContext->Rbp,
+            m_pCachedContext->Rsi,
+            m_pCachedContext->Rdi,
+            m_pCachedContext->R8,
+            m_pCachedContext->R9,
+            m_pCachedContext->R10,
+            m_pCachedContext->R11,
+            m_pCachedContext->R12,
+            m_pCachedContext->R13,
+            m_pCachedContext->R14,
+            m_pCachedContext->R15,
+            m_pCachedContext->Rip));
+
+        HijackForFirstChanceException(m_pCachedContext, m_dwContextSize, pRecord);
     }
-
-    LOG((LF_CORDB, LL_INFO10000, "RS CacheLiveContext - Thread=%8.8X ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
-        hThread,
-        m_pCachedContext->ContextFlags,
-        m_pCachedContext->Dr0,
-        m_pCachedContext->Dr1,
-        m_pCachedContext->Dr2,
-        m_pCachedContext->Dr3,
-        m_pCachedContext->Dr6,
-        m_pCachedContext->Dr7,
-        m_pCachedContext->Rax,
-        m_pCachedContext->Rcx,
-        m_pCachedContext->Rdx,
-        m_pCachedContext->Rbx,
-        m_pCachedContext->Rsp,
-        m_pCachedContext->Rbp,
-        m_pCachedContext->Rsi,
-        m_pCachedContext->Rdi,
-        m_pCachedContext->R8,
-        m_pCachedContext->R9,
-        m_pCachedContext->R10,
-        m_pCachedContext->R11,
-        m_pCachedContext->R12,
-        m_pCachedContext->R13,
-        m_pCachedContext->R14,
-        m_pCachedContext->R15,
-        m_pCachedContext->Rip));
-
-    
-    fSuccess = ::ResumeThread(hThread) == previousSuspendCount + 1;
-    _ASSERTE(fSuccess);
-
 
     return S_OK;
 }
 
-PCONTEXT CordbThread::GetCachedContext()
+PCONTEXT CordbThread::GetCachedContext(DWORD *pContextSize)
 {
     LOG((LF_CORDB, LL_INFO10000, "RS RestoreAndClearCachedContext\n"));
+    _ASSERTE(pContextSize != NULL);
     if (m_pCachedContext == NULL || m_pCachedContext->ContextFlags == 0)
     {
         LOG((LF_CORDB, LL_INFO10000, "RS RestoreAndClearCachedContext -  Unexpected m_pCachedContext=%16.16llX\n", m_pCachedContext));
@@ -10968,6 +11037,7 @@ PCONTEXT CordbThread::GetCachedContext()
         m_pCachedContext->R15,
         m_pCachedContext->Rip));
 
+    *pContextSize = m_dwContextSize;
     return m_pCachedContext;
 }
 

@@ -934,6 +934,17 @@ public:
         void *                       pUserData,
         CORDB_ADDRESS *              pRemoteContextAddr) = 0;
 
+    
+    virtual
+    void Hijack2(
+        VMPTR_Thread                 vmThread,
+        ULONG32                      dwThreadId,
+        const EXCEPTION_RECORD *     pRecord,
+        T_CONTEXT *                    pOriginalContext,
+        ULONG32                      cbSizeContext,
+        EHijackReason::EHijackReason reason,
+        void *                       pUserData,
+        CORDB_ADDRESS *              pRemoteContextAddr) = 0;
 
     //
     // Callback function for connection enumeration.
@@ -2748,7 +2759,10 @@ public:
     HRESULT IsModuleMapped(VMPTR_Module pModule, OUT BOOL *isModuleMapped) = 0;
 
     virtual
-    HRESULT ReadContext(TADDR pBuffer, DWORD size, PCONTEXT pContext) = 0;
+    HRESULT ReadData(TADDR pRemoteBuf, DWORD size, BYTE *pLocalBuf) = 0;
+
+    virtual
+    HRESULT WriteData(TADDR pRemoteBuf, DWORD size, const BYTE *pLocalBuf) = 0;
 
     virtual
     bool MetadataUpdatesApplied() = 0;

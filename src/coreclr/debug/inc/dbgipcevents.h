@@ -49,6 +49,7 @@ namespace EHijackReason
         kM2UHandoff = 2,
         kFirstChanceSuspend = 3,
         kGenericHijack = 4,
+        kFirstChanceException = 5,
         kMax
     };
     inline bool IsValid(EHijackReason value)
@@ -2359,6 +2360,14 @@ struct MSLAYOUT DebuggerIPCEvent
             TADDR pContext;
             DWORD size;
         } SetThreadContextNeeded;
+
+        
+        struct MSLAYOUT
+        {
+            TADDR pContext;
+            DWORD contextSize;
+            TADDR pExceptionRecord;
+        } SetThreadContextNeeded2;
     };
 };
 

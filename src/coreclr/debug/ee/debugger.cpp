@@ -5526,7 +5526,8 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
     CONTRACTL_END;
 
-    LOG((LF_CORDB, LL_INFO10000, "D::FCNE                                  ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+    LOG((LF_CORDB, LL_INFO10000, "D::FCNE                                  ExceptionCode=%8.8X ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+        code,
         context->ContextFlags,
         context->Dr0,
         context->Dr1,
@@ -13161,15 +13162,24 @@ void STDCALL ExceptionHijackWorker(
     void * pData)
 {
     STRESS_LOG0(LF_CORDB,LL_INFO100, "D::EHW: Enter ExceptionHijackWorker\n");
+    ::Sleep(1000);
 
     // We could have many different reasons for hijacking. Switch and invoke the proper hijacker.
     switch(reason)
     {
-        case EHijackReason::kUnhandledException:
-            STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
-            _ASSERTE(pData == NULL);
-            g_pDebugger->UnhandledHijackWorker(pContext, pRecord);
-            break;
+    case EHijackReason::kFirstChanceException:
+        STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->FirstChanceExceptionWorker()\n");
+        ::Sleep(1000);
+        g_pDebugger->FirstChanceExceptionWorker(pContext, pRecord, pData);
+        STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Nope!!!!!!!!!!!!\n");
+        ::Sleep(1000);
+        __debugbreak();
+        break;
+    case EHijackReason::kUnhandledException:
+        STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
+        _ASSERTE(pData == NULL);
+        g_pDebugger->UnhandledHijackWorker(pContext, pRecord);
+        break;
 #ifdef FEATURE_INTEROP_DEBUGGING
     case EHijackReason::kM2UHandoff:
             _ASSERTE(pData == NULL);
@@ -13425,6 +13435,89 @@ void Debugger::UnhandledHijackWorker(CONTEXT * pContext, EXCEPTION_RECORD * pRec
 
     // Continuing from a second chance managed exception causes the process to exit.
     TerminateProcess(GetCurrentProcess(), 0);
+}
+
+void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord, void *pData)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_TRIGGERS;
+        MODE_ANY;
+    }
+    CONTRACTL_END;
+
+    // Don't bother setting FilterContext here because we already pass it to FirstChanceNativeException.
+    EX_TRY
+    {
+        DWORD contextSize = (DWORD)reinterpret_cast<uintptr_t>(pData);
+
+        Thread * pThread = g_pEEInterface->GetThread();
+        if (pThread == NULL)
+        {
+            _ASSERTE(pThread != NULL);
+            ThrowHR(E_UNEXPECTED);
+        }
+
+        LOG((LF_CORDB, LL_INFO10000, "D::FirstChanceExceptionWorker Got the thread. ContextSize=%d\n", contextSize));
+
+        //DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
+
+        //// Send a DB_IPCE_SET_THREADCONTEXT_NEEDED2 event to the Right Side
+        //InitIPCEvent(ipce,
+        //    DB_IPCE_SET_THREADCONTEXT_NEEDED2,
+        //    pThread,
+        //    pThread->GetDomain());
+
+        //PCONTEXT pContext = (PCONTEXT)malloc(contextSize);
+        //memset(pContext, 0, contextSize);
+        //EXCEPTION_RECORD exceptionRecord = { 0 };
+
+        //ipce->SetThreadContextNeeded2.pContext = (TADDR)pContext;
+        //ipce->SetThreadContextNeeded2.contextSize = contextSize;
+        //ipce->SetThreadContextNeeded2.pExceptionRecord = (TADDR)&exceptionRecord;
+
+        //g_pDebugger->SendRawEvent(ipce);
+
+        // context and exception records should be populated
+        _ASSERTE(pContext->ContextFlags != 0);
+        _ASSERTE(pRecord->ExceptionCode != 0);
+
+        typedef struct _CONTEXT_CHUNK {
+            LONG Offset;
+            ULONG Length;
+        } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
+        typedef struct _CONTEXT_EX {
+            CONTEXT_CHUNK All;
+            CONTEXT_CHUNK Legacy;
+            CONTEXT_CHUNK XState;
+        } CONTEXT_EX, *PCONTEXT_EX;
+
+        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pContext[1];
+
+        LOG((LF_CORDB, LL_INFO10000, "D::FirstChanceExceptionWorker context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+            pContext->ContextFlags,
+            pContextEx->All.Length,
+            pContextEx->Legacy.Length,
+            pContextEx->XState.Length));
+
+        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: ExceptionCode = %8.8X\n", pRecord->ExceptionCode));
+
+        bool okay;
+        okay = g_pDebugger->FirstChanceNativeException(pRecord,
+            pContext,
+            pRecord->ExceptionCode,
+            pThread);
+        _ASSERTE(okay == true);
+        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: FirstChanceNativeException returned\n"));
+    }
+    EX_CATCH
+    {
+        // It would be really bad if somebody threw here. We're actually outside of managed code,
+        // so there's not a lot we can do besides just swallow the exception and hope for the best.
+        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: ERROR! FirstChanceNativeException threw an exception\n"));
+    }
+    EX_END_CATCH(SwallowAllExceptions);
 }
 
 #ifdef FEATURE_INTEROP_DEBUGGING

@@ -788,6 +788,17 @@ HRESULT ShimProcess::HandleWin32DebugEvent(const DEBUG_EVENT * pEvent)
                 dwContinueStatus = m_ContinueStatusChangedData.m_status;
             }
         }
+        else
+        {
+            if (m_ContinueStatusChangedData.IsSet())
+            {
+                _ASSERTE(m_ContinueStatusChangedData.m_dwThreadId == dwThreadId);
+
+                // Claiming this now means we won't do any other processing on the exception event.
+                // This means the interop-debugging logic will never see 2nd-chance managed exceptions.
+                dwContinueStatus = m_ContinueStatusChangedData.m_status;
+            }
+        }
     }
 
     // Do standard event handling, including Handling loader-breakpoint,

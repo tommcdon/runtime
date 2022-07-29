@@ -2361,6 +2361,9 @@ public:
 
     void UnhandledHijackWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord);
 
+    void FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord, void * pData);
+
+
     //
     // InsertToMethodInfoList puts the given DMI onto the DMI list.
     //

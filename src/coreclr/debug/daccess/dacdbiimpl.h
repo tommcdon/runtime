@@ -365,7 +365,8 @@ public:
 
     HRESULT IsModuleMapped(VMPTR_Module pModule, OUT BOOL *isModuleMapped);
 
-    HRESULT ReadContext(TADDR pBuffer, DWORD size, PCONTEXT pContext);
+    HRESULT ReadData(TADDR pRemoteBuf, DWORD size, BYTE *pLocalBuf);
+    HRESULT WriteData(TADDR pRemoteBuf, DWORD size, const BYTE *pLocalBuf);
 
     bool MetadataUpdatesApplied();
 
@@ -846,6 +847,17 @@ public:
         void *                       pUserData,
         CORDB_ADDRESS *              pRemoteContextAddr);
 
+    // Hijack the thread
+    void Hijack2(
+        VMPTR_Thread                 vmThread,
+        ULONG32                      dwThreadId,
+        const EXCEPTION_RECORD *     pRecord,
+        T_CONTEXT *                  pOriginalContext,
+        ULONG32                      cbSizeContext,
+        EHijackReason::EHijackReason reason,
+        void *                       pUserData,
+        CORDB_ADDRESS *              pRemoteContextAddr);
+
     // Return the filter CONTEXT on the LS.
     VMPTR_CONTEXT GetManagedStoppedContext(VMPTR_Thread vmThread);
 
@@ -983,6 +995,9 @@ protected:
 
     template <class T>
     CORDB_ADDRESS PushHelper(CORDB_ADDRESS * pEsp, const T * pData, BOOL fAlignStack);
+
+    CORDB_ADDRESS PushHelper(CORDB_ADDRESS * pEsp, const BYTE * pData, DWORD dwSize, BOOL fAlignStack);
+
 
     // Write an EXCEPTION_RECORD structure to the remote target at the specified address while taking
     // into account the number of exception parameters.
