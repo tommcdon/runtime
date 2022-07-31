@@ -3291,6 +3291,8 @@ public:
 #endif
     }
 
+    void HandleSetThreadContextNeeded(DebuggerIPCEvent * pManagedEvent);
+
     //
     // Shim  callbacks to simulate fake attach events.
     //
@@ -6342,8 +6344,10 @@ public:
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
 
-    PCONTEXT GetAndCacheLiveContext(DWORD *pContextSize);
-    PCONTEXT GetCachedContext(DWORD *pContextSize);
+    void GetLiveContext(PCONTEXT pContext);
+    void SetLiveContext(PCONTEXT pContext);
+    void CacheContext(PCONTEXT pSrcContext, DWORD dwSize);
+    PCONTEXT GetCachedContext();
     void ResetCachedContext();
 
     void HijackForFirstChanceException(PCONTEXT pContext, DWORD dwSize, const EXCEPTION_RECORD * pRecord);

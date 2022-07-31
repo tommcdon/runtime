@@ -16765,7 +16765,7 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
         pContextEx->Legacy.Length,
         pContextEx->XState.Length));
 
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN                                 ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
         context->ContextFlags,
         context->Dr0,
         context->Dr1,
@@ -16803,8 +16803,14 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     g_pDebugger->SendRawEvent(ipce);
 
+    //SignalHijackStartedFlare();
+    __debugbreak();
+
+    printf("We failed to SetThreadContext from out of process!\n");
+
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent returned\n"));
     _ASSERTE(!"We failed to SetThreadContext from out of process!");
+
 }
 #endif // DACCESS_COMPILE
 
