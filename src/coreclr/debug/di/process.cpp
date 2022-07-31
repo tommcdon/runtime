@@ -11195,6 +11195,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DebuggerIPCEvent * pManagedEvent
     pThread->CacheContext(pContext, contextSize);
     //pThread->SetLiveContext(pThread->GetCachedContext());
     //pThread->ResetCachedContext();
+    //pThread->SetLiveContext(pContext);
 }
 
 //
@@ -11440,54 +11441,63 @@ HRESULT CordbProcess::Filter(
                         pCachedContext->R9,
                         (pCachedContext->EFlags & 0x100) != 0,
                         pRecord->ExceptionCode);
+
                     pThread->SetLiveContext(pCachedContext);
+                    ContinueStatusChanged(dwThreadId, DBG_CONTINUE);
                     *pContinueStatus = DBG_CONTINUE;
                 }
-                else
-                {
-                    DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
+                //else
+                //{
+                //    DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
 
-                    DWORD contextSize = 0;
+                //    DWORD contextSize = 0;
 
-                    // The initialize call should fail but return contextSize
-                    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
-                    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+                //    // The initialize call should fail but return contextSize
+                //    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+                //    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
 
-                    BYTE *pBuffer = (BYTE*)alloca(contextSize);
+                //    BYTE *pBuffer = (BYTE*)alloca(contextSize);
 
-                    PCONTEXT pContext = NULL;
-                    success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
-                    if (!success)
-                    {
-                        DWORD lastError = GetLastError();
-                        _ASSERTE(!"InitializeContext failed");
+                //    PCONTEXT pContext = NULL;
+                //    success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
+                //    if (!success)
+                //    {
+                //        DWORD lastError = GetLastError();
+                //        _ASSERTE(!"InitializeContext failed");
 
-                        LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", HRESULT_FROM_WIN32(lastError), GetLastError()));
+                //        LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", HRESULT_FROM_WIN32(lastError), GetLastError()));
 
-                        ThrowHR(HRESULT_FROM_WIN32(lastError));
-                    }
+                //        ThrowHR(HRESULT_FROM_WIN32(lastError));
+                //    }
 
-                    _ASSERTE((BYTE*)pContext == pBuffer);
+                //    _ASSERTE((BYTE*)pContext == pBuffer);
 
-                    pThread->GetLiveContext(pContext);
+                //    pThread->GetLiveContext(pContext);
 
-                    if (pRecord->ExceptionCode == STATUS_BREAKPOINT)
-                    {
-                        CORDbgAdjustPCForBreakInstruction((DT_CONTEXT*)pContext);
-                    }
+                //    if (pRecord->ExceptionCode == STATUS_BREAKPOINT)
+                //    {
+                //        BYTE opcodeTest = 0;
+                //        TADDR address = pContext->Rip;
+                //        HRESULT hr = SafeReadStruct(PTR_TO_CORDB_ADDRESS(address-1), &opcodeTest);
+                //        _ASSERTE(hr == S_OK);
+                //        if (opcodeTest == 0xcc)
+                //        {
+                //            CORDbgAdjustPCForBreakInstruction((DT_CONTEXT*)pContext);
+                //        }
+                //    }
 
-                    printf("Hijack Ctx Ch RIP=%16.16llX RSP=%16.16llX RCX=%16.16llX RDX=%16.16llX R8=%16.16llX R9=%16.16llX SS=%d ExceptionCode=%8.8X\n",
-                        pContext->Rip,
-                        pContext->Rsp,
-                        pContext->Rcx,
-                        pContext->Rdx,
-                        pContext->R8,
-                        pContext->R9,
-                        (pContext->EFlags & 0x100) != 0,
-                        pRecord->ExceptionCode);
+                //    printf("Hijack Ctx Ch RIP=%16.16llX RSP=%16.16llX RCX=%16.16llX RDX=%16.16llX R8=%16.16llX R9=%16.16llX SS=%d ExceptionCode=%8.8X\n",
+                //        pContext->Rip,
+                //        pContext->Rsp,
+                //        pContext->Rcx,
+                //        pContext->Rdx,
+                //        pContext->R8,
+                //        pContext->R9,
+                //        (pContext->EFlags & 0x100) != 0,
+                //        pRecord->ExceptionCode);
 
-                    pThread->HijackForFirstChanceException(pContext, contextSize-(DWORD)((BYTE*)pContext-pBuffer), pRecord);
-                }
+                //    pThread->HijackForFirstChanceException(pContext, contextSize/*-(DWORD)((BYTE*)pContext-pBuffer)*/, pRecord);
+                //}
                 pThread->ResetCachedContext();
             }
 

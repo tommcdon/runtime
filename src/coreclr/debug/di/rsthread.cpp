@@ -10896,7 +10896,7 @@ void CordbThread::SetLiveContext(PCONTEXT pContext)
 {
     // The initialize call should fail but return contextSize
     DWORD contextSize = 0;
-    DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
+    DWORD contextFlags = pContext->ContextFlags;
     BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
 
     _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
@@ -10958,7 +10958,7 @@ void CordbThread::SetLiveContext(PCONTEXT pContext)
             _ASSERTE(success);
 
             DWORD suspendCount = ::ResumeThread(hThread);
-            if (suspendCount == (DWORD)-1)
+            if (suspendCount == (DWORD)-1 || suspendCount != previousSuspendCount + 1)
             {
                 LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Unexpected result from ResumeThread\n"));
                 ThrowHR(HRESULT_FROM_GetLastError());

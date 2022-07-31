@@ -4521,7 +4521,7 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     //set eip to point to buffer...
     SetIP(context, (PCODE)patchBypassRX);
 
-    printf("*********************  context = 0x%llx, c = 0x%llx\n", (uint64_t)context, (uint64_t)&c);
+    //printf("*********************  context = 0x%llx, c = 0x%llx\n", (uint64_t)context, (uint64_t)&c);
     //byte *b1 = nullptr;
     //*b1 = 5;
 
@@ -4532,6 +4532,7 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
         //byte *b = nullptr;
         //*b = 5;
         //g_pDebugger->SendSetThreadContextNeeded(thread, context);
+        printf("*********************  InProc SetThreadContext! context = 0x%llx, c = 0x%llx\n", (uint64_t)context, (uint64_t)&c);
         thread->SetThreadContext(&c);
     }
 
