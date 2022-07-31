@@ -2361,7 +2361,7 @@ public:
 
     void UnhandledHijackWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord);
 
-    void FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord, void * pData);
+    void FirstChanceHijackWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord);
 
 
     //

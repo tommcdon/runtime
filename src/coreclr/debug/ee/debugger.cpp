@@ -5526,7 +5526,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
     CONTRACTL_END;
 
-    LOG((LF_CORDB, LL_INFO10000, "D::FCNE                                  ExceptionCode=%8.8X ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
+    LOG((LF_CORDB, LL_INFO10000, "D::FCNE ExceptionCode=%8.8X ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
         code,
         context->ContextFlags,
         context->Dr0,
@@ -13167,8 +13167,9 @@ void STDCALL ExceptionHijackWorker(
     switch(reason)
     {
     case EHijackReason::kFirstChanceException:
-        STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->FirstChanceExceptionWorker()\n");
-        g_pDebugger->FirstChanceExceptionWorker(pContext, pRecord, pData);
+        STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->FirstChanceHijackWorker()\n");
+        _ASSERTE(pData == NULL);
+        g_pDebugger->FirstChanceHijackWorker(pContext, pRecord);
         break;
     case EHijackReason::kUnhandledException:
         STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
@@ -13432,7 +13433,7 @@ void Debugger::UnhandledHijackWorker(CONTEXT * pContext, EXCEPTION_RECORD * pRec
     TerminateProcess(GetCurrentProcess(), 0);
 }
 
-void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord, void *pData)
+void Debugger::FirstChanceHijackWorker(T_CONTEXT * pContext, EXCEPTION_RECORD * pRecord)
 {
     CONTRACTL
     {
@@ -13445,16 +13446,12 @@ void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD
     // Don't bother setting FilterContext here because we already pass it to FirstChanceNativeException.
     EX_TRY
     {
-        DWORD contextSize = (DWORD)reinterpret_cast<uintptr_t>(pData);
-
         Thread * pThread = g_pEEInterface->GetThread();
         if (pThread == NULL)
         {
             _ASSERTE(pThread != NULL);
             ThrowHR(E_UNEXPECTED);
         }
-
-        LOG((LF_CORDB, LL_INFO10000, "D::FirstChanceExceptionWorker Got the thread. ContextSize=%d\n", contextSize));
 
         // context and exception records should be populated
         _ASSERTE(pContext->ContextFlags != 0);
@@ -13472,13 +13469,13 @@ void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD
 
         PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pContext[1];
 
-        LOG((LF_CORDB, LL_INFO10000, "D::FirstChanceExceptionWorker context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+        LOG((LF_CORDB, LL_INFO10000, "D::FirstChanceHijackWorker context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
             pContext->ContextFlags,
             pContextEx->All.Length,
             pContextEx->Legacy.Length,
             pContextEx->XState.Length));
 
-        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: ExceptionCode = %8.8X\n", pRecord->ExceptionCode));
+        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceHijackWorker: ExceptionCode = %8.8X\n", pRecord->ExceptionCode));
 
         bool fFirstChanceNativeExceptionSucceeded;
         fFirstChanceNativeExceptionSucceeded = g_pDebugger->FirstChanceNativeException(pRecord,
@@ -13486,13 +13483,13 @@ void Debugger::FirstChanceExceptionWorker(T_CONTEXT * pContext, EXCEPTION_RECORD
             pRecord->ExceptionCode,
             pThread);
         _ASSERTE(fFirstChanceNativeExceptionSucceeded == true);
-        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: FirstChanceNativeException returned\n"));
+        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceHijackWorker: FirstChanceNativeException returned\n"));
     }
     EX_CATCH
     {
         // It would be really bad if somebody threw here. We're actually outside of managed code,
         // so there's not a lot we can do besides just swallow the exception and hope for the best.
-        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceExceptionWorker: ERROR! FirstChanceNativeException threw an exception\n"));
+        LOG((LF_CORDB, LL_INFO1000, "D::FirstChanceHijackWorker: ERROR! FirstChanceNativeException threw an exception\n"));
     }
     EX_END_CATCH(SwallowAllExceptions);
 }
@@ -16762,150 +16759,11 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     PCONTEXT_EX pContextEx = (CONTEXT_EX*)&context[1];
 
-    //DWORD contextSize = pContextEx->All.Length;
-    //LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X size=%d CONTEXT=%d CONTEXT_EX=%d Legacy=%d XState=%d..\n",
-    //    context->ContextFlags,
-    //    contextSize,
-    //    sizeof(CONTEXT),
-    //    sizeof(CONTEXT_EX),
-    //    pContextEx->Legacy.Length,
-    //    pContextEx->XState.Length));
-    //_ASSERTE(contextSize == sizeof(CONTEXT_EX) + pContextEx->Legacy.Length + pContextEx->XState.Length);
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
         context->ContextFlags,
         pContextEx->All.Length,
         pContextEx->Legacy.Length,
         pContextEx->XState.Length));
-
-//#ifdef _DEBUG
-//    // Known extended CPU state feature BITs
-//    //
-//    // 0    x87
-//    // 1    SSE
-//    // 2    AVX
-//    // 3    BNDREGS (B0.LB-B3.LB B0.UB-B3.UB)
-//    // 4    BNDCSR  (BNDCFGU + BNDSTATUS)       Persistent
-//    // 5    KMASK   (KMASK [63:0][0-7])
-//    // 6    ZMM_H   (ZMM_H[511:256][0-15])
-//    // 7    ZMM     (ZMM[511:0][16-31])
-//    // 8    IPT                                 Supervisor
-//    // 10   PASID                               Supervisor
-//    // 11   CET_U                               Supervisor
-//    // 12   CET_S                               Supervisor (Cannot be used by NT! Only defined for SK intercept purposes!)
-//    //
-//    // 17   TILE_CONFIG
-//    // 18   TILE_DATA                           XFD, Large
-//    //
-//    // 62   LWP                                 Persistent
-//    //
-//    // 63   RZ0                                 Reserved
-//    //
-//
-//    DWORD64 feature = 0;
-//    if (g_pfnLocateXStateFeature != NULL)
-//    {
-//        for (int i = 0; i < 8; i++)
-//        {
-//            if (g_pfnLocateXStateFeature(context, i, NULL) != NULL)
-//            {
-//                feature |= 1ui64 << i;
-//                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
-//            }
-//        }
-//    }
-//#endif
-
-//#if 0
-//    DWORD contextFlags = context->ContextFlags;
-//    DWORD initContextSize = 0;
-//
-//    // The initialize call should fail but return contextSize
-//    BOOL success = InitializeContext(NULL, contextFlags, NULL, &initContextSize);
-//
-//    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
-//
-//    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: InitializeContext ContextSize %d\n", initContextSize));
-//
-//    // Allocate the context
-//    //_ASSERTE(initContextSize == contextSize);
-//
-//    PVOID pBuffer = _alloca(initContextSize);
-//    PCONTEXT pFrameContext = NULL;
-//    success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &initContextSize);
-//    if (!success)
-//    {
-//        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-//        _ASSERTE(!"InitializeContext failed");
-//
-//        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
-//        UnrecoverableError(hr,
-//            0,
-//            FILE_DEBUG,
-//            LINE_DEBUG,
-//            false);
-//
-//        return;
-//    }
-//
-//    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextSize=%d ContextFlags=0x%X CONTEXT_ALL|CONTEXT_XSTATE=0x%X pBuffer=0x%llx pFrameContext=0x%llx\n",
-//        initContextSize,
-//        context->ContextFlags,
-//        CONTEXT_ALL | CONTEXT_XSTATE,
-//        pBuffer,
-//        pFrameContext));
-//
-//    _ASSERTE(pFrameContext->ContextFlags == contextFlags);
-//
-//    //if (g_pfnSetXStateFeaturesMask != NULL && feature != 0)
-//    //{
-//    //    success = g_pfnSetXStateFeaturesMask(pFrameContext, feature);
-//    //    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: SetXStateFeaturesMask %8.8X %s %d\n", feature, success?"SUCCESS":"FAIL", GetLastError()));
-//    //    _ASSERTE(success);
-//    //}
-//
-//    success = CopyContext(pFrameContext, contextFlags, context);
-//    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
-//    if (!success)
-//    {
-//        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-//        _ASSERTE(!"CopyContext failed");
-//
-//        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: Unexpected result from CopyContext (error: 0x%X [%d]).\n", hr, GetLastError()));
-//        UnrecoverableError(hr,
-//            0,
-//            FILE_DEBUG,
-//            LINE_DEBUG,
-//            false);
-//
-//        return;
-//    }
-//
-//#ifdef _DEBUG
-//    
-//    if (g_pfnLocateXStateFeature != NULL)
-//    {
-//        DWORD64 feature = 0;
-//        for (int i = 0; i < 8; i++)
-//        {
-//            if (g_pfnLocateXStateFeature(pFrameContext, i, NULL) != NULL)
-//            {
-//                feature |= 1ui64 << i;
-//                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN: LocateXStateFeature %d %8.8X\n", i, feature));
-//            }
-//        }
-//    }
-//    {
-//        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&pFrameContext[1];
-//
-//        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN pFrameContext->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
-//            pFrameContext->ContextFlags,
-//            pContextEx->All.Length,
-//            pContextEx->Legacy.Length,
-//            pContextEx->XState.Length));
-//    }
-//#endif
-//
-//#endif // #if 0
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN                                 ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
         context->ContextFlags,
@@ -16935,14 +16793,13 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
 
-
     InitIPCEvent(ipce,
         DB_IPCE_SET_THREADCONTEXT_NEEDED,
         thread,
         thread->GetDomain());
 
-    ipce->SetThreadContextNeeded.pContext = (TADDR)/*pFrameContext*/context;
-    ipce->SetThreadContextNeeded.size = /*initContextSize*/pContextEx->All.Length;
+    ipce->SetThreadContextNeeded.pContext = (TADDR)context;
+    ipce->SetThreadContextNeeded.size = pContextEx->All.Length;
 
     g_pDebugger->SendRawEvent(ipce);
 

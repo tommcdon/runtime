@@ -5420,19 +5420,13 @@ void DacDbiInterfaceImpl::Hijack2(
         (BYTE*) &ctx);
     IfFailThrow(hr);
 
-    // Push pointers
-    void* espContext = NULL;
-    void* espRecord = NULL;
-    const void* pData = pUserData;
-
     CORDB_ADDRESS esp = GetSP(&ctx);
-
 
     // Push on full Context and ExceptionRecord structures. We'll then push pointers to these,
     // and those pointers will serve as the actual args to the function.
-    espContext = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, (BYTE*)pOriginalContext, cbSizeContext, TRUE));
-    espRecord  = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, pRecord, TRUE));
-
+    void* espContext = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, (BYTE*)pOriginalContext, cbSizeContext, TRUE));
+    void* espRecord  = CORDB_ADDRESS_TO_PTR(PushHelper(&esp, pRecord, TRUE));
+    const void* pData = pUserData;
 
     // Prototype of hijack is:
     //     void __stdcall ExceptionHijackWorker(CONTEXT * pContext, EXCEPTION_RECORD * pRecord, EHijackReason, void * pData)
