@@ -16803,8 +16803,22 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     g_pDebugger->SendRawEvent(ipce);
 
-    //SignalHijackStartedFlare();
-    __debugbreak();
+    EX_TRY
+    {
+        //SignalHijackStartedFlare();
+        __debugbreak();
+
+        // If debugger continues "GH" (DBG_CONTINUE), then we land here.
+        // This is the expected path for a well-behaved ICorDebug debugger.
+    }
+    EX_CATCH
+    {
+        // If no debugger is attached, or if the debugger continues "GN" (DBG_EXCEPTION_NOT_HANDLED), then we land here.
+        // A naive (not-ICorDebug aware) native-debugger won't handle the exception and so land us here.
+        // We may also get here if a debugger detaches at the Exception notification
+        // (and thus implicitly continues GN).
+    }
+    EX_END_CATCH(SwallowAllExceptions);
 
     printf("We failed to SetThreadContext from out of process!\n");
 

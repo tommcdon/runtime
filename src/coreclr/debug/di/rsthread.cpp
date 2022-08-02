@@ -10980,7 +10980,7 @@ void CordbThread::CacheContext(PCONTEXT pSrcContext, DWORD dwSrcSize)
     {
         if (m_dwContextSize < dwSrcSize)
         {
-            _ASSERTE(m_dwContextSize == 0);
+            //_ASSERTE(m_dwContextSize == 0);
             delete[] m_pCachedContext;
             m_pCachedContext = NULL;
             m_dwContextSize = 0;
