@@ -3291,7 +3291,7 @@ public:
 #endif
     }
 
-    void HandleSetThreadContextNeeded(DebuggerIPCEvent * pManagedEvent);
+    void HandleSetThreadContextNeeded(DWORD dwThreadId);
 
     //
     // Shim  callbacks to simulate fake attach events.

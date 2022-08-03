@@ -128,6 +128,7 @@ struct MSLAYOUT DebuggerIPCRuntimeOffsets
     void   *m_excepNotForRuntimeBPAddr;
     void   *m_notifyRSOfSyncCompleteBPAddr;
     DWORD   m_debuggerWordTLSIndex;                     // The TLS slot for the debugger word used in the debugger hijack functions
+    void   *m_setThreadContextNeededAddr;
 #endif // FEATURE_INTEROP_DEBUGGING
     SIZE_T  m_TLSIndex;                                 // The TLS index of the thread-local storage for coreclr.dll
     SIZE_T  m_TLSEEThreadOffset;                        // TLS Offset of the Thread pointer.

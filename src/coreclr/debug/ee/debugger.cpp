@@ -16791,22 +16791,21 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
         context->R15,
         context->Rip));
 
-    DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
+    //DebuggerIPCEvent* ipce = m_pRCThread->GetIPCEventSendBuffer();
 
-    InitIPCEvent(ipce,
-        DB_IPCE_SET_THREADCONTEXT_NEEDED,
-        thread,
-        thread->GetDomain());
+    //InitIPCEvent(ipce,
+    //    DB_IPCE_SET_THREADCONTEXT_NEEDED,
+    //    thread,
+    //    thread->GetDomain());
 
-    ipce->SetThreadContextNeeded.pContext = (TADDR)context;
-    ipce->SetThreadContextNeeded.size = pContextEx->All.Length;
+    //ipce->SetThreadContextNeeded.pContext = (TADDR)context;
+    //ipce->SetThreadContextNeeded.size = pContextEx->All.Length;
 
-    g_pDebugger->SendRawEvent(ipce);
+    //g_pDebugger->SendRawEvent(ipce);
 
     EX_TRY
     {
-        //SignalHijackStartedFlare();
-        __debugbreak();
+        SetThreadContextNeededFlare((TADDR)context, pContextEx->All.Length);
 
         // If debugger continues "GH" (DBG_CONTINUE), then we land here.
         // This is the expected path for a well-behaved ICorDebug debugger.

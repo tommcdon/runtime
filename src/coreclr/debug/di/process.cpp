@@ -7659,6 +7659,8 @@ HRESULT CordbProcess::GetRuntimeOffsets()
          m_runtimeOffsets.m_notifyRSOfSyncCompleteBPAddr));
     LOG((LF_CORDB, LL_INFO10000, "    m_debuggerWordTLSIndex=           0x%08x\n",
          m_runtimeOffsets.m_debuggerWordTLSIndex));
+    LOG((LF_CORDB, LL_INFO10000, "    m_setThreadContextNeededAddr=    0x%p\n",
+         m_runtimeOffsets.m_setThreadContextNeededAddr));
 #endif // FEATURE_INTEROP_DEBUGGING
 
     LOG((LF_CORDB, LL_INFO10000, "    m_TLSIndex=                       0x%08x\n",
@@ -7719,6 +7721,7 @@ HRESULT CordbProcess::GetRuntimeOffsets()
             m_runtimeOffsets.m_signalHijackCompleteBPAddr,
             m_runtimeOffsets.m_excepNotForRuntimeBPAddr,
             m_runtimeOffsets.m_notifyRSOfSyncCompleteBPAddr,
+            m_runtimeOffsets.m_setThreadContextNeededAddr,
         };
 
         const int NumFlares = ARRAY_SIZE(flares);
@@ -11139,10 +11142,10 @@ void CordbProcess::FilterClrNotification(
 
             HandleSyncCompleteReceived();
         }
-        else if (pManagedEvent->type == DB_IPCE_SET_THREADCONTEXT_NEEDED)
-        {
-            HandleSetThreadContextNeeded(pManagedEvent);
-        }
+        //else if (pManagedEvent->type == DB_IPCE_SET_THREADCONTEXT_NEEDED)
+        //{
+        //    HandleSetThreadContextNeeded(pManagedEvent);
+        //}
         else
         {
             //
@@ -11156,46 +11159,95 @@ void CordbProcess::FilterClrNotification(
     }
 }
 
-void CordbProcess::HandleSetThreadContextNeeded(DebuggerIPCEvent * pManagedEvent)
+void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 {
-    LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Got DB_IPCE_SET_THREADCONTEXT_NEEDED\n"));
+    LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded\n"));
 
-    DWORD threadId = GetDAC()->GetUniqueThreadID(pManagedEvent->vmThread);
-    PCONTEXT pContext = (PCONTEXT)_alloca(pManagedEvent->SetThreadContextNeeded.size);
-    HRESULT hr = GetDAC()->ReadData(pManagedEvent->SetThreadContextNeeded.pContext, pManagedEvent->SetThreadContextNeeded.size, (BYTE*)pContext);
-    if (FAILED(hr))
-    {
-        _ASSERTE(!"ReadContext failed");
-
-        LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Unexpected result from ReadContext (error: 0x%X).\n", hr));
-
-        ThrowHR(hr);
-    }
-
-    DWORD contextFlags = pContext->ContextFlags;
-    DWORD contextSize = pManagedEvent->SetThreadContextNeeded.size;
-
-    printf("Ctx Needed    RIP=%16.16llX RSP=%16.16llX RCX=%16.16llX RDX=%16.16llX R8=%16.16llX R9=%16.16llX SS=%d\n",
-        pContext->Rip,
-        pContext->Rsp,
-        pContext->Rcx,
-        pContext->Rdx,
-        pContext->R8,
-        pContext->R9,
-        (pContext->EFlags & 0x100) != 0
-    );
-
-    CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(threadId);
-    _ASSERTE(pThread != NULL);
+    CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
     if (pThread == NULL)
     {
-        // we should try to restore state on the left side if this occurs..
         ThrowHR(E_UNEXPECTED);
     }
-    pThread->CacheContext(pContext, contextSize);
-    //pThread->SetLiveContext(pThread->GetCachedContext());
-    //pThread->ResetCachedContext();
-    //pThread->SetLiveContext(pContext);
+    TADDR context = NULL;
+    DWORD contextSize = 0;
+    {
+        //    PCONTEXT pCachedContext = pThread->GetCachedContext();
+        //    if (pCachedContext != NULL)
+        //    {
+                // this is a STATUS_BREAKPOINT inside of SendSetThreadContextNeeded
+        // get the Filter Context
+
+        DWORD contextFlags = CONTEXT_FULL;
+
+        // The initialize call should fail but return contextSize
+        BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+        _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+
+        BYTE *pBuffer = (BYTE*)alloca(contextSize);
+
+        PCONTEXT pContext = NULL;
+        success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
+        if (!success)
+        {
+            DWORD lastError = GetLastError();
+            _ASSERTE(!"InitializeContext failed");
+
+            LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", HRESULT_FROM_WIN32(lastError), GetLastError()));
+
+            ThrowHR(HRESULT_FROM_WIN32(lastError));
+        }
+
+        _ASSERTE((BYTE*)pContext == pBuffer);
+
+        pThread->GetLiveContext(pContext);
+        context = (TADDR)pContext->Rcx;
+        contextSize = (DWORD)pContext->Rdx;
+    }
+
+    {
+        PCONTEXT pContext = (PCONTEXT)_alloca(contextSize);
+        HRESULT hr = GetDAC()->ReadData(context, contextSize, (BYTE*)pContext);
+        if (FAILED(hr))
+        {
+            _ASSERTE(!"ReadData failed");
+
+            LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Unexpected result from ReadData (error: 0x%X).\n", hr));
+
+            ThrowHR(hr);
+        }
+
+        DWORD contextFlags = pContext->ContextFlags;
+
+        printf("Ctx Needed    RIP=%16.16llX RSP=%16.16llX RCX=%16.16llX RDX=%16.16llX R8=%16.16llX R9=%16.16llX SS=%d\n",
+            pContext->Rip,
+            pContext->Rsp,
+            pContext->Rcx,
+            pContext->Rdx,
+            pContext->R8,
+            pContext->R9,
+            (pContext->EFlags & 0x100) != 0
+        );
+
+        {
+            BYTE opcodeTest = 0;
+            TADDR address = pContext->Rip;
+            HRESULT hr = SafeReadStruct(PTR_TO_CORDB_ADDRESS(address-1), &opcodeTest);
+            _ASSERTE(hr == S_OK);
+            if (opcodeTest == 0xcc)
+            {
+                printf("Is a breakpoint\n");
+            }
+            else
+            {
+                printf("Is a data breakpoint***\n");
+            }
+        }
+
+        //pThread->CacheContext(pContext, contextSize);
+        //pThread->SetLiveContext(pThread->GetCachedContext());
+        //pThread->ResetCachedContext();
+        pThread->SetLiveContext(pContext);
+    }
 }
 
 //
@@ -11422,85 +11474,13 @@ HRESULT CordbProcess::Filter(
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
         }
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
-        else if (dwFirstChance && (pRecord->ExceptionCode == STATUS_BREAKPOINT || pRecord->ExceptionCode == STATUS_SINGLE_STEP))
+        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT && pRecord->ExceptionAddress == m_runtimeOffsets.m_setThreadContextNeededAddr) /*|| pRecord->ExceptionCode == STATUS_SINGLE_STEP*/
         {
-            CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
-            if (pThread != NULL)
-            {
-                PCONTEXT pCachedContext = pThread->GetCachedContext();
-                if (pCachedContext != NULL)
-                {
-                    // this is a STATUS_BREAKPOINT inside of SendSetThreadContextNeeded
-                    LOG((LF_CORDB, LL_INFO10000, "RS BP Trampoline\n"));
-                    printf("Trampoline Ch RIP=%16.16llX RSP=%16.16llX RCX=%16.16llX RDX=%16.16llX R8=%16.16llX R9=%16.16llX SS=%d ExceptionCode=%8.8X\n",
-                        pCachedContext->Rip,
-                        pCachedContext->Rsp,
-                        pCachedContext->Rcx,
-                        pCachedContext->Rdx,
-                        pCachedContext->R8,
-                        pCachedContext->R9,
-                        (pCachedContext->EFlags & 0x100) != 0,
-                        pRecord->ExceptionCode);
+            // this is a request to set the thread context out of process
 
-                    pThread->SetLiveContext(pCachedContext);
-                    ContinueStatusChanged(dwThreadId, DBG_CONTINUE);
-                    *pContinueStatus = DBG_CONTINUE;
-                }
-                //else
-                //{
-                //    DWORD contextFlags = CONTEXT_ALL | CONTEXT_XSTATE;
-
-                //    DWORD contextSize = 0;
-
-                //    // The initialize call should fail but return contextSize
-                //    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
-                //    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
-
-                //    BYTE *pBuffer = (BYTE*)alloca(contextSize);
-
-                //    PCONTEXT pContext = NULL;
-                //    success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
-                //    if (!success)
-                //    {
-                //        DWORD lastError = GetLastError();
-                //        _ASSERTE(!"InitializeContext failed");
-
-                //        LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", HRESULT_FROM_WIN32(lastError), GetLastError()));
-
-                //        ThrowHR(HRESULT_FROM_WIN32(lastError));
-                //    }
-
-                //    _ASSERTE((BYTE*)pContext == pBuffer);
-
-                //    pThread->GetLiveContext(pContext);
-
-                //    if (pRecord->ExceptionCode == STATUS_BREAKPOINT)
-                //    {
-                //        BYTE opcodeTest = 0;
-                //        TADDR address = pContext->Rip;
-                //        HRESULT hr = SafeReadStruct(PTR_TO_CORDB_ADDRESS(address-1), &opcodeTest);
-                //        _ASSERTE(hr == S_OK);
-                //        if (opcodeTest == 0xcc)
-                //        {
-                //            CORDbgAdjustPCForBreakInstruction((DT_CONTEXT*)pContext);
-                //        }
-                //    }
-
-                //    printf("Hijack Ctx Ch RIP=%16.16llX RSP=%16.16llX RCX=%16.16llX RDX=%16.16llX R8=%16.16llX R9=%16.16llX SS=%d ExceptionCode=%8.8X\n",
-                //        pContext->Rip,
-                //        pContext->Rsp,
-                //        pContext->Rcx,
-                //        pContext->Rdx,
-                //        pContext->R8,
-                //        pContext->R9,
-                //        (pContext->EFlags & 0x100) != 0,
-                //        pRecord->ExceptionCode);
-
-                //    pThread->HijackForFirstChanceException(pContext, contextSize/*-(DWORD)((BYTE*)pContext-pBuffer)*/, pRecord);
-                //}
-                pThread->ResetCachedContext();
-            }
-
+            HandleSetThreadContextNeeded(dwThreadId);
+            ContinueStatusChanged(dwThreadId, DBG_CONTINUE);
+            *pContinueStatus = DBG_CONTINUE;
         }
 #endif
     }
@@ -12365,6 +12345,18 @@ Reaction CordbProcess::TriageExcep1stChanceAndInit(CordbUnmanagedThread * pUnman
     {
         STRESS_LOG0(LF_CORDB, LL_INFO1000, "CP::TE1stCAI: received 'hijack started' flare.\n");
         return REACTION(cFirstChanceHijackStarted);
+    }
+    else if ((dwExCode == STATUS_BREAKPOINT) &&
+             (pExAddress == m_runtimeOffsets.m_excepForRuntimeHandoffStartBPAddr))
+    {
+        printf("*** m_excepForRuntimeHandoffStartBPAddr flare in TriageException\n");
+        // This is an internal message to set the thread context out of process
+        // Need to skip it completely; never dispatch.
+        pUnmanagedThread->SetupForSkipBreakpoint(pNativePatch);
+
+        // Debuggee will single step over the patch, and fire a SS exception.
+        // We'll then call FixupForSkipBreakpoint, and continue the process.
+        return REACTION(cIgnore);
     }
     else if ((dwExCode == STATUS_BREAKPOINT) && ((pNativePatch = GetNativePatch(pExAddress)) != NULL) )
     {
