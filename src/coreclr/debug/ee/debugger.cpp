@@ -5537,17 +5537,19 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 
     bool retVal;
 
-    // Don't stop for native debugging anywhere inside our inproc-Filters.
-    CantStopHolder hHolder;
+    {
+        // Don't stop for native debugging anywhere inside our inproc-Filters.
+        CantStopHolder hHolder;
 
-    if (!CORDBUnrecoverableError(this))
-    {
-        retVal = DebuggerController::DispatchNativeException(exception, context,
-                                                           code, thread);
-    }
-    else
-    {
-        retVal = false;
+        if (!CORDBUnrecoverableError(this))
+        {
+            retVal = DebuggerController::DispatchNativeException(exception, context,
+                                                               code, thread);
+        }
+        else
+        {
+            retVal = false;
+        }
     }
 
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
@@ -16681,7 +16683,7 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     EX_TRY
     {
-        SetThreadContextNeededFlare((TADDR)context, len, (TADDR)CantStopCountPtr());
+        SetThreadContextNeededFlare((TADDR)context, len);
 
         // If debugger continues "GH" (DBG_CONTINUE), then we land here.
         // This is the expected path for a well-behaved ICorDebug debugger.

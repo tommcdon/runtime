@@ -1752,7 +1752,7 @@ extern "C" void __stdcall ExceptionNotForRuntimeFlare(void);
 extern "C" void __stdcall NotifyRightSideOfSyncCompleteFlare(void);
 extern "C" void __stdcall NotifySecondChanceReadyForDataFlare(void);
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
-extern "C" void __stdcall SetThreadContextNeededFlare(TADDR pContext, DWORD size, TADDR pCantStop);
+extern "C" void __stdcall SetThreadContextNeededFlare(TADDR pContext, DWORD size);
 #endif
 
 /* ------------------------------------------------------------------------ *

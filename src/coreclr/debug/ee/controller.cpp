@@ -4508,8 +4508,14 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     //set eip to point to buffer...
     SetIP(context, (PCODE)patchBypassRX);
 
+printf("NOPE0!!\n");
     if (context ==(T_CONTEXT*) &c)
+{
+    printf("YEP!!\n");
+    for (int i = 0; ; i++) { Sleep(100); printf("%s %d\n", (i%2)==0?"NOPE":"YEP", i); }
         thread->SetThreadContext(&c);
+}
+printf("NOPE1!!\n");
 
 
     LOG((LF_CORDB, LL_INFO10000, "DPS::DPS Bypass at 0x%p for opcode %p \n", patchBypassRX, patch->opcode));

@@ -7659,7 +7659,7 @@ HRESULT CordbProcess::GetRuntimeOffsets()
          m_runtimeOffsets.m_notifyRSOfSyncCompleteBPAddr));
     LOG((LF_CORDB, LL_INFO10000, "    m_debuggerWordTLSIndex=           0x%08x\n",
          m_runtimeOffsets.m_debuggerWordTLSIndex));
-    LOG((LF_CORDB, LL_INFO10000, "    m_setThreadContextNeededAddr=    0x%p\n",
+    LOG((LF_CORDB, LL_INFO10000, "    m_setThreadContextNeededAddr=     0x%p\n",
          m_runtimeOffsets.m_setThreadContextNeededAddr));
 #endif // FEATURE_INTEROP_DEBUGGING
 
@@ -11167,7 +11167,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
     }
     TADDR context = NULL;
     DWORD contextSize = 0;
-    TADDR cantStop = NULL;
+    //TADDR cantStop = NULL;
     {
         DWORD contextFlags = CONTEXT_FULL;
 
@@ -11194,7 +11194,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
         pThread->GetLiveContext(pContext);
         context = (TADDR)pContext->Rcx;
         contextSize = (DWORD)pContext->Rdx;
-        cantStop = (TADDR)pContext->R8;
+        //cantStop = (TADDR)pContext->R8;
     }
 
     {
@@ -11213,14 +11213,14 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 
         pThread->SetLiveContext(pContext);
 
-        size_t dwCantStop;
-        hr = SafeReadStruct(cantStop, &dwCantStop);
-        IfFailThrow(hr);
+    //    size_t dwCantStop;
+    //    hr = SafeReadStruct(cantStop, &dwCantStop);
+    //    IfFailThrow(hr);
 
-        dwCantStop--;
+    //    dwCantStop--;
 
-        hr = SafeWriteStruct(cantStop, &dwCantStop);
-        IfFailThrow(hr);
+    //    hr = SafeWriteStruct(cantStop, &dwCantStop);
+    //    IfFailThrow(hr);
     }
 }
 #endif
