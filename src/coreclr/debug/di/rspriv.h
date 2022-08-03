@@ -6335,8 +6335,10 @@ public:
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
     void GetLiveContext(PCONTEXT pContext);
     void SetLiveContext(PCONTEXT pContext);
+#endif
 
 private:
     void ClearStackFrameCache();

@@ -10806,7 +10806,7 @@ HRESULT CordbCodeEnum::Next(ULONG celt, ICorDebugCode *values[], ULONG *pceltFet
     return hr;
 }
 
-
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
 void CordbThread::GetLiveContext(PCONTEXT pContext)
 {
     LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext\n"));
@@ -10934,3 +10934,4 @@ void CordbThread::SetLiveContext(PCONTEXT pContext)
         }
     }
 }
+#endif

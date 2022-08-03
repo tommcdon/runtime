@@ -16676,10 +16676,12 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     else
     {
         LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Legacy context detected\n"));
+        OutputDebugString("D::SSTCN Legacy context detected\n");
         return;
     }
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X Len=%d..\n", context->ContextFlags, len));
+    OutputDebugString("D::SSTCN Applying Context\n");
 
     EX_TRY
     {
@@ -16699,6 +16701,7 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent returned\n"));
     _ASSERTE(!"We failed to SetThreadContext from out of process!");
+    OutputDebugString("***We failed to SetThreadContext from out of process!\n");
 }
 #endif // DACCESS_COMPILE
 
