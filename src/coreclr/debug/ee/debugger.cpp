@@ -5550,6 +5550,12 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
         retVal = false;
     }
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+    if (Thread::AreCetShadowStacksEnabled() && retVal)
+    {
+        g_pDebugger->SendSetThreadContextNeeded(thread, context);
+    }
+#endif
     return retVal;
 }
 
@@ -16631,4 +16637,68 @@ void Debugger::StartCanaryThread()
 }
 #endif // DACCESS_COMPILE
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_TRIGGERS;
+        MODE_ANY;
+        PRECONDITION(CheckPointer(thread));
+        PRECONDITION(context != NULL);
+    }
+    CONTRACTL_END;
+
+    if (CORDBUnrecoverableError(this))
+        return;
+
+    DWORD len = sizeof(DT_CONTEXT);
+    if ((context->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+    {
+        // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
+        typedef struct _CONTEXT_CHUNK {
+            LONG Offset;
+            ULONG Length;
+        } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
+        typedef struct _CONTEXT_EX {
+            CONTEXT_CHUNK All;
+            CONTEXT_CHUNK Legacy;
+            CONTEXT_CHUNK XState;
+        } CONTEXT_EX, *PCONTEXT_EX;
+
+        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&context[1];
+
+        len = pContextEx->All.Length;
+    }
+    else
+    {
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Legacy context detected\n"));
+        return;
+    }
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X Len=%d..\n", context->ContextFlags, len));
+
+    EX_TRY
+    {
+        SetThreadContextNeededFlare((TADDR)context, len, (TADDR)CantStopCountPtr());
+
+        // If debugger continues "GH" (DBG_CONTINUE), then we land here.
+        // This is the expected path for a well-behaved ICorDebug debugger.
+    }
+    EX_CATCH
+    {
+        // If no debugger is attached, or if the debugger continues "GN" (DBG_EXCEPTION_NOT_HANDLED), then we land here.
+        // A naive (not-ICorDebug aware) native-debugger won't handle the exception and so land us here.
+        // We may also get here if a debugger detaches at the Exception notification
+        // (and thus implicitly continues GN).
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent returned\n"));
+    _ASSERTE(!"We failed to SetThreadContext from out of process!");
+}
+#endif // DACCESS_COMPILE
+
 #endif //DEBUGGING_SUPPORTED
+

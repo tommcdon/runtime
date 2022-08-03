@@ -1751,6 +1751,9 @@ extern "C" void __stdcall SignalHijackCompleteFlare(void);
 extern "C" void __stdcall ExceptionNotForRuntimeFlare(void);
 extern "C" void __stdcall NotifyRightSideOfSyncCompleteFlare(void);
 extern "C" void __stdcall NotifySecondChanceReadyForDataFlare(void);
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+extern "C" void __stdcall SetThreadContextNeededFlare(TADDR pContext, DWORD size, TADDR pCantStop);
+#endif
 
 /* ------------------------------------------------------------------------ *
  * Debugger class
@@ -2917,6 +2920,10 @@ public:
 private:
     HANDLE GetGarbageCollectionBlockerEvent() { return  GetLazyData()->m_garbageCollectionBlockerEvent; }
 
+public:
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+    void SendSetThreadContextNeeded(Thread *thread, CONTEXT *context);
+#endif
 };
 
 

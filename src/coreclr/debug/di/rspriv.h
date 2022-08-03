@@ -3280,6 +3280,10 @@ public:
 #endif
     }
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+    void HandleSetThreadContextNeeded(DWORD dwThreadId);
+#endif
+
     //
     // Shim  callbacks to simulate fake attach events.
     //
@@ -6330,6 +6334,9 @@ public:
     // to store the IP here and stuff it in on RemapFunction.
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
+
+    void GetLiveContext(PCONTEXT pContext);
+    void SetLiveContext(PCONTEXT pContext);
 
 private:
     void ClearStackFrameCache();

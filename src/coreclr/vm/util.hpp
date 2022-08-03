@@ -564,6 +564,11 @@ FORCEINLINE void DecCantStopCount()
     t_CantStopCount--;
 }
 
+FORCEINLINE void* CantStopCountPtr()
+{
+    return &t_CantStopCount;
+}
+
 typedef StateHolder<IncCantStopCount, DecCantStopCount> CantStopHolder;
 
 #ifdef _DEBUG

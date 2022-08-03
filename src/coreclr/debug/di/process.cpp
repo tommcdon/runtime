@@ -7659,6 +7659,8 @@ HRESULT CordbProcess::GetRuntimeOffsets()
          m_runtimeOffsets.m_notifyRSOfSyncCompleteBPAddr));
     LOG((LF_CORDB, LL_INFO10000, "    m_debuggerWordTLSIndex=           0x%08x\n",
          m_runtimeOffsets.m_debuggerWordTLSIndex));
+    LOG((LF_CORDB, LL_INFO10000, "    m_setThreadContextNeededAddr=    0x%p\n",
+         m_runtimeOffsets.m_setThreadContextNeededAddr));
 #endif // FEATURE_INTEROP_DEBUGGING
 
     LOG((LF_CORDB, LL_INFO10000, "    m_TLSIndex=                       0x%08x\n",
@@ -7719,6 +7721,7 @@ HRESULT CordbProcess::GetRuntimeOffsets()
             m_runtimeOffsets.m_signalHijackCompleteBPAddr,
             m_runtimeOffsets.m_excepNotForRuntimeBPAddr,
             m_runtimeOffsets.m_notifyRSOfSyncCompleteBPAddr,
+            m_runtimeOffsets.m_setThreadContextNeededAddr,
         };
 
         const int NumFlares = ARRAY_SIZE(flares);
@@ -11152,7 +11155,75 @@ void CordbProcess::FilterClrNotification(
     }
 }
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
+{
+    LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded\n"));
 
+    CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
+    if (pThread == NULL)
+    {
+        ThrowHR(E_UNEXPECTED);
+    }
+    TADDR context = NULL;
+    DWORD contextSize = 0;
+    TADDR cantStop = NULL;
+    {
+        DWORD contextFlags = CONTEXT_FULL;
+
+        // The initialize call should fail but return contextSize
+        BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+        _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+
+        BYTE *pBuffer = (BYTE*)alloca(contextSize);
+
+        PCONTEXT pContext = NULL;
+        success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
+        if (!success)
+        {
+            DWORD lastError = GetLastError();
+            _ASSERTE(!"InitializeContext failed");
+
+            LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", HRESULT_FROM_WIN32(lastError), GetLastError()));
+
+            ThrowHR(HRESULT_FROM_WIN32(lastError));
+        }
+
+        _ASSERTE((BYTE*)pContext == pBuffer);
+
+        pThread->GetLiveContext(pContext);
+        context = (TADDR)pContext->Rcx;
+        contextSize = (DWORD)pContext->Rdx;
+        cantStop = (TADDR)pContext->R8;
+    }
+
+    {
+        PCONTEXT pContext = (PCONTEXT)_alloca(contextSize);
+        HRESULT hr = GetDAC()->ReadData(context, contextSize, (BYTE*)pContext);
+        if (FAILED(hr))
+        {
+            _ASSERTE(!"ReadData failed");
+
+            LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Unexpected result from ReadData (error: 0x%X).\n", hr));
+
+            ThrowHR(hr);
+        }
+
+        DWORD contextFlags = pContext->ContextFlags;
+
+        pThread->SetLiveContext(pContext);
+
+        size_t dwCantStop;
+        hr = SafeReadStruct(cantStop, &dwCantStop);
+        IfFailThrow(hr);
+
+        dwCantStop--;
+
+        hr = SafeWriteStruct(cantStop, &dwCantStop);
+        IfFailThrow(hr);
+    }
+}
+#endif
 
 //
 // If the thread has an unhandled managed exception, hijack it.
@@ -11377,7 +11448,15 @@ HRESULT CordbProcess::Filter(
 
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
         }
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT && pRecord->ExceptionAddress == m_runtimeOffsets.m_setThreadContextNeededAddr) /*|| pRecord->ExceptionCode == STATUS_SINGLE_STEP*/
+        {
+            // this is a request to set the thread context out of process
 
+            HandleSetThreadContextNeeded(dwThreadId);
+            *pContinueStatus = DBG_CONTINUE;
+        }
+#endif
     }
     PUBLIC_API_END(hr);
     // we may not find the correct mscordacwks so fail gracefully
