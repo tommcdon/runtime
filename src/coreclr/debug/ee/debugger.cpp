@@ -5551,7 +5551,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
 
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
-    if (Thread::AreCetShadowStacksEnabled() && retVal)
+    if (/*Thread::AreCetShadowStacksEnabled() &&*/ retVal)
     {
         g_pDebugger->SendSetThreadContextNeeded(thread, context);
     }
