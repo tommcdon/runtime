@@ -16745,25 +16745,35 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     if (CORDBUnrecoverableError(this))
         return;
 
+    DWORD len = sizeof(DT_CONTEXT);
+    if ((context->ContextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE)
+    {
+        // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
+        typedef struct _CONTEXT_CHUNK {
+            LONG Offset;
+            ULONG Length;
+        } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
+        typedef struct _CONTEXT_EX {
+            CONTEXT_CHUNK All;
+            CONTEXT_CHUNK Legacy;
+            CONTEXT_CHUNK XState;
+        } CONTEXT_EX, *PCONTEXT_EX;
 
-    // Send a DB_IPCE_SET_THREADCONTEXT_NEEDED event to the Right Side
-    typedef struct _CONTEXT_CHUNK {
-        LONG Offset;
-        ULONG Length;
-    } CONTEXT_CHUNK, *PCONTEXT_CHUNK;
-    typedef struct _CONTEXT_EX {
-        CONTEXT_CHUNK All;
-        CONTEXT_CHUNK Legacy;
-        CONTEXT_CHUNK XState;
-    } CONTEXT_EX, *PCONTEXT_EX;
+        PCONTEXT_EX pContextEx = (CONTEXT_EX*)&context[1];
 
-    PCONTEXT_EX pContextEx = (CONTEXT_EX*)&context[1];
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
+            context->ContextFlags,
+            pContextEx->All.Length,
+            pContextEx->Legacy.Length,
+            pContextEx->XState.Length));
 
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X All=%d Legacy=%d XState=%d..\n",
-        context->ContextFlags,
-        pContextEx->All.Length,
-        pContextEx->Legacy.Length,
-        pContextEx->XState.Length));
+        len = pContextEx->All.Length;
+    }
+    else
+    {
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Legacy context detected\n"));
+        return;
+    }
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X Dr0=0x%16.16llX Dr1=0x%16.16llX Dr2=0x%16.16llX Dr3=0x%16.16llX Dr6=0x%16.16llX Dr7=0x%16.16llX Rax=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX Rbx=0x%16.16llX Rsp=0x%16.16llX Rbp=0x%16.16llX Rsi=0x%16.16llX Rdi=0x%16.16llX R8=0x%16.16llX R9=0x%16.16llX R10=0x%16.16llX R11=0x%16.16llX R12=0x%16.16llX R13=0x%16.16llX R14=0x%16.16llX R15=0x%16.16llX Rip=0x%16.16llX\n",
         context->ContextFlags,
@@ -16805,7 +16815,7 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     EX_TRY
     {
-        SetThreadContextNeededFlare((TADDR)context, pContextEx->All.Length);
+        SetThreadContextNeededFlare((TADDR)context, len, (TADDR)CantStopCountPtr());
 
         // If debugger continues "GH" (DBG_CONTINUE), then we land here.
         // This is the expected path for a well-behaved ICorDebug debugger.

@@ -557,11 +557,18 @@ extern thread_local size_t t_CantStopCount;
 FORCEINLINE void IncCantStopCount()
 {
     t_CantStopCount++;
+    LOG((LF_CORDB, LL_INFO1000, "IncCantStopCount %d\n", t_CantStopCount));
 }
 
 FORCEINLINE void DecCantStopCount()
 {
     t_CantStopCount--;
+    LOG((LF_CORDB, LL_INFO1000, "DecCantStopCount %d\n", t_CantStopCount));
+}
+
+FORCEINLINE void* CantStopCountPtr()
+{
+    return &t_CantStopCount;
 }
 
 typedef StateHolder<IncCantStopCount, DecCantStopCount> CantStopHolder;

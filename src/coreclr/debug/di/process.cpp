@@ -11170,6 +11170,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
     }
     TADDR context = NULL;
     DWORD contextSize = 0;
+    TADDR cantStop = NULL;
     {
         //    PCONTEXT pCachedContext = pThread->GetCachedContext();
         //    if (pCachedContext != NULL)
@@ -11202,6 +11203,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
         pThread->GetLiveContext(pContext);
         context = (TADDR)pContext->Rcx;
         contextSize = (DWORD)pContext->Rdx;
+        cantStop = (TADDR)pContext->R8;
     }
 
     {
@@ -11247,6 +11249,18 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
         //pThread->SetLiveContext(pThread->GetCachedContext());
         //pThread->ResetCachedContext();
         pThread->SetLiveContext(pContext);
+
+
+        size_t dwCantStop;
+        hr = SafeReadStruct(cantStop, &dwCantStop);
+        IfFailThrow(hr);
+
+        printf("CantStop=%u\n", (DWORD)dwCantStop);
+
+        dwCantStop--;
+
+        hr = SafeWriteStruct(cantStop, &dwCantStop);
+        IfFailThrow(hr);
     }
 }
 
@@ -12347,9 +12361,9 @@ Reaction CordbProcess::TriageExcep1stChanceAndInit(CordbUnmanagedThread * pUnman
         return REACTION(cFirstChanceHijackStarted);
     }
     else if ((dwExCode == STATUS_BREAKPOINT) &&
-             (pExAddress == m_runtimeOffsets.m_excepForRuntimeHandoffStartBPAddr))
+             (pExAddress == m_runtimeOffsets.m_setThreadContextNeededAddr))
     {
-        printf("*** m_excepForRuntimeHandoffStartBPAddr flare in TriageException\n");
+        printf("*** m_setThreadContextNeededAddr flare in TriageException\n");
         // This is an internal message to set the thread context out of process
         // Need to skip it completely; never dispatch.
         pUnmanagedThread->SetupForSkipBreakpoint(pNativePatch);
