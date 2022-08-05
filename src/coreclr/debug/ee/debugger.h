@@ -1903,7 +1903,8 @@ public:
     bool FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                T_CONTEXT *context,
                                DWORD code,
-                               Thread *thread);
+                               Thread *thread,
+                               BOOL fIsVEH = FALSE);
 
     bool IsJMCMethod(Module* pModule, mdMethodDef tkMethod);
 

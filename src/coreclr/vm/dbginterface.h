@@ -108,7 +108,8 @@ public:
     virtual bool FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                        CONTEXT *context,
                                        DWORD code,
-                                       Thread *thread) = 0;
+                                       Thread *thread,
+                                       BOOL fIsVEH = FALSE) = 0;
 
     // pThread is thread that exception is on.
     // currentSP is stack frame of the throw site.

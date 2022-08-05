@@ -6277,7 +6277,8 @@ IsDebuggerFault(EXCEPTION_RECORD *pExceptionRecord,
         g_pDebugInterface->FirstChanceNativeException(pExceptionRecord,
                                                       pContext,
                                                       exceptionCode,
-                                                      pThread))
+                                                      pThread,
+                                                      TRUE))
     {
         LOG((LF_EH | LF_CORDB, LL_INFO1000, "IsDebuggerFault - it's the debugger's fault\n"));
         return true;

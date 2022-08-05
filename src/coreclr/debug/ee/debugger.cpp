@@ -5504,7 +5504,8 @@ bool Debugger::IsJMCMethod(Module* pModule, mdMethodDef tkMethod)
 bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                           CONTEXT *context,
                                           DWORD code,
-                                          Thread *thread)
+                                          Thread *thread,
+                                          BOOL fIsVEH)
 {
 
     // @@@
@@ -5553,7 +5554,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
 
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
-    if (/*Thread::AreCetShadowStacksEnabled() &&*/ retVal)
+    if (/*Thread::AreCetShadowStacksEnabled() &&*/ retVal && fIsVEH)
     {
         g_pDebugger->SendSetThreadContextNeeded(thread, context);
     }
@@ -13144,19 +13145,27 @@ void STDCALL ExceptionHijackWorker(
     {
         case EHijackReason::kUnhandledException:
             STRESS_LOG0(LF_CORDB,LL_INFO10, "D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
+            OutputDebugStringA("D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
+            printf("D::EHW: Calling g_pDebugger->UnhandledHijackWorker()\n");
             _ASSERTE(pData == NULL);
             g_pDebugger->UnhandledHijackWorker(pContext, pRecord);
             break;
 #ifdef FEATURE_INTEROP_DEBUGGING
     case EHijackReason::kM2UHandoff:
+            OutputDebugStringA("D::EHW: Calling g_pDebugger->M2UHandoffHijackWorker()\n");
+            printf("D::EHW: Calling g_pDebugger->M2UHandoffHijackWorker()\n");
             _ASSERTE(pData == NULL);
             g_pDebugger->M2UHandoffHijackWorker(pContext, pRecord);
             break;
     case EHijackReason::kFirstChanceSuspend:
+            OutputDebugStringA("D::EHW: Calling g_pDebugger->FirstChanceSuspendHijackWorker()\n");
+            printf("D::EHW: Calling g_pDebugger->FirstChanceSuspendHijackWorker()\n");
             _ASSERTE(pData == NULL);
             g_pDebugger->FirstChanceSuspendHijackWorker(pContext, pRecord);
             break;
     case EHijackReason::kGenericHijack:
+            OutputDebugStringA("D::EHW: Calling g_pDebugger->GenericHijackFunc()\n");
+            printf("D::EHW: Calling g_pDebugger->GenericHijackFunc()\n");
             _ASSERTE(pData == NULL);
             g_pDebugger->GenericHijackFunc();
             break;
@@ -13467,6 +13476,8 @@ VOID Debugger::M2UHandoffHijackWorker(CONTEXT *pContext,
     EX_TRY
     {
         LOG((LF_CORDB, LL_INFO1000, "D::M2UHHW: Calling FirstChanceNativeException\n"));
+        OutputDebugStringA("D::M2UHHW: Calling FirstChanceNativeException\n");
+        printf("D::M2UHHW: Calling FirstChanceNativeException\n");
         bool okay;
         okay = g_pDebugger->FirstChanceNativeException(pExceptionRecord,
             pContext,
@@ -13480,6 +13491,9 @@ VOID Debugger::M2UHandoffHijackWorker(CONTEXT *pContext,
         // It would be really bad if somebody threw here. We're actually outside of managed code,
         // so there's not a lot we can do besides just swallow the exception and hope for the best.
         LOG((LF_CORDB, LL_INFO1000, "D::M2UHHW: ERROR! FirstChanceNativeException threw an exception\n"));
+        OutputDebugStringA("D::M2UHHW: ERROR! FirstChanceNativeException threw an exception\n");
+        printf("D::M2UHHW: ERROR! FirstChanceNativeException threw an exception\n");
+
     }
     EX_END_CATCH(SwallowAllExceptions);
 
@@ -13490,6 +13504,8 @@ VOID Debugger::M2UHandoffHijackWorker(CONTEXT *pContext,
     // This signal will be received by the RS and it will use SetThreadContext
     // to clear away the entire hijack frame. This function does not return.
     LOG((LF_CORDB, LL_INFO1000, "D::M2UHHW: Flaring hijack complete\n"));
+    OutputDebugStringA("D::M2UHHW: Flaring hijack complete\n");
+    printf("D::M2UHHW: Flaring hijack complete\n");
     SignalHijackComplete();
 
     _ASSERTE(!"UNREACHABLE");
@@ -13580,6 +13596,10 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
 
         // Signal the RS to tell us what to do
         SPEW(fprintf(stderr, "0x%x D::FCHF: Signaling hijack started.\n", tid));
+
+        OutputDebugStringA("Calling SignalHijackStarted\n");
+        printf("Calling SignalHijackStarted\n");
+
         SignalHijackStarted();
         SPEW(fprintf(stderr, "0x%x D::FCHF: Signaling hijack started complete. DebugCounter=0x%x\n", tid, pFcd->debugCounter));
 
@@ -13631,6 +13651,8 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
         }
 
         SPEW(fprintf(stderr, "0x%x D::FCHF: signaling HijackComplete.\n", tid));
+        OutputDebugStringA("Calling SignalHijackComplete\n");
+        printf("Calling SignalHijackComplete\n");
         SignalHijackComplete();
         SPEW(fprintf(stderr, "0x%x D::FCHF: done signaling HijackComplete. DebugCounter=0x%x\n", tid, pFcd->debugCounter));
 
@@ -13797,6 +13819,9 @@ void Debugger::SignalHijackStarted(void)
 {
     WRAPPER_NO_CONTRACT;
 
+    OutputDebugStringA("Calling SignalHijackStartedFlare\n");
+    printf("Calling SignalHijackStartedFlare\n");
+
 #if defined(FEATURE_INTEROP_DEBUGGING)
     SignalHijackStartedFlare();
 #else
@@ -13813,6 +13838,9 @@ void Debugger::SignalHijackStarted(void)
 void Debugger::ExceptionForRuntimeHandoffStart(void)
 {
     WRAPPER_NO_CONTRACT;
+
+    OutputDebugStringA("Calling ExceptionForRuntimeHandoffStartFlare\n");
+    printf("Calling ExceptionForRuntimeHandoffStartFlare\n");
 
 #if defined(FEATURE_INTEROP_DEBUGGING)
     ExceptionForRuntimeHandoffStartFlare();
@@ -13832,6 +13860,9 @@ void Debugger::ExceptionForRuntimeHandoffComplete(void)
 {
     WRAPPER_NO_CONTRACT;
 
+    OutputDebugStringA("Calling ExceptionForRuntimeHandoffComplete\n");
+    printf("Calling ExceptionForRuntimeHandoffComplete\n");
+
 #if defined(FEATURE_INTEROP_DEBUGGING)
     ExceptionForRuntimeHandoffCompleteFlare();
 #else
@@ -13847,6 +13878,9 @@ void Debugger::ExceptionForRuntimeHandoffComplete(void)
 void Debugger::SignalHijackComplete(void)
 {
     WRAPPER_NO_CONTRACT;
+
+    OutputDebugStringA("Calling SignalHijackCompleteFlare\n");
+    printf("Calling SignalHijackCompleteFlare\n");
 
 #if defined(FEATURE_INTEROP_DEBUGGING)
     SignalHijackCompleteFlare();
@@ -13864,6 +13898,9 @@ void Debugger::ExceptionNotForRuntime(void)
 {
     WRAPPER_NO_CONTRACT;
 
+    OutputDebugStringA("Calling ExceptionNotForRuntimeFlare\n");
+    printf("Calling ExceptionNotForRuntimeFlare\n");
+
 #if defined(FEATURE_INTEROP_DEBUGGING)
     ExceptionNotForRuntimeFlare();
 #else
@@ -13880,6 +13917,10 @@ void Debugger::NotifyRightSideOfSyncComplete(void)
 {
     WRAPPER_NO_CONTRACT;
     STRESS_LOG0(LF_CORDB, LL_INFO100000, "D::NRSOSC: Sending flare...\n");
+
+    OutputDebugStringA("Calling NotifyRightSideOfSyncCompleteFlare\n");
+    printf("Calling NotifyRightSideOfSyncCompleteFlare\n");
+
 #if defined(FEATURE_INTEROP_DEBUGGING)
     NotifyRightSideOfSyncCompleteFlare();
 #else
@@ -15056,6 +15097,9 @@ HRESULT Debugger::FuncEvalSetup(DebuggerIPCE_FuncEvalInfo *pEvalInfo,
     if (!fInException)
     {
         _ASSERTE(filterContext != NULL);
+
+        OutputDebugStringA("::SetIP(filterContext, (UINT_PTR)GetEEFuncEntryPoint(::FuncEvalHijack))\n");
+        printf("::SetIP(filterContext, (UINT_PTR)GetEEFuncEntryPoint(::FuncEvalHijack))\n");
 
         ::SetIP(filterContext, (UINT_PTR)GetEEFuncEntryPoint(::FuncEvalHijack));
 
@@ -16676,12 +16720,14 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
     else
     {
         LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Legacy context detected\n"));
-        OutputDebugString("D::SSTCN Legacy context detected\n");
-        return;
+        OutputDebugStringA("D::SSTCN Legacy context detected\n");
+        printf("D::SSTCN Legacy context detected\n");
+        //return;
     }
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN context->ContextFlags=0x%X Len=%d..\n", context->ContextFlags, len));
-    OutputDebugString("D::SSTCN Applying Context\n");
+    OutputDebugStringA("D::SSTCN Applying Context\n");
+    printf("D::SSTCN Applying Context\n");
 
     EX_TRY
     {
@@ -16701,7 +16747,8 @@ void Debugger::SendSetThreadContextNeeded(Thread *thread, CONTEXT *context)
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SendRawEvent returned\n"));
     _ASSERTE(!"We failed to SetThreadContext from out of process!");
-    OutputDebugString("***We failed to SetThreadContext from out of process!\n");
+    OutputDebugStringA("***We failed to SetThreadContext from out of process!\n");
+    printf("***We failed to SetThreadContext from out of process!\n");
 }
 #endif // DACCESS_COMPILE
 
