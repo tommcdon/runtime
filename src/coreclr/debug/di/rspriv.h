@@ -4119,6 +4119,14 @@ private:
     WriteableMetadataUpdateMode m_writableMetadataUpdateMode;
 
     COM_METHOD GetObjectInternal(CORDB_ADDRESS addr, CordbAppDomain* pAppDomainOverride, ICorDebugObjectValue **pObject);
+
+private:
+
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+    void GetLiveContext(DWORD dwThreadId, PCONTEXT pContext);
+    void SetLiveContext(DWORD dwThreadId, PCONTEXT pContext);
+#endif
+
 };
 
 // Some IMDArocess APIs are supported as interop-only.
@@ -6334,11 +6342,6 @@ public:
     // to store the IP here and stuff it in on RemapFunction.
     // If we're not at an outstanding RemapOpportunity, this will be NULL
     REMOTE_PTR            m_EnCRemapFunctionIP;
-
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
-    void GetLiveContext(PCONTEXT pContext);
-    void SetLiveContext(PCONTEXT pContext);
-#endif
 
 private:
     void ClearStackFrameCache();

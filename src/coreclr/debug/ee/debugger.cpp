@@ -5536,6 +5536,8 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
         return true;
     }
 
+    printf("FirstChanceNativeException fIsVEH=%d\n", fIsVEH);
+
     bool retVal;
 
     {
@@ -13526,7 +13528,8 @@ VOID Debugger::M2UHandoffHijackWorker(CONTEXT *pContext,
 // - this thread is not in cooperative mode.
 //-----------------------------------------------------------------------------
 LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
-                                              EXCEPTION_RECORD *pExceptionRecord)
+                                              EXCEPTION_RECORD *pExceptionRecord,
+                                              BOOL fIsVEH)
 {
     // if we aren't set up to do interop debugging this function should just bail out
     if(m_pRCThread == NULL)
@@ -13575,6 +13578,7 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
     volatile DebuggerIPCFirstChanceData* pFcd = &fcd;
 
     // The Windows native break in thread does not have TLS storage allocated.
+    Thread *pEEThread = NULL;
     bool debuggerBreakInThread = (NtCurrentTeb()->ThreadLocalStoragePointer == NULL);
     {
         // Hijack filters are always in the can't stop range.
@@ -13584,7 +13588,7 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
         CantStopHolder hCantStop(!debuggerBreakInThread);
 
         // Get the current runtime thread. This is only an optimized TLS access.
-        Thread *pEEThread = debuggerBreakInThread ? NULL : g_pEEInterface->GetThread();
+        pEEThread = debuggerBreakInThread ? NULL : g_pEEInterface->GetThread();
 
         // Hook up the memory so RS can get to it
         fcd.pLeftSideContext.Set((DT_CONTEXT*)pContext);
@@ -13668,6 +13672,11 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
     if (pFcd->action == HIJACK_ACTION_EXIT_HANDLED)
     {
         SPEW(fprintf(stderr, "0x%x D::FCHF: exiting with CONTINUE_EXECUTION\n", tid));
+        if (fIsVEH)
+        {
+            g_pDebugger->SendSetThreadContextNeeded(pEEThread, pContext); // TODO add CET check
+        }
+
         return EXCEPTION_CONTINUE_EXECUTION;
     }
     else

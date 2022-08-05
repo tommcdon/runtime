@@ -6787,6 +6787,9 @@ LONG WINAPI CLRVectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo)
             STRESS_LOG4(LF_EH, LL_INFO100, "In CLRVectoredExceptionHandler, Exception = %x, Context = %p, IP = %p SP = %p\n",
                     pExceptionInfo->ExceptionRecord->ExceptionCode, pExceptionInfo->ContextRecord,
                     GetIP(pExceptionInfo->ContextRecord), GetSP(pExceptionInfo->ContextRecord));
+            printf("In CLRVectoredExceptionHandler, Exception = %x, Context = %p, IP = %llX SP = %llX\n",
+                    pExceptionInfo->ExceptionRecord->ExceptionCode, pExceptionInfo->ContextRecord,
+                    GetIP(pExceptionInfo->ContextRecord), GetSP(pExceptionInfo->ContextRecord));
         }
 
     }
@@ -7510,7 +7513,7 @@ LONG WINAPI CLRVectoredExceptionHandlerShim(PEXCEPTION_POINTERS pExceptionInfo)
     if (g_pDebugInterface != NULL)
     {
         if (g_pDebugInterface->FirstChanceSuspendHijackWorker(pExceptionInfo->ContextRecord,
-            pExceptionInfo->ExceptionRecord) == EXCEPTION_CONTINUE_EXECUTION)
+            pExceptionInfo->ExceptionRecord, TRUE) == EXCEPTION_CONTINUE_EXECUTION)
             return EXCEPTION_CONTINUE_EXECUTION;
     }
 #endif

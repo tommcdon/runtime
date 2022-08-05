@@ -11160,11 +11160,6 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 {
     LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded\n"));
 
-    CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);
-    if (pThread == NULL)
-    {
-        ThrowHR(E_UNEXPECTED);
-    }
     TADDR context = NULL;
     DWORD contextSize = 0;
     //TADDR cantStop = NULL;
@@ -11191,7 +11186,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 
         _ASSERTE((BYTE*)pContext == pBuffer);
 
-        pThread->GetLiveContext(pContext);
+        GetLiveContext(dwThreadId, pContext);
         context = (TADDR)pContext->Rcx;
         contextSize = (DWORD)pContext->Rdx;
         //cantStop = (TADDR)pContext->R8;
@@ -11209,9 +11204,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
             ThrowHR(hr);
         }
 
-        DWORD contextFlags = pContext->ContextFlags;
-
-        pThread->SetLiveContext(pContext);
+        SetLiveContext(dwThreadId, pContext);
 
     //    size_t dwCantStop;
     //    hr = SafeReadStruct(cantStop, &dwCantStop);
@@ -15250,3 +15243,134 @@ void CordbProcess::HandleControlCTrapResult(HRESULT result)
     // Send the reply to the LS.
     SendIPCEvent(&eventControlCResult, sizeof(eventControlCResult));
 }
+
+
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+void CordbProcess::GetLiveContext(DWORD dwThreadId, PCONTEXT pContext)
+{
+    LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext\n"));
+
+    HandleHolder hThread = OpenThread(
+        THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_QUERY_INFORMATION | THREAD_SUSPEND_RESUME,
+        FALSE, // thread handle is not inheritable.
+        dwThreadId);
+
+    if (hThread == NULL)
+    {
+        ThrowHR(E_UNEXPECTED);
+    }
+
+    DWORD previousSuspendCount = ::SuspendThread(hThread);
+    if (previousSuspendCount == (DWORD)-1)
+    {
+        LOG((LF_CORDB, LL_INFO10000, "RS DB_IPCE_SET_THREADCONTEXT_NEEDED - Unexpected result from SuspendThread\n"));
+        ThrowHR(HRESULT_FROM_GetLastError());
+    }
+    else
+    {
+        DWORD lastError = 0;
+        BOOL success = ::GetThreadContext(hThread, pContext);
+        if (!success)
+        {
+            lastError = ::GetLastError();
+        }
+
+        LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext - Get Thread Context Completed: Success=%d GetLastError=%d hr=0x%X\n", success, lastError, HRESULT_FROM_WIN32(lastError)));
+        _ASSERTE(success);
+
+        DWORD suspendCount = ::ResumeThread(hThread);
+        if (suspendCount == (DWORD)-1)
+        {
+            LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext - Unexpected result from ResumeThread\n"));
+            ThrowHR(HRESULT_FROM_GetLastError());
+        }
+
+        if (!success)
+        {
+            LOG((LF_CORDB, LL_INFO10000, "RS GetLiveContext - Unexpected result from GetThreadContext\n"));
+            ThrowHR(HRESULT_FROM_WIN32(lastError));
+        }
+    }
+}
+
+void CordbProcess::SetLiveContext(DWORD dwThreadId, PCONTEXT pContext)
+{
+    // The initialize call should fail but return contextSize
+    DWORD contextSize = 0;
+    DWORD contextFlags = pContext->ContextFlags;
+    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+
+    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+
+    LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext -  InitializeContext ContextSize %d\n", contextSize));
+
+    PVOID pBuffer = _alloca(contextSize);
+    PCONTEXT pFrameContext = NULL;
+    success = InitializeContext(pBuffer, contextFlags, &pFrameContext, &contextSize);
+    if (!success)
+    {
+        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+        _ASSERTE(!"InitializeContext failed");
+
+        LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext -  Unexpected result from InitializeContext (error: 0x%X [%d]).\n", hr, GetLastError()));
+
+        ThrowHR(hr);
+    }
+
+    _ASSERTE((BYTE*)pFrameContext == pBuffer);
+
+    success = CopyContext(pFrameContext, contextFlags, pContext);
+    LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - CopyContext=%s %d\n", success?"SUCCESS":"FAIL", GetLastError()));
+    if (!success)
+    {
+        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
+        _ASSERTE(!"CopyContext failed");
+
+        LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Unexpected result from CopyContext (error: 0x%X [%d]).\n", hr, GetLastError()));
+
+        ThrowHR(hr);
+    }
+
+    LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Set Thread Context - ID = 0x%X, SS enabled = %d\n", dwThreadId,  /*(uint64_t)hThread,*/ (pContext->EFlags & 0x100) != 0));
+
+    HandleHolder hThread = OpenThread(
+        THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_QUERY_INFORMATION | THREAD_SUSPEND_RESUME,
+        FALSE, // thread handle is not inheritable.
+        dwThreadId);
+
+    if (hThread != NULL)
+    {
+        DWORD previousSuspendCount = ::SuspendThread(hThread);
+        if (previousSuspendCount == (DWORD)-1)
+        {
+            LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Unexpected result from SuspendThread\n"));
+            ThrowHR(HRESULT_FROM_GetLastError());
+        }
+        else
+        {
+            DWORD lastError = 0;
+            success = ::SetThreadContext(hThread, pFrameContext);
+            if (!success)
+            {
+                lastError = ::GetLastError();
+            }
+
+            LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Set Thread Context Completed: Success=%d GetLastError=%d hr=0x%X\n", success, lastError, HRESULT_FROM_WIN32(lastError)));
+            _ASSERTE(success);
+
+            DWORD suspendCount = ::ResumeThread(hThread);
+            if (suspendCount == (DWORD)-1 || suspendCount != previousSuspendCount + 1)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Unexpected result from ResumeThread\n"));
+                ThrowHR(HRESULT_FROM_GetLastError());
+            }
+
+            if (!success)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "RS SetLiveContext - Unexpected result from SetThreadContext\n"));
+                ThrowHR(HRESULT_FROM_WIN32(lastError));
+            }
+        }
+    }
+}
+#endif
