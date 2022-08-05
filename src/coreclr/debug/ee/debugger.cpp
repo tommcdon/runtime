@@ -16665,6 +16665,8 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     if (!m_fOutOfProcessSetContextEnabled)
         return;
 
+    printf("D::SSTCN 1 Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", context->Rip, context->Rcx, context->Rdx);
+
     DWORD contextFlags = context->ContextFlags;
     DWORD contextSize = 0;
 
@@ -16694,7 +16696,7 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     }
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
-
+    printf("D::SSTCN 2 Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", pCopyContext->Rip, pCopyContext->Rcx, pCopyContext->Rdx);
     EX_TRY
     {
         SetThreadContextNeededFlare((TADDR)pCopyContext, contextSize);
