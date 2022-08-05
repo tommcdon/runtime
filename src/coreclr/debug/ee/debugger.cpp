@@ -971,7 +971,9 @@ Debugger::Debugger()
     // as data structure layouts change, add a new version number
     // and comment the changes
     m_mdDataStructureVersion = 1;
-
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+    m_fOutOfProcessSetContextEnabled = Thread::AreCetShadowStacksEnabled() || CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_OutOfProcessSetContext) != 0;
+#endif
 }
 
 /******************************************************************************
@@ -5504,7 +5506,8 @@ bool Debugger::IsJMCMethod(Module* pModule, mdMethodDef tkMethod)
 bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                           CONTEXT *context,
                                           DWORD code,
-                                          Thread *thread)
+                                          Thread *thread,
+                                          BOOL fIsVEH)
 {
 
     // @@@
@@ -5537,19 +5540,27 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 
     bool retVal;
 
-    // Don't stop for native debugging anywhere inside our inproc-Filters.
-    CantStopHolder hHolder;
-
-    if (!CORDBUnrecoverableError(this))
     {
-        retVal = DebuggerController::DispatchNativeException(exception, context,
-                                                           code, thread);
-    }
-    else
-    {
-        retVal = false;
+        // Don't stop for native debugging anywhere inside our inproc-Filters.
+        CantStopHolder hHolder;
+
+        if (!CORDBUnrecoverableError(this))
+        {
+            retVal = DebuggerController::DispatchNativeException(exception, context,
+                                                               code, thread);
+        }
+        else
+        {
+            retVal = false;
+        }
     }
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+    if (retVal && fIsVEH)
+    {
+        g_pDebugger->SendSetThreadContextNeeded(context);
+    }
+#endif
     return retVal;
 }
 
@@ -13146,7 +13157,7 @@ void STDCALL ExceptionHijackWorker(
             break;
     case EHijackReason::kFirstChanceSuspend:
             _ASSERTE(pData == NULL);
-            g_pDebugger->FirstChanceSuspendHijackWorker(pContext, pRecord);
+            g_pDebugger->FirstChanceSuspendHijackWorker(pContext, pRecord, FALSE);
             break;
     case EHijackReason::kGenericHijack:
             _ASSERTE(pData == NULL);
@@ -13463,7 +13474,8 @@ VOID Debugger::M2UHandoffHijackWorker(CONTEXT *pContext,
         okay = g_pDebugger->FirstChanceNativeException(pExceptionRecord,
             pContext,
             pExceptionRecord->ExceptionCode,
-            pEEThread);
+            pEEThread,
+            FALSE);
         _ASSERTE(okay == true);
         LOG((LF_CORDB, LL_INFO1000, "D::M2UHHW: FirstChanceNativeException returned\n"));
     }
@@ -13502,7 +13514,8 @@ VOID Debugger::M2UHandoffHijackWorker(CONTEXT *pContext,
 // - this thread is not in cooperative mode.
 //-----------------------------------------------------------------------------
 LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
-                                              EXCEPTION_RECORD *pExceptionRecord)
+                                              EXCEPTION_RECORD *pExceptionRecord,
+                                              BOOL fIsVEH)
 {
     // if we aren't set up to do interop debugging this function should just bail out
     if(m_pRCThread == NULL)
@@ -13638,6 +13651,12 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
     if (pFcd->action == HIJACK_ACTION_EXIT_HANDLED)
     {
         SPEW(fprintf(stderr, "0x%x D::FCHF: exiting with CONTINUE_EXECUTION\n", tid));
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+        if (fIsVEH)
+        {
+            g_pDebugger->SendSetThreadContextNeeded(pContext);
+        }
+#endif
         return EXCEPTION_CONTINUE_EXECUTION;
     }
     else
@@ -16631,4 +16650,64 @@ void Debugger::StartCanaryThread()
 }
 #endif // DACCESS_COMPILE
 
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_TRIGGERS;
+        MODE_ANY;
+        PRECONDITION(context != NULL);
+    }
+    CONTRACTL_END;
+
+    if (!m_fOutOfProcessSetContextEnabled)
+        return;
+
+    DWORD contextFlags = context->ContextFlags;
+    DWORD contextSize = 0;
+
+    // The initialize call should fail but return contextSize
+    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
+
+    BYTE *pBuffer = (BYTE*)alloca(contextSize);
+
+    PCONTEXT pCopyContext = NULL;
+    success = InitializeContext(pBuffer, contextFlags, &pCopyContext, &contextSize);
+    if (!success)
+    {
+        _ASSERTE(!"InitializeContext failed");
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
+        return;
+    }
+
+    _ASSERTE((BYTE*)pCopyContext == pBuffer);
+
+    success = CopyContext(pCopyContext, contextFlags, context);
+    if (!success)
+    {
+        _ASSERTE(!"CopyContext failed");
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
+        return;
+    }
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
+
+    EX_TRY
+    {
+        SetThreadContextNeededFlare((TADDR)pCopyContext, contextSize);
+    }
+    EX_CATCH
+    {
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SetThreadContextNeededFlare returned\n"));
+    _ASSERTE(!"We failed to SetThreadContext from out of process!");
+}
+#endif // DACCESS_COMPILE
+
 #endif //DEBUGGING_SUPPORTED
+

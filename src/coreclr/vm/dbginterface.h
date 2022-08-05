@@ -108,7 +108,8 @@ public:
     virtual bool FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                        CONTEXT *context,
                                        DWORD code,
-                                       Thread *thread) = 0;
+                                       Thread *thread,
+                                       BOOL fIsVEH = TRUE) = 0;
 
     // pThread is thread that exception is on.
     // currentSP is stack frame of the throw site.
@@ -389,7 +390,7 @@ public:
     virtual BOOL FallbackJITAttachPrompt() = 0;
 
 #ifdef FEATURE_INTEROP_DEBUGGING
-    virtual LONG FirstChanceSuspendHijackWorker(PCONTEXT pContext, PEXCEPTION_RECORD pExceptionRecord) = 0;
+    virtual LONG FirstChanceSuspendHijackWorker(PCONTEXT pContext, PEXCEPTION_RECORD pExceptionRecord, BOOL fIsVEH = TRUE) = 0;
 #endif
 
     // Helper method for cleaning up transport socket
