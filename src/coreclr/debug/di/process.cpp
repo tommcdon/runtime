@@ -15338,7 +15338,7 @@ void CordbProcess::SetLiveContext(DWORD dwThreadId, PCONTEXT pContext)
         else
         {
             DWORD lastError = 0;
-            printf("R::SSTCN   Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", pFrameContext->Rip, pFrameContext->Rcx, pFrameContext->Rdx);
+            printf("R::SSTCN   %04x Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", dwThreadId, pFrameContext->Rip, pFrameContext->Rcx, pFrameContext->Rdx);
 
             success = ::SetThreadContext(hThread, pFrameContext);
             if (!success)

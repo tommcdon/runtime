@@ -16665,7 +16665,7 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     if (!m_fOutOfProcessSetContextEnabled)
         return;
 
-    printf("D::SSTCN 1 Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", context->Rip, context->Rcx, context->Rdx);
+    printf("D::SSTCN 1 %04x Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", GetCurrentThreadId(), context->Rip, context->Rcx, context->Rdx);
 
     DWORD contextFlags = context->ContextFlags;
     DWORD contextSize = 0;
@@ -16681,6 +16681,7 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     if (!success)
     {
         _ASSERTE(!"InitializeContext failed");
+        printf("***** InitializeContext failed!!!\n");
         LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
         return;
     }
@@ -16691,12 +16692,13 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     if (!success)
     {
         _ASSERTE(!"CopyContext failed");
+        printf("***** CopyContext failed!!!\n");
         LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
         return;
     }
 
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
-    printf("D::SSTCN 2 Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", pCopyContext->Rip, pCopyContext->Rcx, pCopyContext->Rdx);
+    printf("D::SSTCN 2 %04x Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", GetCurrentThreadId(), pCopyContext->Rip, pCopyContext->Rcx, pCopyContext->Rdx);
     EX_TRY
     {
         SetThreadContextNeededFlare((TADDR)pCopyContext, contextSize);
