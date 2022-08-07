@@ -16671,70 +16671,45 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
 
     DWORD contextFlags = context->ContextFlags;
     DWORD contextSize = 0;
-    PCONTEXT pContext = NULL;
 
-
-    // First determine the context size
-    EX_TRY
-    {
-        DWORD *pData = (DWORD*)&context[1];
-        if ((contextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE &&
-                *pData == pData[2] &&
-                *pData == (DWORD)-(int)pData[3] &&
-                pData[1] >= pData[3] + pData[5] )
-        {
-            contextSize = pData[1];
-            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
-
-            pContext = context;
-        }
-    }
-    EX_CATCH
-    {
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-
-    BOOL success = FALSE;
-    if (pContext == NULL)
+    // determine the context size
+    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+    if (success || GetLastError() != ERROR_INSUFFICIENT_BUFFER || contextSize == 0)
     {
         // The initialize call should fail but return contextSize
-        success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
-        if (success || GetLastError() != ERROR_INSUFFICIENT_BUFFER || contextSize == 0)
-        {
-            _ASSERTE(!"InitializeContext unexpectedly failed\n");
-            return;
-        }
+        _ASSERTE(!"InitializeContext unexpectedly failed\n");
+        return;
     }
 
-    BYTE *pBuffer = pContext != NULL ? NULL : (BYTE*)_alloca(contextSize);
-
-    // optionally make a copy of the context depending on how we determined the context size
-    if (pContext == NULL)
+    // allocate a temp buffer for the context
+    BYTE *pBuffer = (BYTE*)_alloca(contextSize);
+    if (pBuffer == NULL)
     {
-        if (pBuffer == NULL)
-        {
-            _ASSERTE(!"Failed to allocate context buffer");
-            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Failed to allocate context buffer\n"));
-            return;
-        }
-        BOOL success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
-        if (!success)
-        {
-            _ASSERTE(!"InitializeContext failed");
-            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
-            return;
-        }
-
-        _ASSERTE((BYTE*)pContext == pBuffer);
-
-        success = CopyContext(pContext, contextFlags, context);
-        if (!success)
-        {
-            _ASSERTE(!"CopyContext failed");
-            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
-            return;
-        }
+        _ASSERTE(!"Failed to allocate context buffer");
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Failed to allocate context buffer\n"));
+        return;
     }
+
+    // make a copy of the context
+    PCONTEXT pContext = NULL;
+    success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
+    if (!success)
+    {
+        _ASSERTE(!"InitializeContext failed");
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
+        return;
+    }
+
+    success = CopyContext(pContext, contextFlags, context);
+    if (!success)
+    {
+        _ASSERTE(!"CopyContext failed");
+        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
+        return;
+    }
+
+    // adjust context size if the context pointer is not aligned with the buffer we allocated
+    contextSize -= (DWORD)((BYTE*)pContext-(BYTE*)pBuffer);
 
     // send the context to the right side
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
@@ -16758,7 +16733,7 @@ BOOL Debugger::IsOutOfProcessSetContextEnabled()
 #else
 void Debugger::SendSetThreadContextNeeded(CONTEXT* context)
 {
-    _ASSERTE(!"SendSetThreadContextNeeded Not supported on this platform");
+    _ASSERTE(!"SendSetThreadContextNeeded is not supported on this platform");
 }
 
 BOOL Debugger::IsOutOfProcessSetContextEnabled()
