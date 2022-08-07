@@ -11169,7 +11169,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
         BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
         _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
 
-        BYTE *pBuffer = (BYTE*)alloca(contextSize);
+        BYTE *pBuffer = (BYTE*)_alloca(contextSize);
 
         PCONTEXT pContext = NULL;
         success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
@@ -15338,7 +15338,6 @@ void CordbProcess::SetLiveContext(DWORD dwThreadId, PCONTEXT pContext)
         else
         {
             DWORD lastError = 0;
-            printf("R::SSTCN   %04x Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", dwThreadId, pFrameContext->Rip, pFrameContext->Rcx, pFrameContext->Rdx);
 
             success = ::SetThreadContext(hThread, pFrameContext);
             if (!success)

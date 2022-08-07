@@ -2922,11 +2922,11 @@ public:
 private:
     HANDLE GetGarbageCollectionBlockerEvent() { return  GetLazyData()->m_garbageCollectionBlockerEvent; }
 
-public:
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+private:
     BOOL m_fOutOfProcessSetContextEnabled;
+public:
     void SendSetThreadContextNeeded(CONTEXT *context);
-#endif
+    BOOL IsOutOfProcessSetContextEnabled();
 };
 
 

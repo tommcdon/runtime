@@ -971,8 +971,11 @@ Debugger::Debugger()
     // as data structure layouts change, add a new version number
     // and comment the changes
     m_mdDataStructureVersion = 1;
+    m_fOutOfProcessSetContextEnabled =
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
-    m_fOutOfProcessSetContextEnabled = Thread::AreCetShadowStacksEnabled() || CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_OutOfProcessSetContext) != 0;
+        Thread::AreCetShadowStacksEnabled() || CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_OutOfProcessSetContext) != 0;
+#else
+        FALSE
 #endif
 }
 
@@ -5558,7 +5561,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
     if (retVal && fIsVEH)
     {
-        g_pDebugger->SendSetThreadContextNeeded(context);
+        SendSetThreadContextNeeded(context);
     }
 #endif
     return retVal;
@@ -13654,7 +13657,7 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
         if (fIsVEH)
         {
-            g_pDebugger->SendSetThreadContextNeeded(pContext);
+            SendSetThreadContextNeeded(pContext);
         }
 #endif
         return EXCEPTION_CONTINUE_EXECUTION;
@@ -16650,7 +16653,8 @@ void Debugger::StartCanaryThread()
 }
 #endif // DACCESS_COMPILE
 
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64) && !defined(DACCESS_COMPILE)
+#ifndef DACCESS_COMPILE
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
 void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
 {
     CONTRACTL
@@ -16665,43 +16669,78 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     if (!m_fOutOfProcessSetContextEnabled)
         return;
 
-    printf("D::SSTCN 1 %04x Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", GetCurrentThreadId(), context->Rip, context->Rcx, context->Rdx);
-
     DWORD contextFlags = context->ContextFlags;
     DWORD contextSize = 0;
+    PCONTEXT pContext = NULL;
 
-    // The initialize call should fail but return contextSize
-    BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
-    _ASSERTE(!success && (GetLastError() == ERROR_INSUFFICIENT_BUFFER));
 
-    BYTE *pBuffer = (BYTE*)alloca(contextSize);
-
-    PCONTEXT pCopyContext = NULL;
-    success = InitializeContext(pBuffer, contextFlags, &pCopyContext, &contextSize);
-    if (!success)
-    {
-        _ASSERTE(!"InitializeContext failed");
-        printf("***** InitializeContext failed!!!\n");
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
-        return;
-    }
-
-    _ASSERTE((BYTE*)pCopyContext == pBuffer);
-
-    success = CopyContext(pCopyContext, contextFlags, context);
-    if (!success)
-    {
-        _ASSERTE(!"CopyContext failed");
-        printf("***** CopyContext failed!!!\n");
-        LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
-        return;
-    }
-
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
-    printf("D::SSTCN 2 %04x Rip=0x%16.16llX Rcx=0x%16.16llX Rdx=0x%16.16llX\n", GetCurrentThreadId(), pCopyContext->Rip, pCopyContext->Rcx, pCopyContext->Rdx);
+    // First determine the context size
     EX_TRY
     {
-        SetThreadContextNeededFlare((TADDR)pCopyContext, contextSize);
+        DWORD *pData = (DWORD*)&context[1];
+        if ((contextFlags & CONTEXT_XSTATE) == CONTEXT_XSTATE &&
+                *pData == pData[2] &&
+                *pData == (DWORD)-(int)pData[3] &&
+                pData[1] >= pData[3] + pData[5] )
+        {
+            contextSize = pData[1];
+            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
+
+            pContext = context;
+        }
+    }
+    EX_CATCH
+    {
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    BOOL success = FALSE;
+    if (pContext == NULL)
+    {
+        // The initialize call should fail but return contextSize
+        success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+        if (success || GetLastError() != ERROR_INSUFFICIENT_BUFFER || contextSize == 0)
+        {
+            _ASSERTE(!"InitializeContext unexpectedly failed\n");
+            return;
+        }
+    }
+
+    BYTE *pBuffer = pContext != NULL ? NULL : (BYTE*)_alloca(contextSize);
+
+    // optionally make a copy of the context depending on how we determined the context size
+    if (pContext == NULL)
+    {
+        if (pBuffer == NULL)
+        {
+            _ASSERTE(!"Failed to allocate context buffer");
+            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Failed to allocate context buffer\n"));
+            return;
+        }
+        BOOL success = InitializeContext(pBuffer, contextFlags, &pContext, &contextSize);
+        if (!success)
+        {
+            _ASSERTE(!"InitializeContext failed");
+            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
+            return;
+        }
+
+        _ASSERTE((BYTE*)pContext == pBuffer);
+
+        success = CopyContext(pContext, contextFlags, context);
+        if (!success)
+        {
+            _ASSERTE(!"CopyContext failed");
+            LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
+            return;
+        }
+    }
+
+    // send the context to the right side
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d..\n", contextFlags, contextSize));
+    EX_TRY
+    {
+        SetThreadContextNeededFlare((TADDR)pContext, contextSize);
     }
     EX_CATCH
     {
@@ -16711,6 +16750,22 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context)
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN SetThreadContextNeededFlare returned\n"));
     _ASSERTE(!"We failed to SetThreadContext from out of process!");
 }
+
+BOOL Debugger::IsOutOfProcessSetContextEnabled()
+{
+    return m_fOutOfProcessSetContextEnabled;
+}
+#else
+void Debugger::SendSetThreadContextNeeded(CONTEXT* context)
+{
+    _ASSERTE(!"SendSetThreadContextNeeded Not supported on this platform");
+}
+
+BOOL Debugger::IsOutOfProcessSetContextEnabled()
+{
+    return FALSE;
+}
+#endif // defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
 #endif // DACCESS_COMPILE
 
 #endif //DEBUGGING_SUPPORTED

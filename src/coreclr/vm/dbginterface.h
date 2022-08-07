@@ -194,6 +194,11 @@ public:
                                              SIZE_T ilOffset,
                                              TADDR nativeFnxStart,
                                              SIZE_T *nativeOffset) = 0;
+
+
+    // Used by FixContextAndResume
+    virtual void SendSetThreadContextNeeded(CONTEXT *context) = 0;
+    virtual BOOL IsOutOfProcessSetContextEnabled() = 0;
 #endif // EnC_SUPPORTED
 
     // Get debugger variable information for a specific version of a method
