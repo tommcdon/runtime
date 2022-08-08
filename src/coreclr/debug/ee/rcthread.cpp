@@ -486,7 +486,7 @@ HRESULT DebuggerRCThread::SetupRuntimeOffsets(DebuggerIPCControlBlock * pDebugge
     pDebuggerRuntimeOffsets->m_debuggerWordTLSIndex = g_debuggerWordTLSIndex;
 #endif // FEATURE_INTEROP_DEBUGGING
 
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+#if defined(OUT_OF_PROCESS_SETTHREADCONTEXT) && defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
     pDebuggerRuntimeOffsets->m_setThreadContextNeededAddr = (void*) SetThreadContextNeededFlare;
 #else
     pDebuggerRuntimeOffsets->m_setThreadContextNeededAddr = NULL;

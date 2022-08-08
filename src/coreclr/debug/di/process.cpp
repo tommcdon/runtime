@@ -11155,7 +11155,7 @@ void CordbProcess::FilterClrNotification(
     }
 }
 
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
 void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 {
     LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded\n"));
@@ -11164,8 +11164,12 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
     context.ContextFlags = CONTEXT_FULL;
 
     GetLiveContext(dwThreadId, &context);
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
     TADDR lsContextAddr = (TADDR)context.Rcx;
     DWORD contextSize = (DWORD)context.Rdx;
+#else
+    #error Not defined for this platform
+#endif
 
     if (contextSize == 0 || contextSize > sizeof(CONTEXT) + 25000)
     {
@@ -11189,7 +11193,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 
     SetLiveContext(dwThreadId, pContext);
 }
-#endif
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
 //
 // If the thread has an unhandled managed exception, hijack it.
@@ -11414,7 +11418,7 @@ HRESULT CordbProcess::Filter(
 
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
         }
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT && pRecord->ExceptionAddress == m_runtimeOffsets.m_setThreadContextNeededAddr) /*|| pRecord->ExceptionCode == STATUS_SINGLE_STEP*/
         {
             // this is a request to set the thread context out of process
@@ -11422,7 +11426,7 @@ HRESULT CordbProcess::Filter(
             HandleSetThreadContextNeeded(dwThreadId);
             *pContinueStatus = DBG_CONTINUE;
         }
-#endif
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
     }
     PUBLIC_API_END(hr);
     // we may not find the correct mscordacwks so fail gracefully
@@ -15217,7 +15221,7 @@ void CordbProcess::HandleControlCTrapResult(HRESULT result)
     SendIPCEvent(&eventControlCResult, sizeof(eventControlCResult));
 }
 
-
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
 void CordbProcess::GetLiveContext(DWORD dwThreadId, PCONTEXT pContext)
 {
@@ -15347,4 +15351,7 @@ void CordbProcess::SetLiveContext(DWORD dwThreadId, PCONTEXT pContext)
         }
     }
 }
-#endif
+#else
+#error Not defined for this platform
+#endif // defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT

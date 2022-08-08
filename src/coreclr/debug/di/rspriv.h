@@ -3280,9 +3280,9 @@ public:
 #endif
     }
 
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     void HandleSetThreadContextNeeded(DWORD dwThreadId);
-#endif
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
     //
     // Shim  callbacks to simulate fake attach events.
@@ -4122,10 +4122,10 @@ private:
 
 private:
 
-#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     void GetLiveContext(DWORD dwThreadId, PCONTEXT pContext);
     void SetLiveContext(DWORD dwThreadId, PCONTEXT pContext);
-#endif
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
 };
 
