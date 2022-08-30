@@ -4766,36 +4766,49 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
 #ifndef TARGET_UNIX
             // Check if the current IP is anywhere near the exception dispatcher logic.
             // If it is, ignore the exception, as the real exception is coming next.
-            static FARPROC pExcepDispProc = NULL;
+            const char* procNames[] = { "KiUserExceptionDispatcher", "KiUserApcDispatcher" };
+            static FARPROC pExcepDispProcs[_countof(procNames)] =  { };
+            static bool fIsExcepDispProcInit = false;
 
-            if (!pExcepDispProc)
+            if (!fIsExcepDispProcInit)
             {
                 HMODULE hNtDll = WszGetModuleHandle(W("ntdll.dll"));
 
-                if (hNtDll != NULL)
+                for (int i = 0; i < _countof(procNames); i++)
                 {
-                    pExcepDispProc = GetProcAddress(hNtDll, "KiUserExceptionDispatcher");
+                    FARPROC pExcepDispProc = NULL;
+
+                    if (hNtDll != NULL)
+                    {
+                        pExcepDispProc = GetProcAddress(hNtDll, procNames[i]);
+                    }
 
                     if (!pExcepDispProc)
                         pExcepDispProc = (FARPROC)(size_t)(-1);
+
+                    pExcepDispProcs[i] = pExcepDispProc;
                 }
-                else
-                    pExcepDispProc = (FARPROC)(size_t)(-1);
+
+                fIsExcepDispProcInit = true;
             }
 
-            _ASSERTE(pExcepDispProc != NULL);
-
-            if ((size_t)pExcepDispProc != (size_t)(-1))
+            for (int i = 0; i < _countof(procNames); i++)
             {
-                LPVOID pExcepDispEntryPoint = pExcepDispProc;
+                FARPROC pExcepDispProc = pExcepDispProcs[i];
+                _ASSERTE(pExcepDispProc != NULL);
 
-                if ((size_t)GetIP(context) > (size_t)pExcepDispEntryPoint &&
-                    (size_t)GetIP(context) <= ((size_t)pExcepDispEntryPoint + MAX_INSTRUCTION_LENGTH * 2 + 1))
+                if ((size_t)pExcepDispProc != (size_t)(-1))
                 {
-                    LOG((LF_CORDB, LL_INFO10000,
-                         "Bypass instruction not redirected. Landed in exception dispatcher.\n"));
+                    LPVOID pExcepDispEntryPoint = pExcepDispProc;
 
-                    return (TPR_IGNORE_AND_STOP);
+                    if ((size_t)GetIP(context) > (size_t)pExcepDispEntryPoint &&
+                        (size_t)GetIP(context) <= ((size_t)pExcepDispEntryPoint + MAX_INSTRUCTION_LENGTH * 2 + 1))
+                    {
+                        LOG((LF_CORDB, LL_INFO10000,
+                                "Bypass instruction not redirected. Landed in exception dispatcher.\n"));
+
+                        return (TPR_IGNORE_AND_STOP);
+                    }
                 }
             }
 #endif // TARGET_UNIX
