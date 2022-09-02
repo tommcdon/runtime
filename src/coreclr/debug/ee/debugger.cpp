@@ -2428,6 +2428,13 @@ DebuggerMethodInfo *Debugger::CreateMethodInfo(Module *module, mdMethodDef md)
     CONTRACTL_END;
 
 
+    if ((g_fEEShutDown & ShutDown_Phase2) != 0 || g_pDebugger == NULL)
+    {
+        // During second phase of shutdown the code below is not guaranteed to work.
+        return NULL;
+    }
+
+
     // <TODO>@todo perf: creating these on the heap is slow. We should use a
     // pool and create them out of there since we never free them
     // until the AD is unloaded.</TODO>
