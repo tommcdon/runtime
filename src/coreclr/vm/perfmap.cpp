@@ -48,31 +48,24 @@ void PerfMap::Initialize()
 {
     LIMITED_METHOD_CONTRACT;
 
-    // Only enable the map if requested.
-    if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled) == ALL || CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled) == PERFMAP)
+    const DWORD perfMapEnabled = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled);
+    if (perfMapEnabled == DISABLED)
     {
-        char perfmapPath[4096];
-        
-        // CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapJitDumpPath) returns a LPWSTR
-        // Use GetEnvironmentVariableA because it is simpler.
-        // Keep comment here to make it searchable.
-        DWORD len = GetEnvironmentVariableA("COMPlus_PerfMapJitDumpPath", perfmapPath, sizeof(perfmapPath) - 1);
+        return;
+    }
 
-        if (len == 0)
-        {
-            len = GetEnvironmentVariableA("DOTNET_PerfMapJitDumpPath", perfmapPath, sizeof(perfmapPath) - 1);
+    // Build the path to the map file on disk.
+    char tempPathBuffer[MAX_LONGPATH+1];
+    const char* tempPath = InternalConstructPath(tempPathBuffer, sizeof(tempPathBuffer));
 
-            if (len == 0)
-            {
-                strcpy_s(perfmapPath, sizeof(perfmapPath), TEMP_DIRECTORY_PATH);
-            }
-        }
-
+    // Only enable the map if requested.
+    if (perfMapEnabled == ALL || perfMapEnabled == PERFMAP)
+    {
         // Get the current process id.
         int currentPid = GetCurrentProcessId();
 
         // Create the map.
-        s_Current = new PerfMap(currentPid, perfmapPath);
+        s_Current = new PerfMap(currentPid, tempPath);
 
         int signalNum = (int) CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapIgnoreSignal);
 
@@ -80,43 +73,35 @@ void PerfMap::Initialize()
         {
             PAL_IgnoreProfileSignal(signalNum);
         }
-
-        if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapShowOptimizationTiers) != 0)
-        {
-            s_ShowOptimizationTiers = true;
-        }
-
-        s_enabled = true;
     }
 
-    if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled) == ALL || CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapEnabled) == JITDUMP)
+    if (perfMapEnabled == ALL || perfMapEnabled == JITDUMP)
     {
-        char jitdumpPath[4096];
-        
-        // CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapJitDumpPath) returns a LPWSTR
-        // Use GetEnvironmentVariableA because it is simpler.
-        // Keep comment here to make it searchable.
-        DWORD len = GetEnvironmentVariableA("COMPlus_PerfMapJitDumpPath", jitdumpPath, sizeof(jitdumpPath) - 1);
-
-        if (len == 0)
-        {
-            len = GetEnvironmentVariableA("DOTNET_PerfMapJitDumpPath", jitdumpPath, sizeof(jitdumpPath) - 1);
-
-            if (len == 0)
-            {
-                strcpy_s(jitdumpPath, sizeof(jitdumpPath), TEMP_DIRECTORY_PATH);
-            }
-        }
-
-        PAL_PerfJitDump_Start(jitdumpPath);
-
-        if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapShowOptimizationTiers) != 0)
-        {
-            s_ShowOptimizationTiers = true;
-        }
-        
-        s_enabled = true;
+        PAL_PerfJitDump_Start(tempPath);
     }
+
+    if (CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_PerfMapShowOptimizationTiers) != 0)
+    {
+        s_ShowOptimizationTiers = true;
+    }
+    
+    s_enabled = true;
+}
+
+const char * PerfMap::InternalConstructPath(char *tmpBuf, int lenBuf)
+{
+    DWORD len = GetEnvironmentVariableA("DOTNET_PerfMapJitDumpPath", tmpBuf, lenBuf);
+    if (len == 0)
+    {
+        len = GetEnvironmentVariableA("COMPlus_PerfMapJitDumpPath", tmpBuf, lenBuf);
+    }
+
+    if (len == 0 || len >= lenBuf)
+    {
+        return TEMP_DIRECTORY_PATH;
+    }
+
+    return tmpBuf;
 }
 
 // Destroy the map for the process - called from EEShutdownHelper.
