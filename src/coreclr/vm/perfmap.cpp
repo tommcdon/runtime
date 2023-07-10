@@ -75,6 +75,7 @@ void PerfMap::Initialize()
         }
     }
 
+    // only enable JitDumps if requested
     if (perfMapEnabled == ALL || perfMapEnabled == JITDUMP)
     {
         PAL_PerfJitDump_Start(tempPath);
@@ -88,6 +89,8 @@ void PerfMap::Initialize()
     s_enabled = true;
 }
 
+// InternalConstructPath is guaranteed to return a non-null path with the path separator appended to the end
+// the function  uses the input buffer only whe PerfMapJitDumpPath environment variable is set
 const char * PerfMap::InternalConstructPath(char *tmpBuf, int lenBuf)
 {
     DWORD len = GetEnvironmentVariableA("DOTNET_PerfMapJitDumpPath", tmpBuf, lenBuf);
@@ -96,9 +99,18 @@ const char * PerfMap::InternalConstructPath(char *tmpBuf, int lenBuf)
         len = GetEnvironmentVariableA("COMPlus_PerfMapJitDumpPath", tmpBuf, lenBuf);
     }
 
-    if (len == 0 || len >= lenBuf)
+    if (len == 0 || // GetEnvironmentVariableA returns 0 if the variable is not found, 
+        len >= lenBuf || // or the length of the string not including the null terminator on success.
+        (tmpBuf[len-1] != '/' && len >= lenBuf - 1)) // Account for appending the directory separator.
     {
         return TEMP_DIRECTORY_PATH;
+    }
+
+    // append directory seaparator if not already done so
+    if (tmpBuf[len-1] != '/')
+    {
+        tmpBuf[len] = '/';
+        tmpBuf[len+1] = '\0';
     }
 
     return tmpBuf;
