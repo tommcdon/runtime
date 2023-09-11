@@ -94,6 +94,8 @@ BOOL RangeList::AddRangeWorker(const BYTE *start, const BYTE *end, void *id)
 
     _ASSERTE(id != NULL);
 
+    LOG((LF_CORDB, LL_EVERYTHING, "RangeList::AddRangeWorker start=%p end=%p id=%p\n", start, end, id));
+
     RangeListBlock *b = m_firstEmptyBlock;
     Range *r = b->ranges + m_firstEmptyRange;
     Range *rEnd = b->ranges + RANGE_COUNT;
@@ -164,6 +166,8 @@ void RangeList::RemoveRangesWorker(void *id, const BYTE* start, const BYTE* end)
     RangeListBlock *b = &m_starterBlock;
     Range *r = b->ranges;
     Range *rEnd = r + RANGE_COUNT;
+
+    LOG((LF_CORDB, LL_EVERYTHING, "RangeList::RemoveRanges start=%p end=%p id=%p\n", start, end, id));
 
     //
     // Find the first free element, & mark it.
@@ -240,6 +244,9 @@ BOOL RangeList::IsInRangeWorker(TADDR address, TADDR *pID /* = NULL */)
     RangeListBlock* b = &m_starterBlock;
     Range* r = b->ranges;
     Range* rEnd = r + RANGE_COUNT;
+
+    LOG((LF_CORDB, LL_EVERYTHING, "RangeList::IsInRangeWorker address=%p id=%p\n", address, pID==NULL ? NULL : *pID));
+
 
     //
     // Look for a matching element

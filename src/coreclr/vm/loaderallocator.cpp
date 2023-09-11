@@ -2104,6 +2104,8 @@ void LoaderAllocator::AssociateMemoryWithLoaderAllocator(BYTE *start, const BYTE
         MODE_COOPERATIVE;
     } CONTRACTL_END;
 
+    LOG((LF_CORDB, LL_EVERYTHING, "LoaderAllocator::AssociateMemoryWithLoaderAllocator start=%p end=%p pLoaderAllocator=%p\n", start, end, pLoaderAllocator));
+
     GlobalLoaderAllocator* pGlobalAllocator = (GlobalLoaderAllocator*)SystemDomain::GetGlobalLoaderAllocator();
     pGlobalAllocator->m_memoryAssociations.AddRange(start, end, pLoaderAllocator);
 }

@@ -62,6 +62,9 @@ public:
         _collectible(collectible)
     {
         LIMITED_METHOD_CONTRACT;
+
+        LOG((LF_CORDB, LL_EVERYTHING, "CodeRangeMapRangeList ctr stubKind=%u Precode=%u FixupPrecode=%u\n", rangeListType, rangeListType == STUB_CODE_BLOCK_STUBPRECODE, rangeListType == STUB_CODE_BLOCK_FIXUPPRECODE));
+
     }
 
     ~CodeRangeMapRangeList()
@@ -73,6 +76,9 @@ public:
     StubCodeBlockKind GetCodeBlockKind()
     {
         LIMITED_METHOD_CONTRACT;
+
+        LOG((LF_CORDB, LL_EVERYTHING, "CodeRangeMapRangeList::GetCodeBlockKind stubKind=%u Precode=%u FixupPrecode=%u\n", _rangeListType, _rangeListType == STUB_CODE_BLOCK_STUBPRECODE, _rangeListType == STUB_CODE_BLOCK_FIXUPPRECODE));
+
         return _rangeListType;
     }
 
@@ -113,6 +119,8 @@ protected:
         }
         CONTRACTL_END;
 
+        LOG((LF_CORDB, LL_EVERYTHING, "CodeRangeMapRangeList::AddRangeWorker start=%p end=%p id=%p\n", start, end, id));
+
 #ifndef DACCESS_COMPILE
         BOOL result = FALSE;
 
@@ -141,6 +149,8 @@ protected:
         }
         CONTRACTL_END;
 
+        LOG((LF_CORDB, LL_EVERYTHING, "CodeRangeMapRangeList::RemoveRangesWorker start=%p end=%p id=%p\n", start, end, id));
+
 #ifndef DACCESS_COMPILE
         // This implementation only works for the case where the RangeList is used in a single LoaderHeap
         _ASSERTE(start == NULL);
@@ -166,6 +176,9 @@ protected:
     virtual BOOL IsInRangeWorker(TADDR address, TADDR *pID = NULL)
     {
         WRAPPER_NO_CONTRACT;
+
+        LOG((LF_CORDB, LL_EVERYTHING, "CodeRangeMapRangeList::IsInRangeWorker address=%p id=%p\n", address, pID==NULL ? NULL : *pID));
+
         RangeSection *pRS = ExecutionManager::FindCodeRange(address, ExecutionManager::ScanReaderLock);
         if (pRS == NULL)
             return FALSE;

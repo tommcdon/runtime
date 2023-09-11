@@ -2499,6 +2499,9 @@ PCODE MethodDesc::DoPrestub(MethodTable *pDispatchingMT, CallerGCMode callerGCMo
     }
     CONTRACT_END;
 
+    LOG((LF_CORDB, LL_EVERYTHING, "MethodDesc::DoPrestub start  this=%p pDispatchingMT=%p callerGCMode=%u\n", this, pDispatchingMT, callerGCMode));
+
+
     Stub *pStub = NULL;
     PCODE pCode = NULL;
 

@@ -1942,6 +1942,12 @@ void FillStubCodePage(BYTE* pageBase, const void* code, SIZE_T codeSize, SIZE_T 
 {
     SIZE_T totalCodeSize = (pageSize / codeSize) * codeSize;
 
+    LOG((LF_CORDB, LL_EVERYTHING, "FillStubCodePage pageBase=%p code=%p codeSize=%u pageSize=%u\n", pageBase, code, codeSize, pageSize));
+    for (int i = 0; i < codeSize; i++)
+    {
+        LOG((LF_CORDB, LL_EVERYTHING, "FillStubCodePage code[%d]=%x\n", i, ((BYTE*)code)[i]));
+    }
+
     memcpy(pageBase, code, codeSize);
 
     SIZE_T i;

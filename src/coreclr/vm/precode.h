@@ -37,7 +37,7 @@ EXTERN_C VOID STDCALL PrecodeRemotingThunk();
 #elif defined(HOST_ARM)
 
 #define SIZEOF_PRECODE_BASE         CODE_SIZE_ALIGN
-#define OFFSETOF_PRECODE_TYPE       3
+#define OFFSETOF_PRECODE_TYPE       7
 
 #elif defined(HOST_LOONGARCH64)
 
@@ -100,7 +100,7 @@ struct StubPrecode
     static const int Type = 0x4A;
     static const SIZE_T CodeSize = 24;
 #elif defined(HOST_ARM)
-    static const int Type = 0xCF;
+    static const int Type = 0xFF;
     static const SIZE_T CodeSize = 12;
 #elif defined(HOST_LOONGARCH64)
     static const int Type = 0x4;
@@ -237,7 +237,7 @@ struct FixupPrecode
     static const SIZE_T CodeSize = 24;
     static const int FixupCodeOffset = 8;
 #elif defined(HOST_ARM)
-    static const int Type = 0xFF;
+    static const int Type = 0xCF;
     static const SIZE_T CodeSize = 12;
     static const int FixupCodeOffset = 4 + THUMB_CODE;
 #elif defined(HOST_LOONGARCH64)
@@ -266,25 +266,53 @@ struct FixupPrecode
     PTR_FixupPrecodeData GetData() const
     {
         LIMITED_METHOD_CONTRACT;
+#ifndef DACCESS_COMPILE
+        FixupPrecodeData* fixupPrecodeData = (FixupPrecodeData*)((char*)this + GetStubCodePageSize());
+        LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::GetData()   this=%p size=%u fixupPrecodeData=%p MethodDesc=%p PrecodeFixupThunk=%p Target=%p\n",
+            this, 
+            GetStubCodePageSize(), 
+            fixupPrecodeData,
+            fixupPrecodeData->MethodDesc, 
+            fixupPrecodeData->PrecodeFixupThunk, 
+            fixupPrecodeData->Target));
+#endif
         return dac_cast<PTR_FixupPrecodeData>(dac_cast<TADDR>(this) + GetStubCodePageSize());
     }
 
     TADDR GetMethodDesc()
     {
         LIMITED_METHOD_CONTRACT;
-        return (TADDR)GetData()->MethodDesc;
+        MethodDesc* pMD = GetData()->MethodDesc;
+#ifndef DACCESS_COMPILE
+        LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::GetMethodDesc()   this=%p pMD=%p\n", 
+            this, 
+            pMD));
+#endif
+        return (TADDR)pMD;//GetData()->MethodDesc;
     }
 
     PCODE GetTarget()
     {
         LIMITED_METHOD_DAC_CONTRACT;
-        return GetData()->Target;
+        PCODE pTarget = GetData()->Target;
+#ifndef DACCESS_COMPILE
+        LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::GetTarget()   this=%p pTarget=%p\n", 
+            this, 
+            pTarget));
+#endif        
+        return pTarget;//GetData()->Target;
     }
 
     PCODE *GetTargetSlot()
     {
         LIMITED_METHOD_CONTRACT;
-        return &GetData()->Target;
+        PCODE* pTargetSlot = &GetData()->Target;
+#ifndef DACCESS_COMPILE
+        LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::GetTargetSlot()   this=%p pTargetSlot=%p\n", 
+            this, 
+            pTargetSlot));
+#endif   
+        return pTargetSlot;//&GetData()->Target;
     }
 
 #ifndef DACCESS_COMPILE

@@ -529,6 +529,10 @@ BOOL StubManager::TraceStub(PCODE stubStartAddress, TraceDestination *trace)
     while (it.Next())
     {
         StubManager * pCurrent = it.Current();
+
+        LOG((LF_CORDB, LL_INFO10000,
+                "StubManager::TraceStub: '%s' (%p) checking %p.\n", pCurrent->DbgGetName(), pCurrent, stubStartAddress));
+
         if (!pCurrent->CheckIsStub_Worker(stubStartAddress))
             continue;
 
@@ -1005,6 +1009,8 @@ BOOL PrecodeStubManager::CheckIsStub_Internal(PCODE stubStartAddress)
     CONTRACTL_END;
 
     auto stubKind = RangeSectionStubManager::GetStubKind(stubStartAddress);
+    LOG((LF_CORDB, LL_EVERYTHING, "PrecodeStubManager::CheckIsStub_Internal stubStartAddress=%p stubKind=%u Precode=%u FixupPrecode=%u\n", stubStartAddress, stubKind, stubKind == STUB_CODE_BLOCK_STUBPRECODE, stubKind == STUB_CODE_BLOCK_FIXUPPRECODE));
+
     return (stubKind == STUB_CODE_BLOCK_FIXUPPRECODE) || (stubKind == STUB_CODE_BLOCK_STUBPRECODE);
 }
 
@@ -1021,13 +1027,15 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
     }
     CONTRACTL_END
 
-    LOG((LF_CORDB, LL_EVERYTHING, "PrecodeStubManager::DoTraceStub called\n"));
+    LOG((LF_CORDB, LL_EVERYTHING, "PrecodeStubManager::DoTraceStub called %p\n", stubStartAddress));
 
     MethodDesc* pMD = NULL;
 
 #ifdef HAS_COMPACT_ENTRYPOINTS
     if (MethodDescChunk::IsCompactEntryPointAtAddress(stubStartAddress))
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "MethodDescChunk::IsCompactEntryPointAtAddress=TRUE\n"));
+
         pMD = MethodDescChunk::GetMethodDescFromCompactEntryPoint(stubStartAddress);
     }
     else
@@ -1038,10 +1046,14 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
         Precode* pPrecode = Precode::GetPrecodeFromEntryPoint(stubStartAddress - FixupPrecode::FixupCodeOffset, TRUE /* speculative */);
         if ((pPrecode == NULL) || (pPrecode->GetType() != PRECODE_FIXUP))
         {
+            //LOG((LF_CORDB, LL_EVERYTHING, "Caling GetPrecodeFromEntryPoint. pPrecode->GetType()=%u\n", pPrecode->GetType()));
             pPrecode = Precode::GetPrecodeFromEntryPoint(stubStartAddress);
         }
 
         PREFIX_ASSUME(pPrecode != NULL);
+        LOG((LF_CORDB, LL_EVERYTHING, "pPrecode->GetType()=%u\n", pPrecode->GetType()));
+        LOG((LF_CORDB, LL_EVERYTHING, "pPrecode->GetTarget()=%p\n", pPrecode->GetTarget()));
+        LOG((LF_CORDB, LL_EVERYTHING, "pPrecode->GetMethodDesc()=%p\n", pPrecode->GetMethodDesc()));
 
         switch (pPrecode->GetType())
         {
@@ -1061,11 +1073,15 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
 
 #ifdef HAS_FIXUP_PRECODE
         case PRECODE_FIXUP:
+            LOG_TRACE_DESTINATION(trace, stubStartAddress, "PrecodeStubManager::DoTraceStub - PRECODE_FIXUP");
+
             break;
 #endif // HAS_FIXUP_PRECODE
 
 #ifdef HAS_THISPTR_RETBUF_PRECODE
         case PRECODE_THISPTR_RETBUF:
+            LOG_TRACE_DESTINATION(trace, stubStartAddress, "PrecodeStubManager::DoTraceStub - PRECODE_THISPTR_RETBUF");
+
             break;
 #endif // HAS_THISPTR_RETBUF_PRECODE
 
@@ -1075,10 +1091,14 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
         }
 
         PCODE target = pPrecode->GetTarget();
+        LOG((LF_CORDB, LL_EVERYTHING, "pPrecode->GetTarget()=%p\n", pPrecode->GetTarget()));
+
 
         // check if the method has been jitted
         if (!pPrecode->IsPointingToPrestub(target))
         {
+            LOG((LF_CORDB, LL_EVERYTHING, "Method has been jitted.  pPrecode->IsPointingToPrestub(target)=FALSE, calling trace->InitForStub(target)\n"));
+
             trace->InitForStub(target);
             LOG_TRACE_DESTINATION(trace, stubStartAddress, "PrecodeStubManager::DoTraceStub - code");
             return TRUE;
@@ -1089,16 +1109,26 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
 
     PREFIX_ASSUME(pMD != NULL);
 
+    LOG((LF_CORDB, LL_EVERYTHING, "pMD=%p\n", pMD));
+    LOG((LF_CORDB, LL_EVERYTHING,
+            "pMD = %s::%s SIG %s\n",
+            pMD->m_pszDebugClassName,
+            pMD->m_pszDebugMethodName,
+            pMD->m_pszDebugMethodSignature));
+
     // If the method is not IL, then we patch the prestub because no one will ever change the call here at the
     // MethodDesc. If, however, this is an IL method, then we are at risk to have another thread backpatch the call
     // here, so we'd miss if we patched the prestub. Therefore, we go right to the IL method and patch IL offset 0
     // by using TRACE_UNJITTED_METHOD.
+
     if (!pMD->IsIL() && !pMD->IsILStub())
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "Method is not IL.\n"));
         trace->InitForStub(GetPreStubEntryPoint());
     }
     else
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "Method is IL but not yet JIT'd.  Calling trace->InitForUnjittedMethod(pMD).\n"));
         trace->InitForUnjittedMethod(pMD);
     }
 
@@ -1779,6 +1809,26 @@ RangeSectionStubManager::GetStubKind(PCODE stubStartAddress)
     RangeSection * pRS = ExecutionManager::FindCodeRange(stubStartAddress, ExecutionManager::ScanReaderLock);
     if (pRS == NULL)
         return STUB_CODE_BLOCK_UNKNOWN;
+
+    bool isInRange = pRS->_range.IsInRange(stubStartAddress);
+    TADDR startAddress = pRS->_range.RangeStart();
+    TADDR endAddress = pRS->_range.RangeEnd();
+    TADDR size = pRS->_range.RangeSize();
+    int flags = pRS->_flags;
+    // enum RangeSectionFlags
+    // {
+    //     RANGE_SECTION_NONE          = 0x0,
+    //     RANGE_SECTION_COLLECTIBLE   = 0x1,
+    //     RANGE_SECTION_CODEHEAP      = 0x2,
+    //     RANGE_SECTION_RANGELIST     = 0x4,
+    // };
+    LOG((LF_CORDB, LL_EVERYTHING, "RangeSectionStubManager::GetStubKind stubStartAddress=%p isInRange=%u startAddress=%p endAddress=%p size=%u flags=%p\n", 
+        stubStartAddress, 
+        isInRange, 
+        startAddress, 
+        endAddress,
+        size,
+        flags));
 
     return pRS->_pjit->GetStubCodeBlockKind(pRS, stubStartAddress);
 }

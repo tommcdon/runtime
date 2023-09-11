@@ -246,16 +246,22 @@ Precode* Precode::Allocate(PrecodeType t, MethodDesc* pMD,
 
     if (t == PRECODE_FIXUP)
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "Precode::Allocate - t=%u(PRECODE_FIXUP) pMD=%p pLoadAllocator=%p pamTracker=%p\n", t, pMD, pLoaderAllocator, pamTracker));
+
         pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetFixupPrecodeHeap()->AllocAlignedMem(size, 1));
         pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
     else if (t == PRECODE_STUB || t == PRECODE_NDIRECT_IMPORT)
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "Precode::Allocate - t=%u(PRECODE_STUB|PRECODE_NDIRECT_IMPORT) pMD=%p pLoadAllocator=%p pamTracker=%p\n", t, pMD, pLoaderAllocator, pamTracker));
+
         pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetNewStubPrecodeHeap()->AllocAlignedMem(size, 1));
         pPrecode->Init(pPrecode, t, pMD, pLoaderAllocator);
     }
     else
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "Precode::Allocate - t=%u(unknown) pMD=%p pLoadAllocator=%p pamTracker=%p\n", t, pMD, pLoaderAllocator, pamTracker));
+
         pPrecode = (Precode*)pamTracker->Track(pLoaderAllocator->GetPrecodeHeap()->AllocAlignedMem(size, AlignOf(t)));
         ExecutableWriterHolder<Precode> precodeWriterHolder(pPrecode, size);
         precodeWriterHolder.GetRW()->Init(pPrecode, t, pMD, pLoaderAllocator);
@@ -691,6 +697,7 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 
     _ASSERTE(pPrecodeRX == this);
 
+    LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::Init start   pPrecodeRX=%p mMD=%p pLoaderAllocator=%p\n", pPrecodeRX, pMD, pLoaderAllocator));
     FixupPrecodeData *pData = GetData();
     pData->MethodDesc = pMD;
 
@@ -698,6 +705,24 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 
     pData->Target = (PCODE)pPrecodeRX + FixupPrecode::FixupCodeOffset;
     pData->PrecodeFixupThunk = GetPreStubEntryPoint();
+#ifndef DACCESS_COMPILE
+    LOG((LF_CORDB, LL_EVERYTHING,
+            "FixupPrecode::Init pData=%p pPrecodeRX=%p mMD=%p pLoaderAllocator=%p pMD = %s::%s SIG %s\n",
+            pData, pPrecodeRX, pMD, pLoaderAllocator,
+            pMD->m_pszDebugClassName,
+            pMD->m_pszDebugMethodName,
+            pMD->m_pszDebugMethodSignature));
+
+    FixupPrecodeData* fixupPrecodeData = (FixupPrecodeData*)((char*)this + GetStubCodePageSize());
+    LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::Init  this=%p size=%u pData=%p fixupPrecodeData=%p MethodDesc=%p PrecodeFixupThunk=%p Target=%p\n",
+        this, 
+        GetStubCodePageSize(), 
+        pData,
+        fixupPrecodeData,
+        fixupPrecodeData->MethodDesc, 
+        fixupPrecodeData->PrecodeFixupThunk, 
+        fixupPrecodeData->Target));
+#endif
 }
 
 #if defined(TARGET_ARM64) && defined(TARGET_UNIX)

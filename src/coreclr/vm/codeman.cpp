@@ -3964,6 +3964,7 @@ StubCodeBlockKind EEJitManager::GetStubCodeBlockKind(RangeSection * pRangeSectio
 
     if (pRangeSection->_flags & RangeSection::RANGE_SECTION_RANGELIST)
     {
+        LOG((LF_CORDB, LL_EVERYTHING, "EEJitManager::GetStubCodeBlockKind - is  RangeSection::RANGE_SECTION_RANGELIST)\n"));
         return pRangeSection->_pRangeList->GetCodeBlockKind();
     }
 

@@ -489,11 +489,20 @@ PCODE MethodDesc::GetMethodEntryPoint()
 
     // Keep implementations of MethodDesc::GetMethodEntryPoint and MethodDesc::GetAddrOfSlot in sync!
 
+    LOG((LF_CORDB, LL_EVERYTHING,
+            "MethodDesc::GetMethodEntryPoint pMD = %p %s::%s SIG %s\n",
+            this,
+            this->m_pszDebugClassName,
+            this->m_pszDebugMethodName,
+            this->m_pszDebugMethodSignature));
+
     if (HasNonVtableSlot())
     {
         SIZE_T size = GetBaseSize();
 
         TADDR pSlot = dac_cast<TADDR>(this) + size;
+
+        LOG((LF_CORDB, LL_EVERYTHING, "MethodDesc::GetMethodEntryPoint this=%p size=%p - returning %p[%p]\n", this, size, pSlot, (pSlot != 0) ? *(TADDR*)pSlot : 0));
 
         return *PTR_PCODE(pSlot);
     }
@@ -2907,6 +2916,8 @@ void MethodDesc::SetTemporaryEntryPoint(LoaderAllocator *pLoaderAllocator, Alloc
 {
     WRAPPER_NO_CONTRACT;
 
+    LOG((LF_CORDB, LL_EVERYTHING, "MethodDesc::SetTemporaryEntryPoint mMD=%p pLoaderAllocator=%p pamTracker=%p\n", this, pLoaderAllocator, pamTracker));
+
     GetMethodDescChunk()->EnsureTemporaryEntryPointsCreated(pLoaderAllocator, pamTracker);
 
     PTR_PCODE pSlot = GetAddrOfSlot();
@@ -3320,6 +3331,15 @@ void MethodDesc::SetMethodEntryPoint(PCODE addr)
     // Similarly to GetMethodEntryPoint(), it is up to the caller to ensure that calls to this function are appropriately
     // synchronized. Currently, the only caller synchronizes with the following lock.
     _ASSERTE(MethodDescBackpatchInfoTracker::IsLockOwnedByCurrentThread());
+
+    LOG((LF_CORDB, LL_EVERYTHING,
+        "MethodDesc::SetMethodEntryPoint pMD = %p %s::%s SIG %s\n",
+        this,
+        this->m_pszDebugClassName,
+        this->m_pszDebugMethodName,
+        this->m_pszDebugMethodSignature));
+
+    LOG((LF_CORDB, LL_EVERYTHING, "MethodDesc::SetMethodEntryPoint addr=%p GetAddrOfSlot()=%p\n", addr, GetAddrOfSlot()));
 
     *GetAddrOfSlot() = addr;
 }
