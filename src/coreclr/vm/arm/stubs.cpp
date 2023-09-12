@@ -782,6 +782,8 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
 {
     WRAPPER_NO_CONTRACT;
 
+    LOG((LF_CORDB, LL_EVERYTHING, "FixupPrecode::Init start   pPrecodeRX=%p mMD=%p pLoaderAllocator=%p\n", pPrecodeRX, pMD, pLoaderAllocator));
+
     m_rgCode[0] = 0x46fc;   // mov r12, pc
     m_rgCode[1] = 0xf8df;   // ldr pc, [pc, #4]
     m_rgCode[2] = 0xf004;
@@ -811,6 +813,14 @@ void FixupPrecode::Init(FixupPrecode* pPrecodeRX, MethodDesc* pMD, LoaderAllocat
     {
         m_pTarget = GetEEFuncEntryPoint(PrecodeFixupThunk);
     }
+#ifndef DACCESS_COMPILE
+    LOG((LF_CORDB, LL_EVERYTHING,
+            "FixupPrecode::Init this=%p m_PrecodeChunkIndex=%u m_MethodDescChunkIndex=%u pPrecodeRX=%p mMD=%p pLoaderAllocator=%p pMD = %s::%s SIG %s\n",
+            this, this->m_PrecodeChunkIndex, this->m_MethodDescChunkIndex, pPrecodeRX, pMD, pLoaderAllocator,
+            pMD->m_pszDebugClassName,
+            pMD->m_pszDebugMethodName,
+            pMD->m_pszDebugMethodSignature));
+#endif
 }
 
 void ThisPtrRetBufPrecode::Init(MethodDesc* pMD, LoaderAllocator *pLoaderAllocator)
