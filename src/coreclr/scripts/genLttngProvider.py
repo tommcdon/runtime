@@ -590,8 +590,11 @@ def generateLttngFiles(etwmanifest, eventprovider_directory, runtimeFlavor, dryR
 
 extern "C" bool XplatEventLoggerIsEnabled();
 
-#define tracepoint_enabled(provider, name) XplatEventLoggerIsEnabled()
+#define tracepoint_enabled(provider, name) FALSE // XplatEventLoggerIsEnabled()
 #define do_tracepoint tracepoint
+#else
+#undef tracepoint_enabled
+#define tracepoint_enabled(provider, name) FALSE
 #endif
 
 bool ResizeBuffer(char *&buffer, size_t& size, size_t currLen, size_t newSize, bool &fixedBuffer);
