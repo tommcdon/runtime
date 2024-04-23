@@ -199,6 +199,8 @@ void CordbStackWalk::RefreshIfNeeded()
     CordbProcess * pProcess = GetProcess();
     _ASSERTE(pProcess->GetProcessLock()->HasLock());
 
+    printf("CordbStackWalk::RefreshIfNeeded() %s\n", m_lastSyncFlushCounter != pProcess->m_flushCounter ? "true" : "false");
+
     // check if we need to refresh
     if (m_lastSyncFlushCounter != pProcess->m_flushCounter)
     {

@@ -985,6 +985,7 @@ void DebuggerRCThread::MainLoop()
         else if (dwWaitResult == WAIT_OBJECT_0 + DRCT_CONTROL_EVENT)
         {
             LOG((LF_CORDB, LL_INFO1000, "DRCT::ML:: straggler event set.\n"));
+            printf("DRCT::ML:: straggler event set.\n");
 
             ThreadStoreLockHolder tsl;
             Debugger::DebuggerLockHolder debugLockHolder(m_debugger);
@@ -992,6 +993,7 @@ void DebuggerRCThread::MainLoop()
             if (m_debugger->IsSynchronizing())
             {
                 LOG((LF_CORDB, LL_INFO1000, "DRCT::ML:: dropping the timeout.\n"));
+                printf("DRCT::ML:: dropping the timeout.\n");
 
                 dwWaitTimeout = CorDB_SYNC_WAIT_TIMEOUT;
 
@@ -1014,6 +1016,7 @@ void DebuggerRCThread::MainLoop()
 LWaitTimedOut:
 
             LOG((LF_CORDB, LL_INFO1000, "DRCT::ML:: wait timed out.\n"));
+            printf("DRCT::ML:: wait timed out.\n");
 
             ThreadStore::LockThreadStore();
             // Debugger::DebuggerLockHolder debugLockHolder(m_debugger);
@@ -1026,6 +1029,7 @@ LWaitTimedOut:
             _ASSERTE(m_debugger->IsSynchronizing());
 
             LOG((LF_CORDB, LL_INFO1000, "DRCT::ML:: sweeping the thread list.\n"));
+            printf("DRCT::ML:: sweeping the thread list.\n");
 
 #ifdef _DEBUG
             // If we fail to suspend the CLR, don't bother waiting for a BVT to timeout,
@@ -1047,11 +1051,13 @@ LWaitTimedOut:
                 // SweepThreadsForDebug() may call new!!! ARGG!!!
                 SUPPRESS_ALLOCATION_ASSERTS_IN_THIS_SCOPE;
                 fSuspended = g_pEEInterface->SweepThreadsForDebug(false);
+                printf("RCThread SweepThreadsForDebug fSuspended=%s\n", fSuspended ? "true" : "false");
             }
 
             if (fSuspended)
             {
                 STRESS_LOG0(LF_CORDB, LL_INFO1000, "DRCT::ML:: wait set empty after sweep.\n");
+                printf("DRCT::ML:: wait set empty after sweep.\n");
 
                 // There are no more threads to wait for, so go ahead and send the sync complete event.
                 m_debugger->SuspendComplete();
@@ -1069,6 +1075,7 @@ LWaitTimedOut:
                 // If we're doing helper thread duty, then we expect to have been suspended already.
                 // And so the sweep should always succeed.
                 STRESS_LOG0(LF_CORDB, LL_INFO1000, "DRCT::ML:: threads still syncing after sweep.\n");
+                printf("DRCT::ML:: threads still syncing after sweep.\n");
                 debugLockHolderSuspended.Release();
                 ThreadStore::UnlockThreadStore();
             }

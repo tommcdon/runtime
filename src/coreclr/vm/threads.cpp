@@ -7108,6 +7108,11 @@ void Thread::SetFilterContext(CONTEXT *pContext)
         PRECONDITION(GetThread() == this); // must be on current thread.
     } CONTRACTL_END;
 
+
+#ifdef TARGET_AMD64
+    printf("Thread::SetFilterContext RIP=0x%16.16llX\n", pContext==nullptr?0:(unsigned long long)pContext->Rip);
+#endif
+
     m_debuggerFilterContext = pContext;
 }
 

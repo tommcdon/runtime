@@ -190,6 +190,7 @@ void DacDbiInterfaceImpl::SetStackWalkCurrentContext(VMPTR_Thread           vmTh
     // update the REGDISPLAY with the given CONTEXT.
     // Be sure that the context is in DDImpl's memory space and not the Right-sides.
     FillRegDisplay(pRD, pContext2);
+    printf("SetStackWalkCurrentContext ControlPC=%p\n", (PVOID)GetControlPC(pRD));
     BOOL fSuccess = pIter->ResetRegDisp(pRD, (flag == SET_CONTEXT_FLAG_ACTIVE_FRAME));
     if (!fSuccess)
     {

@@ -760,13 +760,42 @@ public:
     void SetThreadState(ThreadState ts)
     {
         LIMITED_METHOD_CONTRACT;
+
         InterlockedOr((LONG*)&m_State, ts);
+
+        // printf("SetThreadState thread %lx %lx "
+        //     "ts=%lx "
+        //     "DebugWillSync=%s "
+        //     "SyncSuspended=%s "
+        //     "DebugSuspendPending=%s "
+        //     "\n", 
+        //     this->m_OSThreadId, 
+        //     (unsigned long)this->m_State, 
+        //     (unsigned long)ts,
+        //     (this->m_State & TS_DebugWillSync) ? "true" : "false",
+        //     (this->m_State & TS_SyncSuspended) ? "true" : "false",
+        //     (this->m_State & TS_DebugSuspendPending) ? "true" : "false"
+        //     );
     }
 
     void ResetThreadState(ThreadState ts)
     {
         LIMITED_METHOD_CONTRACT;
         InterlockedAnd((LONG*)&m_State, ~ts);
+
+        // printf("ResetThreadState thread %lx %lx "
+        //     "ts=%lx "
+        //     "DebugWillSync=%s "
+        //     "SyncSuspended=%s "
+        //     "DebugSuspendPending=%s "
+        //     "\n", 
+        //     this->m_OSThreadId, 
+        //     (unsigned long)this->m_State, 
+        //     (unsigned long)ts,
+        //     (this->m_State & TS_DebugWillSync) ? "true" : "false",
+        //     (this->m_State & TS_SyncSuspended) ? "true" : "false",
+        //     (this->m_State & TS_DebugSuspendPending) ? "true" : "false"
+        //     );
     }
 
     BOOL HasThreadState(ThreadState ts)
@@ -2701,6 +2730,15 @@ private:
 
             if (InterlockedCompareExchange((LONG *)&m_State, newState, oldState) == (LONG)oldState)
             {
+                printf("ReleaseFromSuspension: ***clear TS_DebugSuspendPending and TS_SyncSuspended*** thread %lx %lx "
+                    "DebugSuspendPending=%s "
+                    "SyncSuspended=%s "
+                    "\n", 
+                    m_OSThreadId, 
+                    (unsigned long)m_State,    
+                    (m_State & TS_DebugSuspendPending) ? "true" : "false",
+                    (m_State & TS_SyncSuspended) ? "true" : "false"
+                    );
                 break;
             }
 
@@ -4520,6 +4558,7 @@ inline void Thread::MarkForDebugSuspend(void)
     if (!HasThreadState(TS_DebugSuspendPending))
     {
         SetThreadState(TS_DebugSuspendPending);
+        printf("***MarkForDebugSuspend*** %lx\n", this->m_OSThreadId);
         ThreadStore::TrapReturningThreads(TRUE);
     }
 }

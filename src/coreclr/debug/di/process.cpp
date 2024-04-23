@@ -11480,6 +11480,10 @@ HRESULT CordbProcess::Filter(
         // Deal with 2nd-chance exceptions. Don't actually hijack now (that's too invasive),
         // but mark that we have the exception in case a future operation (eg, func-eval) needs to hijack.
         //
+        if (pRecord->ExceptionCode == STATUS_ACCESS_VIOLATION)
+        {
+            printf("good place to stop!\n");
+        }
         if (!dwFirstChance)
         {
             CordbThread * pThread = TryLookupOrCreateThreadByVolatileOSId(dwThreadId);

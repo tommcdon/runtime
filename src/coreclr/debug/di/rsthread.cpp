@@ -1722,6 +1722,9 @@ HRESULT CordbThread::GetManagedContext(DT_CONTEXT ** ppContext)
             // The thread we're examining IS handling an exception, So grab the CONTEXT of the exception, NOT the
             // currently executing thread's CONTEXT (which would be the context of the exception handler.)
             hr = GetProcess()->SafeReadThreadContext(m_vmLeftSideContext.ToLsPtr(), m_pContext);
+#ifdef TARGET_AMD64
+            printf("CordbThread::GetManagedContext RIP=0x%16.16llX\n", (unsigned long long)m_pContext->Rip);
+#endif
             IfFailThrow(hr);
         }
 
@@ -1766,6 +1769,10 @@ HRESULT CordbThread::SetManagedContext(DT_CONTEXT * pContext)
         DT_CONTEXT tempContext = { 0 };
         hr = GetProcess()->SafeReadThreadContext(m_vmLeftSideContext.ToLsPtr(), &tempContext);
         IfFailThrow(hr);
+
+#ifdef TARGET_AMD64
+        printf("CordbThread::GetManagedContext RIP=0x%16.16llX\n", (unsigned long long)tempContext.Rip);
+#endif
 
         CORDbgCopyThreadContext(&tempContext, pContext);
 

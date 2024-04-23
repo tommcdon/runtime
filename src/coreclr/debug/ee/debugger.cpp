@@ -13651,6 +13651,9 @@ LONG Debugger::FirstChanceSuspendHijackWorker(CONTEXT *pContext,
                 CONTRACT_VIOLATION(ModeViolation);
                 _ASSERTE(g_pEEInterface->GetThreadFilterContext(pEEThread) == NULL);
                 g_pEEInterface->SetThreadFilterContext(pEEThread, pContext);
+#ifdef TARGET_AMD64
+                printf("Debugger::FirstChanceSuspendHijackWorker - SetThreadFilterContext RIP=0x%16.16llX\n", (unsigned long long)pContext->Rip);
+#endif
             }
 
             // Wait for the continue. We may / may not have an EE Thread for this, (and we're definitely

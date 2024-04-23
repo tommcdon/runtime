@@ -4189,6 +4189,10 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
             // This contract violation is mitigated in that we must have had the debugger involved to get to this point.
             CONTRACT_VIOLATION(ModeViolation);
             g_pEEInterface->SetThreadFilterContext(pCurThread, pContext);
+
+#ifdef TARGET_AMD64
+            printf("DebuggerController::DispatchNativeException - SetThreadFilterContext RIP=0x%16.16llX\n", (unsigned long long)pContext->Rip);
+#endif
         }
         // Now that we've set the filter context, we can let the GCX_NOTRIGGER expire.
         // It's still possible that we may be called from a No-trigger region.

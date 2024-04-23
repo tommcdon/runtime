@@ -148,6 +148,7 @@ CordbAppDomain *CordbJITILFrame::GetCurrentAppDomain()
 inline
 void CordbProcess::ForceDacFlush()
 {
+    printf("ForceDacFlush - old counter: %d\n", m_flushCounter);
     // We need to take the process lock here because otherwise we could race with the Arrowhead stackwalking
     // APIs.  The Arrowhead stackwalking APIs check the flush counter and refresh all the state if necessary.
     // However, while one thread is refreshing the state of the stackwalker, another thread may come in

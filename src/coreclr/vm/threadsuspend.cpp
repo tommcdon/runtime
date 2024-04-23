@@ -180,6 +180,8 @@ Thread::SuspendThreadResult Thread::SuspendThread(BOOL fOneTryOnly, DWORD *pdwSu
     }
     CONTRACTL_END;
 
+    printf("Thread::SuspendThread %lx\n", this->m_OSThreadId);
+
 #ifdef STRESS_LOG
     if (StressLog::StressLogOn((unsigned int)-1, 0))
     {
@@ -416,6 +418,10 @@ retry:
         *pdwSuspendCount = dwSuspendCount;
     }
     _ASSERTE(str != (SuspendThreadResult) -1);
+
+    printf("Thread::SuspendThread %lx ret:%s\n", this->m_OSThreadId, 
+        str==STR_Success?"STR_Success":str==STR_Failure?"STR_Failure":str==STR_Forbidden?"STR_Forbidden":str==STR_UnstartedOrDead?"STR_UnstartedOrDead":"<unknown>");
+
     return str;
 
 }
@@ -432,6 +438,8 @@ DWORD Thread::ResumeThread()
         MODE_ANY;
     }
     CONTRACTL_END;
+
+    printf("Thread::ResumeThread %lx\n", this->m_OSThreadId);
 
     _ASSERTE (m_ThreadHandleForResume != INVALID_HANDLE_VALUE);
 
@@ -2404,6 +2412,8 @@ void Thread::RareEnablePreemptiveGC()
             }
 #endif
 
+            printf("[0x%x] SUSPEND: suspended while enabling gc.\n", GetThreadId());
+
             WaitSuspendEvents(); // sets bits, too
 
         }
@@ -4143,6 +4153,8 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
     }
     CONTRACTL_END;
 
+    printf("SysStartSuspendForDebug\n");
+
     Thread  *pCurThread = GetThreadNULLOk();
     Thread  *thread = NULL;
 
@@ -4185,6 +4197,8 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
         }
 #endif
 
+
+
         // Don't try to suspend threads that you've left suspended.
         if (thread->m_StateNC & TSNC_DebuggerUserSuspend)
             continue;
@@ -4201,10 +4215,35 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
             // after completing this call.
             thread->SetupForSuspension(TS_DebugSuspendPending);
             thread->MarkForSuspension(TS_DebugSuspendPending);
+
+            printf("SysStartSuspendForDebug:  *** TS_DebugSuspendPending current *** thread %lx %lx "
+                "DebugWillSync=%s "
+                "SyncSuspended=%s "
+                "DebugSuspendPending=%s "
+                "TSNC_DebuggerUserSuspend=%s "
+                "m_fPreemptiveGCDisabled=%s "
+                "\n", 
+                thread->m_OSThreadId, 
+                (unsigned long)thread->m_State,    
+                (thread->m_State & TS_DebugWillSync) ? "true" : "false",
+                (thread->m_State & TS_SyncSuspended) ? "true" : "false",
+                (thread->m_State & TS_DebugSuspendPending) ? "true" : "false",
+                (thread->m_StateNC & TSNC_DebuggerUserSuspend) ? "true" : "false",
+                thread->m_fPreemptiveGCDisabled ? "true" : "false"
+                ); 
+
             continue;
         }
 
         thread->SetupForSuspension(TS_DebugSuspendPending);
+        printf("SysStartSuspendForDebug SetupForSuspension: thread %lx %lx "
+            "DebugSuspendPending=%s "
+            "\n", 
+            thread->m_OSThreadId, 
+            (unsigned long)thread->m_State,    
+            (thread->m_State & TS_DebugSuspendPending) ? "true" : "false"
+            ); 
+
 
         // Threads can be in Preemptive or Cooperative GC mode.
         // Threads cannot switch to Cooperative mode without special
@@ -4229,6 +4268,13 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
             // operation below ensures that any future reads on this thread will
             // happen after any earlier writes on a different thread.
             InterlockedOr((LONG*)&thread->m_fPreemptiveGCDisabled, 0);
+            printf("SysStartSuspendForDebug SetupForSuspension: thread %lx %lx "
+                "m_fPreemptiveGCDisabled=%s "
+                "\n", 
+                thread->m_OSThreadId, 
+                (unsigned long)thread->m_State,    
+                thread->m_fPreemptiveGCDisabled ? "true" : "false"
+                ); 
         }
         else
         {
@@ -4238,6 +4284,23 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
             ThreadStore::AllocateOSContext();
             str = thread->SuspendThread();
 #endif // !DISABLE_THREADSUSPEND
+            printf("SysStartSuspendForDebug SuspendThread: thread %lx %lx "
+                "DebugWillSync=%s "
+                "SyncSuspended=%s "
+                "DebugSuspendPending=%s "
+                "TSNC_DebuggerUserSuspend=%s "
+                "m_fPreemptiveGCDisabled=%s "
+                "\n", 
+                thread->m_OSThreadId, 
+                (unsigned long)thread->m_State,    
+                (thread->m_State & TS_DebugWillSync) ? "true" : "false",
+                (thread->m_State & TS_SyncSuspended) ? "true" : "false",
+                (thread->m_State & TS_DebugSuspendPending) ? "true" : "false",
+                (thread->m_StateNC & TSNC_DebuggerUserSuspend) ? "true" : "false",
+                thread->m_fPreemptiveGCDisabled ? "true" : "false"
+                ); 
+
+
         }
 
         if (thread->m_fPreemptiveGCDisabled && str == STR_Success)
@@ -4273,6 +4336,22 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
                                        TS_DebugWillSync
                       );
 
+            printf("SysStartSuspendForDebug MarkForSuspension: thread %lx %lx "
+                "DebugWillSync=%s "
+                "SyncSuspended=%s "
+                "DebugSuspendPending=%s "
+                "TSNC_DebuggerUserSuspend=%s "
+                "m_fPreemptiveGCDisabled=%s "
+                "\n", 
+                thread->m_OSThreadId, 
+                (unsigned long)thread->m_State,    
+                (thread->m_State & TS_DebugWillSync) ? "true" : "false",
+                (thread->m_State & TS_SyncSuspended) ? "true" : "false",
+                (thread->m_State & TS_DebugSuspendPending) ? "true" : "false",
+                (thread->m_StateNC & TSNC_DebuggerUserSuspend) ? "true" : "false",
+                thread->m_fPreemptiveGCDisabled ? "true" : "false"
+                ); 
+
             if (!UseContextBasedThreadRedirection())
             {
                 // There'a a race above between the moment we first check m_fPreemptiveGCDisabled
@@ -4288,6 +4367,22 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
 #if defined(FEATURE_THREAD_ACTIVATION)
                 // Inject an activation that will interrupt the thread and try to bring it to a safe point
                 thread->InjectActivation(Thread::ActivationReason::SuspendForDebugger);
+
+                printf("SysStartSuspendForDebug InjectActivation: thread %lx %lx "
+                    "DebugWillSync=%s "
+                    "SyncSuspended=%s "
+                    "DebugSuspendPending=%s "
+                    "TSNC_DebuggerUserSuspend=%s "
+                    "m_fPreemptiveGCDisabled=%s "
+                    "\n", 
+                    thread->m_OSThreadId, 
+                    (unsigned long)thread->m_State,    
+                    (thread->m_State & TS_DebugWillSync) ? "true" : "false",
+                    (thread->m_State & TS_SyncSuspended) ? "true" : "false",
+                    (thread->m_State & TS_DebugSuspendPending) ? "true" : "false",
+                    (thread->m_StateNC & TSNC_DebuggerUserSuspend) ? "true" : "false",
+                    thread->m_fPreemptiveGCDisabled ? "true" : "false"
+                    ); 
 #endif // FEATURE_THREAD_ACTIVATION && TARGET_WINDOWS
             }
             else
@@ -4308,6 +4403,22 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
             // they attempt to re-enter they will trip.
             thread->MarkForSuspension(TS_DebugSuspendPending);
 
+            printf("SysStartSuspendForDebug MarkForSuspension: thread %lx %lx "
+                "DebugWillSync=%s "
+                "SyncSuspended=%s "
+                "DebugSuspendPending=%s "
+                "TSNC_DebuggerUserSuspend=%s "
+                "m_fPreemptiveGCDisabled=%s "
+                "\n", 
+                thread->m_OSThreadId, 
+                (unsigned long)thread->m_State,    
+                (thread->m_State & TS_DebugWillSync) ? "true" : "false",
+                (thread->m_State & TS_SyncSuspended) ? "true" : "false",
+                (thread->m_State & TS_DebugSuspendPending) ? "true" : "false",
+                (thread->m_StateNC & TSNC_DebuggerUserSuspend) ? "true" : "false",
+                thread->m_fPreemptiveGCDisabled ? "true" : "false"
+                ); 
+
             if (
                 // There'a a race above between the moment we first check m_fPreemptiveGCDisabled
                 // and the moment we enable TrapReturningThreads in MarkForSuspension.  To account
@@ -4326,6 +4437,8 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
                 // Remember that this thread will be running to a safe point
                 InterlockedIncrement(&m_DebugWillSyncCount);
                 thread->SetThreadState(TS_DebugWillSync);
+
+                printf("*** Set TS_DebugWillSync %lx\n", thread->m_OSThreadId);
             }
 
 #ifndef DISABLE_THREADSUSPEND
@@ -4349,10 +4462,16 @@ bool Thread::SysStartSuspendForDebug(AppDomain *pAppDomain)
     {
         LOG((LF_CORDB, LL_INFO1000,
              "SUSPEND: all threads sync before return.\n"));
+
+        printf("SysStartSuspendForDebug all threads are synchronized\n");
         return true;
     }
     else
+    {
+        printf("SysStartSuspendForDebug threads *not* synchronized\n");
+
         return false;
+    }
 }
 
 //
@@ -4379,6 +4498,8 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
 
     _ASSERTE(!forceSync); // deprecated parameter
 
+    printf("SysSweepThreadsForDebug m_DebugWillSyncCount=%d\n", m_DebugWillSyncCount);
+
     Thread *thread = NULL;
 
     // NOTE::NOTE::NOTE::NOTE::NOTE
@@ -4395,6 +4516,16 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
     // Loop over the threads...
     while (((thread = ThreadStore::GetThreadList(thread)) != NULL) && (m_DebugWillSyncCount >= 0))
     {
+        printf("SysSweepThreadsForDebug: thread %lx %lx "
+            "DebugWillSync=%s "
+            "SyncSuspended=%s "
+            "DebugSuspendPending=%s "
+            "\n", 
+            thread->m_OSThreadId, 
+            (unsigned long)thread->m_State,    
+            (thread->m_State & TS_DebugWillSync) ? "true" : "false",
+            (thread->m_State & TS_SyncSuspended) ? "true" : "false",
+            (thread->m_State & TS_DebugSuspendPending) ? "true" : "false"); 
         // Skip threads that we aren't waiting for to sync.
         if ((thread->m_State & TS_DebugWillSync) == 0)
             continue;
@@ -4414,8 +4545,12 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
             {
                 if (thread->IsInForbidSuspendForDebuggerRegion())
                 {
+                    printf("SysSweepThreadsForDebug: IsInForbidSuspendForDebuggerRegion %lx\n", thread->m_OSThreadId);
                     continue;
                 }
+
+                printf("SysSweepThreadsForDebug: Label_MarkThreadAsSynced %lx\n", thread->m_OSThreadId);
+
 
                 // If the thread toggled to preemptive mode and is not in a
                 // forbid-suspend-for-debugger region, then it's synced.
@@ -4468,6 +4603,8 @@ RetrySuspension:
             // If the thread is in a forbid-suspend-for-debugger region, the thread needs to
             // be resumed to give it a chance to leave the forbid region. The EE will also
             // trap the thread if it tries to re-enter a forbid region.
+
+            printf("SysSweepThreadsForDebug: Letting thread run free %lx\n", thread->m_OSThreadId);
             _ASSERTE(str == STR_Success);
             thread->ResumeThread();
 
@@ -4520,6 +4657,9 @@ RetrySuspension:
         // The thread is synced. Remove the sync bits and dec the sync count.
 Label_MarkThreadAsSynced:
         thread->ResetThreadState(TS_DebugWillSync);
+
+        printf("SysSweepThreadsForDebug *** clear TS_DebugWillSync ***  osid=%lx TS_SyncSuspended=%s\n", thread->m_OSThreadId, (thread->GetSnapshotState() & Thread::TS_SyncSuspended) != 0?"true":"false");
+        
         if (InterlockedDecrement(&m_DebugWillSyncCount) < 0)
         {
             // If that was the last thread, then the CLR is synced.
@@ -4548,6 +4688,8 @@ void Thread::SysResumeFromDebug(AppDomain *pAppDomain)
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
+
+    printf("SysResumeFromDebug\n");
 
     Thread  *thread = NULL;
 
@@ -4651,6 +4793,15 @@ BOOL Thread::WaitSuspendEventsHelper(void)
                 ThreadState newState = (ThreadState)(oldState | TS_SyncSuspended);
                 if (InterlockedCompareExchange((LONG *)&m_State, newState, oldState) == (LONG)oldState)
                 {
+                    printf("WaitSuspendEventsHelper: *** TS_SyncSuspended *** thread %lx %lx "
+                        "DebugSuspendPending=%s "
+                        "SyncSuspended=%s "
+                        "\n", 
+                        m_OSThreadId, 
+                        (unsigned long)m_State,    
+                        (m_State & TS_DebugSuspendPending) ? "true" : "false",
+                        (m_State & TS_SyncSuspended) ? "true" : "false"
+                        );
                     result = m_DebugSuspendEvent.Wait(INFINITE,FALSE);
 #if _DEBUG
                     newState = m_State;

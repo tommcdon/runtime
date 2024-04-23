@@ -3954,6 +3954,9 @@ void * STDCALL FuncEvalHijackWorker(DebuggerEval *pDE)
         if (filterContext != NULL)
         {
             g_pEEInterface->SetThreadFilterContext(pDE->m_thread, filterContext);
+#ifdef TARGET_AMD64
+            printf("FuncEvalHijackWorker - SetThreadFilterContext RIP=0x%16.16llX\n", (unsigned long long)filterContext->Rip);
+#endif
         }
 
         // Pop the FuncEvalFrame now that we're pretty much done.
