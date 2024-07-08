@@ -480,6 +480,8 @@ DebuggerControllerPatch *DebuggerPatchTable::AddPatchForMethodDef(DebuggerContro
     }
     CONTRACTL_END;
 
+    //printf("AddPatchForMethodDef: md=%8.8x  offset=%d\n", (UINT)md, (int)offset);
+
     LOG( (LF_CORDB,LL_INFO10000,"DPT:APFMD 0x%x with dji %p, %s offset 0x%zx controller:%p AD:%p\n",
         md, dji, (offsetIsIL ? "IL" : "native"), offset, controller, pAppDomain));
 
@@ -583,6 +585,7 @@ DebuggerControllerPatch *DebuggerPatchTable::AddPatchForAddress(DebuggerControll
     }
     CONTRACTL_END;
 
+    //printf("AddPatchForAddress: address=0x%16.16llx\n", (ULONGLONG)address);
 
     _ASSERTE(kind == PATCH_KIND_NATIVE_MANAGED || kind == PATCH_KIND_NATIVE_UNMANAGED);
     LOG((LF_CORDB,LL_INFO10000,"DCP:AddPatchForAddress bound "
@@ -665,6 +668,8 @@ void DebuggerPatchTable::BindPatch(DebuggerControllerPatch *patch, CORDB_ADDRESS
     _ASSERTE( !patch->IsILPrimaryPatch() );
     _ASSERTE(!patch->IsBound() );
 
+    //printf("BindPatch: address=0x%16.16llx\n", (ULONGLONG)address);
+
     //Since the actual patch doesn't move, we don't have to worry about
     //zeroing out the opcode field (see lengthy comment above)
     // Since the patch is double-hashed based off Address, if we change the address,
@@ -688,6 +693,8 @@ void DebuggerPatchTable::UnbindPatch(DebuggerControllerPatch *patch)
     _ASSERTE(patch->kind != PATCH_KIND_IL_PRIMARY);
     _ASSERTE(patch->IsBound() );
     _ASSERTE(!patch->IsActivated() );
+
+    //printf("BindPatch: address=0x%16.16llx\n", (ULONGLONG)patch->address);
 
     //<REVISIT_TODO>@todo We're hosed if the patch hasn't been primed with
     // this info & we can't get it...</REVISIT_TODO>
@@ -718,6 +725,10 @@ void DebuggerPatchTable::UnbindPatch(DebuggerControllerPatch *patch)
 
 void DebuggerPatchTable::RemovePatch(DebuggerControllerPatch *patch)
 {
+    if (patch->m_pSharedPatchBypassBuffer != nullptr)
+    {
+        printf("RemovePatch: address=0x%16.16llx bypass buffer=0x%16.16llx->0x%16.16llx\n", (ULONGLONG)patch->address, (ULONGLONG)&patch->m_pSharedPatchBypassBuffer->BypassBuffer, (ULONGLONG)(((ULONGLONG)&patch->m_pSharedPatchBypassBuffer->BypassBuffer)+(ULONGLONG)SharedPatchBypassBuffer::cbBufferBypass));
+    }
     // Since we're deleting this patch, it must not be activated (i.e. it must not have a stored opcode)
     _ASSERTE( !patch->IsActivated() );
 #ifndef FEATURE_EMULATE_SINGLESTEP
@@ -1075,6 +1086,7 @@ void DebuggerController::ReleasePatch(DebuggerControllerPatch *patch)
     if (patch->refCount == 0)
     {
         LOG((LF_CORDB, LL_INFO10000, "DC::RP: patchId:0x%zx deleted, deactivating\n", patch->patchId));
+        //printf("ReleasePatch %16.16llx\n", (ULONGLONG)patch->address);
         DeactivatePatch(patch);
         GetPatchTable()->RemovePatch(patch);
     }
@@ -1118,7 +1130,7 @@ void DebuggerController::DisableAll()
             {
                 if (patch->controller == this)
                 {
-                    ReleasePatch(patch);
+                    //ReleasePatch(patch);
                 }
             }
         }
@@ -1433,6 +1445,8 @@ bool DebuggerController::UnapplyPatch(DebuggerControllerPatch *patch)
     _ASSERTE(patch->address != NULL);
     _ASSERTE(patch->IsActivated() );
 
+    //printf("UnapplyPatch: patch=%16.16llx  bypass=%16.16llx\n", (ULONGLONG)patch->address, (ULONGLONG)patch->m_pSharedPatchBypassBuffer);
+
     LOG((LF_CORDB, LL_INFO1000, "DC::UnapplyPatch %p, patchId:0x%zx\n",
         patch, patch->patchId));
 
@@ -1667,6 +1681,8 @@ BOOL DebuggerController::CheckGetPatchedOpcode(CORDB_ADDRESS_TYPE *address,
     _ASSERTE(patch->IsBound() );
     _ASSERTE(!patch->IsActivated() );
 
+    //printf("ActivatePatch: patch=%16.16llx  bypass=%16.16llx\n", (ULONGLONG)patch->address, (ULONGLONG)patch->m_pSharedPatchBypassBuffer);
+
     LOG((LF_CORDB|LF_ENC,LL_INFO1000,"DC::ActivatePatch: patchId:0x%zx\n", patch->patchId));
     patch->LogInstance();
 
@@ -1712,7 +1728,9 @@ BOOL DebuggerController::CheckGetPatchedOpcode(CORDB_ADDRESS_TYPE *address,
 void DebuggerController::DeactivatePatch(DebuggerControllerPatch *patch)
 {
     _ASSERTE(g_patches != NULL);
-    _ASSERTE(patch != NULL);
+
+    //printf("DeactivatePatch: patch=%16.16llx  bypass=%16.16llx\n",(ULONGLONG) patch->address, (ULONGLONG)patch->m_pSharedPatchBypassBuffer);
+
 
     LOG((LF_CORDB|LF_ENC,LL_INFO1000,"DC::DeactivatePatch: patchId:0x%zx\n", patch->patchId));
     patch->LogInstance();
@@ -2608,6 +2626,8 @@ DPOSS_ACTION DebuggerController::ScanForTriggers(CORDB_ADDRESS_TYPE *address,
             LOG((LF_CORDB, LL_INFO10000, "DC::SFT: patch matched\n"));
             AddRefPatch(patch);
 
+            printf("ScanForTriggers: threadid=0x%x, IP=0x%p, address=0x%p, opcode=0x%16.16llx\n", thread->GetOSThreadId(), (void*)context->Rip, patch->address, (UINT64)patch->opcode);
+
             // We are hitting a patch at a virtual trace call target, so let's trigger trace call here.
             if (patch->trace.GetTraceType() == TRACE_ENTRY_STUB)
             {
@@ -2659,7 +2679,7 @@ DPOSS_ACTION DebuggerController::ScanForTriggers(CORDB_ADDRESS_TYPE *address,
 
             // Note that ReleasePatch() actually removes the patch if its ref count
             // reaches 0 after the release.
-            ReleasePatch(patch);
+            //ReleasePatch(patch);
         }
 
         if (tpr == TPR_IGNORE_AND_STOP ||
@@ -8218,6 +8238,7 @@ TP_RESULT DebuggerThreadStarter::TriggerPatch(DebuggerControllerPatch *patch,
     BOOL managed = patch->IsManagedPatch();
 
     LOG((LF_CORDB,LL_INFO1000, "DebuggerThreadStarter::TriggerPatch for thread 0x%x\n", Debugger::GetThreadIdHelper(thread)));
+    printf("DebuggerThreadStarter::TriggerPatch: threadid=0x%x, address=0x%p, opcode=0x%16.16llx module=0x%p managed=%d\n", thread->GetOSThreadId(), patch->address, (UINT64)patch->opcode, module, managed);
 
     if (module == NULL && managed)
     {
@@ -8226,6 +8247,29 @@ TP_RESULT DebuggerThreadStarter::TriggerPatch(DebuggerControllerPatch *patch,
         // frame and we go back to the stub manager that generated the stub for where to patch next.
         TraceDestination trace;
         bool traceOk;
+//         enum TraceType
+// {
+//     TRACE_ENTRY_STUB,               // Stub goes to an unmanaged entry stub
+//     TRACE_STUB,                     // Stub goes to another stub
+//     TRACE_UNMANAGED,                // Stub goes to unmanaged code
+//     TRACE_MANAGED,                  // Stub goes to Jitted code
+//     TRACE_UNJITTED_METHOD,          // Is the prestub, since there is no code, the address will actually be a MethodDesc*
+
+//     TRACE_FRAME_PUSH,               // Don't know where stub goes, stop at address, and then ask the frame that is on the stack
+//     TRACE_MGR_PUSH,                 // Don't know where stub goes, stop at address then call TraceManager() below to find out
+
+//     TRACE_OTHER                     // We are going somewhere you can't step into (eg. ee helper function)
+// };
+
+        printf("DebuggerThreadStarter::TriggerPatch: TraceType=%s, IsTransitionToNativeFrame=%s\n", 
+            patch->trace.GetTraceType()==TRACE_ENTRY_STUB?"TRACE_ENTRY_STUB":
+            patch->trace.GetTraceType()==TRACE_STUB?"TRACE_STUB":
+            patch->trace.GetTraceType()==TRACE_UNMANAGED?"TRACE_UNMANAGED":
+            patch->trace.GetTraceType()==TRACE_MANAGED?"TRACE_MANAGED":
+            patch->trace.GetTraceType()==TRACE_UNJITTED_METHOD?"TRACE_UNJITTED_METHOD":
+            patch->trace.GetTraceType()==TRACE_FRAME_PUSH?"TRACE_FRAME_PUSH":
+            patch->trace.GetTraceType()==TRACE_MGR_PUSH?"TRACE_MGR_PUSH":"TRACE_OTHER",
+            thread->GetFrame()?thread->GetFrame()->IsTransitionToNativeFrame()?"true":"false":"null");
         if (patch->trace.GetTraceType() == TRACE_MGR_PUSH)
         {
             BYTE *dummy = NULL;
@@ -8263,6 +8307,7 @@ TP_RESULT DebuggerThreadStarter::TriggerPatch(DebuggerControllerPatch *patch,
     }
     else
     {
+        //printf("DebuggerThreadStarter::TriggerPatch: Fail!!!\n");
         // We've hit user code; trigger our event.
         DisableAll();
 
