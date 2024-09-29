@@ -1072,7 +1072,8 @@ class DebuggerController
     static bool DispatchNativeException(EXCEPTION_RECORD *exception,
                                         CONTEXT *context,
                                         DWORD code,
-                                        Thread *thread);
+                                        Thread *thread,
+                                        DebuggerPatchSkip **ppDebuggerPatchSkip = nullptr);
 
     static bool DispatchUnwind(Thread *thread,
                                MethodDesc *fd, DebuggerJitInfo * pDJI, SIZE_T offset,
@@ -1119,7 +1120,8 @@ class DebuggerController
     static DPOSS_ACTION DispatchPatchOrSingleStep(Thread *thread,
                                           CONTEXT *context,
                                           CORDB_ADDRESS_TYPE *ip,
-                                          SCAN_TRIGGER which);
+                                          SCAN_TRIGGER which,
+                                          DebuggerPatchSkip **ppDebuggerPatchSkip = nullptr);
 
 
     static int GetNumberOfPatches()
@@ -1491,6 +1493,10 @@ public:
         BYTE* patchBypass = m_pSharedPatchBypassBuffer->PatchBypass;
         return (CORDB_ADDRESS_TYPE *)patchBypass;
     }
+#if !defined(FEATURE_EMULATE_SINGLESTEP) && defined(OUT_OF_PROCESS_SETTHREADCONTEXT)
+    BOOL IsInPlaceSingleStep() { return m_instrAttrib.m_fIsCall && m_instrAttrib.m_fInPlaceSS; }
+    CORDB_ADDRESS_TYPE* GetAddress() { return m_address; }
+#endif
 #endif // !FEATURE_EMULATE_SINGLESTEP
 };
 
