@@ -3747,7 +3747,7 @@ HANDLE OpenWin32EventOrThrow(
 // has been suspended by the debugger (see code:Thread::RareEnablePreemptiveGC).
 #define SENDIPCEVENT_BEGIN_EX(pDebugger, thread, gcxStmt)                                 \
   {                                                                                       \
-    /*FireEtwDebugIPCEventStart();*/                                                      \
+    FireEtwDebugIPCEventStart();                                                          \
     bool __fRetry = true;                                                                 \
     do                                                                                    \
     {                                                                                     \
@@ -3772,7 +3772,7 @@ HANDLE OpenWin32EventOrThrow(
         g_pDebugger->UnlockFromEventSending(__pDbgLockHolder);  \
       } /* ~gcxStmt & ~DebuggerLockHolder & ~tsld */            \
     } while (__fRetry);                                         \
-    /*FireEtwDebugIPCEventEnd();*/                              \
+    FireEtwDebugIPCEventEnd();                                  \
   }
 
 
