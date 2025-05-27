@@ -16795,6 +16795,15 @@ void Debugger::SingleStepToExitApcCall(Thread* pThread, CONTEXT *interruptedCont
     g_pEEInterface->SetThreadFilterContext(pThread, interruptedContext);
     DebuggerController::EnableSingleStep(pThread);
     g_pEEInterface->SetThreadFilterContext(pThread, NULL);
+    pThread->m_apcState.m_ip = GetIP(interruptedContext);
+    pThread->m_apcState.m_sp = GetSP(interruptedContext);
+
+    // LOG((LF_CORDB, LL_INFO1000, "Debugger: SingleStepToExitApcCall: Thread %u is inside APC, initiating single-steppingstepping, will wait for "
+    // "IP=%p "
+    // "SP=%p.\n", 
+    // pThread->GetOSThreadId(), 
+    // (void*)pThread->m_apcState.m_ip,
+    // (void*)pThread->m_apcState.m_sp));
 }
 #endif //FEATURE_SPECIAL_USER_MODE_APC
 #endif //DACCESS_COMPILE

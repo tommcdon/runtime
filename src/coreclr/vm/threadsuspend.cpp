@@ -5822,7 +5822,7 @@ void HandleSuspensionForInterruptedThread(CONTEXT *interruptedContext, bool susp
     // So we enable the single step in the thread that is running the APC Callback
     // and then it will be paused using single step exception after exiting the APC callback
     // this will allow the debugger to setIp to execute FuncEvalHijack.
-    if (suspendForDebugger)
+    if (suspendForDebugger && Thread::AreShadowStacksEnabled())
     {
         g_pDebugInterface->SingleStepToExitApcCall(pThread, interruptedContext);
         return;
