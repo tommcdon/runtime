@@ -4290,6 +4290,52 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         return FALSE;
     }
 
+#ifdef FEATURE_SPECIAL_USER_MODE_APC
+    if (pCurThread->m_State & Thread::TS_SSToExitApcCall)
+    {
+        LOG((LF_CORDB, LL_INFO1000, "Debugger: DispatchNativeException: Thread %u is in the middle of stepping out an APC call, waiting for "
+            "IP=%p(current=%p) "
+            "SP=%p(current=%p) "
+            "CheckActivationSafePoint=%s.\n", 
+            pCurThread->GetOSThreadId(), 
+            (void*)pCurThread->m_apcState.m_ip, (void*)GetIP(pContext), 
+            (void*)pCurThread->m_apcState.m_sp, (void*)GetSP(pContext),
+            CheckActivationSafePoint(GetIP(pContext)) ? "TRUE" : "FALSE"));
+
+        PCODE cur_ip = GetIP(pContext);
+        PCODE cur_sp = GetSP(pContext);
+
+        PCODE trap_ip = pCurThread->m_apcState.m_ip;
+        PCODE trap_sp = pCurThread->m_apcState.m_sp;
+
+        // if (!CheckActivationSafePoint(GetIP(pContext)))
+        // {
+        //     return FALSE;
+        // }
+        if (cur_sp <= trap_sp || CheckActivationSafePoint(GetIP(pContext)))
+        {
+            // If we are here, then we are in the middle of an APC call.
+            // We need to set the thread state to TS_SSToExitApcCallDone
+            // so that the thread can continue after the APC call.
+            LOG((LF_CORDB, LL_INFO1000, "Debugger: DispatchNativeException: Thread %p has just returned from stepping out of an APC call.\n", pCurThread->GetOSThreadId()));
+            // printf("Debugger: DispatchNativeException: Thread %u has just returned from stepping out of an APC call.\n", pCurThread->GetOSThreadId());
+
+            pCurThread->SetThreadState(Thread::TS_SSToExitApcCallDone);
+            pCurThread->ResetThreadState(Thread::TS_SSToExitApcCall);
+            DebuggerController::UnapplyTraceFlag(pCurThread);
+            pCurThread->MarkForSuspensionAndWait(Thread::TS_DebugSuspendPending);
+
+            pCurThread->m_apcState.m_ip = 0;
+            pCurThread->m_apcState.m_sp = 0;
+        }
+        else
+        {
+            DebuggerController::ApplyTraceFlag(pCurThread);
+        }
+        return TRUE;
+    }
+#endif
+
     // The debugger really only cares about exceptions in managed code.  Any exception that occurs
     // while the thread is redirected (such as EXCEPTION_HIJACK) is not of interest to the debugger.
     // Allowing this would be problematic because when an exception occurs while the thread is
@@ -4469,20 +4515,6 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         ThisFunctionMayHaveTriggerAGC();
     }
 #endif
-#ifdef FEATURE_SPECIAL_USER_MODE_APC
-    if (pCurThread->m_State & Thread::TS_SSToExitApcCall)
-    {
-        if (!CheckActivationSafePoint(GetIP(pContext)))
-        {
-            return FALSE;
-        }
-        pCurThread->SetThreadState(Thread::TS_SSToExitApcCallDone);
-        pCurThread->ResetThreadState(Thread::TS_SSToExitApcCall);
-        DebuggerController::UnapplyTraceFlag(pCurThread);
-        pCurThread->MarkForSuspensionAndWait(Thread::TS_DebugSuspendPending);
-    }
-#endif
-
 
     // Must restore the filter context. After the filter context is gone, we're
     // unprotected again and unsafe for a GC.

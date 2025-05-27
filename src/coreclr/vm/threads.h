@@ -2893,6 +2893,16 @@ private:
 
     ThreadExceptionState  m_ExceptionState;
 
+#ifdef FEATURE_SPECIAL_USER_MODE_APC
+public:
+    typedef struct
+    {
+        PCODE m_ip;
+        PCODE m_sp;
+    } APCState;
+    APCState m_apcState = { };
+#endif // FEATURE_SPECIAL_USER_MODE_APC
+
 private:
     //---------------------------------------------------------------
     // m_debuggerFilterContext holds the thread's "filter context" for the
