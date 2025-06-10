@@ -1136,8 +1136,8 @@ Arguments:
     //      unwind codes.
     //
 
-    printf("OOPStackUnwinderAMD64::VirtualUnwind: ControlPc=%p, FunctionEntry=%p, ImageBase=%p FrameOffset=%u RIP=%p RSP=%p RAX=%p UnwindVersion=%u\n",
-           (void*)ControlPc, (void*)FunctionEntry, (void*)ImageBase, FrameOffset, (void*)ContextRecord->Rip, (void*)ContextRecord->Rsp, (void*)ContextRecord->Rax, UnwindVersion);
+    printf("OOPStackUnwinderAMD64::VirtualUnwind: ControlPc=%p, FunctionEntry=%p, ImageBase=%p FrameOffset=%u RIP=%p RSP=%p UnwindVersion=%u\n",
+           (void*)ControlPc, (void*)FunctionEntry, (void*)ImageBase, FrameOffset, (void*)ContextRecord->Rip, (void*)ContextRecord->Rsp, UnwindVersion);
     fflush(stdout);
 
     PrologOffset = (ULONG)(ControlPc - (FunctionEntry->BeginAddress + ImageBase));
@@ -1175,7 +1175,7 @@ Arguments:
         }
 #endif // TARGET_UNIX
 
-        printf("OOPStackUnwinderAMD64::VirtualUnwind: &ContextRecord->Rax[UnwindInfo->FrameRegister]=%p[%u] => %p\n", (void*)ContextRecord->Rax, UnwindInfo->FrameRegister, (void*)(&ContextRecord->Rax)[UnwindInfo->FrameRegister]);
+        printf("OOPStackUnwinderAMD64::VirtualUnwind: &ContextRecord->Rax[UnwindInfo->FrameRegister]=%p[%u] => %p\n", (void*)&ContextRecord->Rax, UnwindInfo->FrameRegister, (void*)(&ContextRecord->Rax)[UnwindInfo->FrameRegister]);
         fflush(stdout);
         *EstablisherFrame = (&ContextRecord->Rax)[UnwindInfo->FrameRegister];
         *EstablisherFrame -= FrameOffset * 16;
@@ -1211,7 +1211,7 @@ Arguments:
             printf("OOPStackUnwinderAMD64::VirtualUnwind: PrologOffset=%u >= UnwindCode[%u].CodeOffset=%u\n",
                    PrologOffset, Index, UnwindInfo->UnwindCode[Index].CodeOffset);
             fflush(stdout);
-            printf("OOPStackUnwinderAMD64::VirtualUnwind: &ContextRecord->Rax[UnwindInfo->FrameRegister]=%p[%u] => %p\n", (void*)ContextRecord->Rax, UnwindInfo->FrameRegister, (void*)(&ContextRecord->Rax)[UnwindInfo->FrameRegister]);
+            printf("OOPStackUnwinderAMD64::VirtualUnwind: &ContextRecord->Rax[UnwindInfo->FrameRegister]=%p[%u] => %p\n", (void*)&ContextRecord->Rax, UnwindInfo->FrameRegister, (void*)(&ContextRecord->Rax)[UnwindInfo->FrameRegister]);
             fflush(stdout);
 
             *EstablisherFrame = (&ContextRecord->Rax)[UnwindInfo->FrameRegister];
