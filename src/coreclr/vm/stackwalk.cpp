@@ -25,6 +25,10 @@
 
 #include "exinfo.h"
 
+#ifdef DACCESS_COMPILE
+#include "typestring.h"
+#endif // DACCESS_COMPILE
+
 CrawlFrame::CrawlFrame()
 {
     LIMITED_METHOD_DAC_CONTRACT;
@@ -507,6 +511,30 @@ UINT_PTR Thread::VirtualUnwindCallFrame(PREGDISPLAY pRD, EECodeInfo* pCodeInfo /
     }
     CONTRACTL_END;
 
+
+#ifdef DACCESS_COMPILE
+    {
+        T_CONTEXT* pContext = pRD->pCurrentContext;
+        PCODE           uControlPc = GetIP(pContext);
+        MethodDesc * pMD = NULL;
+        if (pCodeInfo == NULL)
+        {
+            EECodeInfo codeInfo(uControlPc);
+            pMD = codeInfo.GetMethodDesc();
+        }
+        else
+        {
+            pMD = pCodeInfo->GetMethodDesc();
+        }
+        StackSString str;
+        TypeString::AppendMethodInternal(str, pMD, TypeString::FormatSignature|TypeString::FormatNamespace|TypeString::FormatFullInst);
+
+        printf("VirtualUnwindCallFrame-1: uControlPc: %p, Esp: %p, Rip: %p, Name: %s\n", (void*)uControlPc, (void*)GetSP(pContext), (void*)GetIP(pContext), str.GetUTF8());
+        fflush(stdout);
+    }
+#endif
+
+
     if (pRD->IsCallerContextValid)
     {
         // We already have the caller's frame context
@@ -554,6 +582,29 @@ PCODE Thread::VirtualUnwindCallFrame(T_CONTEXT* pContext,
     CONTRACTL_END;
 
     PCODE           uControlPc = GetIP(pContext);
+#ifdef DACCESS_COMPILE
+    {
+        MethodDesc * pMD = NULL;
+        if (pCodeInfo == NULL)
+        {
+            EECodeInfo codeInfo(uControlPc);
+            pMD = codeInfo.GetMethodDesc();
+        }
+        else
+        {
+            pMD = pCodeInfo->GetMethodDesc();
+        }
+        StackSString str;
+        TypeString::AppendMethodInternal(str, pMD, TypeString::FormatSignature|TypeString::FormatNamespace|TypeString::FormatFullInst);
+
+        printf("VirtualUnwindCallFrame-2: uControlPc: %p, Esp: %p, Rip: %p, Name: %s\n", (void*)uControlPc, (void*)GetSP(pContext), (void*)GetIP(pContext), str.GetUTF8());
+        fflush(stdout);
+    }
+#endif
+
+#ifdef DACCESS_COMPILE
+    LOG((LF_CORDB, LL_INFO100, "VirtualUnwindCallFrame: uControlPc: %p, Esp: %p, Rip: %p\n", (void*)uControlPc, (void*)GetSP(pContext), (void*)GetIP(pContext)));
+#endif
 
 #if !defined(DACCESS_COMPILE)
     UINT_PTR            uImageBase;
@@ -1298,8 +1349,14 @@ BOOL StackFrameIterator::ResetRegDisp(PREGDISPLAY pRegDisp,
         {
             // On 64-bit and ARM, we stop at the explicit frames contained in a managed stack frame
             // before the managed stack frame itself.
+#ifdef DACCESS_COMPILE
+            LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::ResetRegDisp: Cur IP: %p, Cur SP: %p\n", m_crawl.pRD->pCurrentContext->Rip, m_crawl.pRD->pCurrentContext->Rsp));
+#endif
             EECodeManager::EnsureCallerContextIsValid(m_crawl.pRD, NULL, m_codeManFlags);
             curSP = GetSP(m_crawl.pRD->pCallerContext);
+#ifdef DACCESS_COMPILE
+            LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::ResetRegDisp: Caller IP: %p, Caller SP: %p\n", m_crawl.pRD->pCallerContext->Rip, m_crawl.pRD->pCallerContext->Rsp));
+#endif
         }
 #endif // PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME
 
@@ -2736,8 +2793,14 @@ StackWalkAction StackFrameIterator::NextRaw(void)
                     // better not be suspended.
                     CONSISTENCY_CHECK(!(m_flags & THREAD_IS_SUSPENDED));
 
+#ifdef DACCESS_COMPILE
+                    LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::NextRaw() - Cur IP: %p, Cur SP: %p\n", m_crawl.pRD->pCurrentContext->Rip, m_crawl.pRD->pCurrentContext->Rsp));
+#endif
                     EECodeManager::EnsureCallerContextIsValid(m_crawl.pRD, NULL, m_codeManFlags);
                     m_pvResumableFrameTargetSP = (LPVOID)GetSP(m_crawl.pRD->pCallerContext);
+#ifdef DACCESS_COMPILE
+                    LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::NextRaw() - Next IP:%p SP:%p\n", m_crawl.pRD->pCallerContext->Rip, GetSP(m_crawl.pRD->pCallerContext)));
+#endif
                 }
 #endif // RECORD_RESUMABLE_FRAME_SP
 
@@ -3079,8 +3142,14 @@ BOOL StackFrameIterator::CheckForSkippedFrames(void)
     // frame will be reported before its containing method.
 
     // This should always succeed!  If it doesn't, it's a bug somewhere else!
+#ifdef DACCESS_COMPILE
+    LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::CheckForSkippedFrames: Current IP:%p SP:%p\n", m_crawl.pRD->pCurrentContext->Rip, m_crawl.pRD->pCurrentContext->Rsp));
+#endif
     EECodeManager::EnsureCallerContextIsValid(m_crawl.pRD, &m_cachedCodeInfo, m_codeManFlags);
     pvReferenceSP = GetSP(m_crawl.pRD->pCallerContext);
+#ifdef DACCESS_COMPILE
+    LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::CheckForSkippedFrames: Caller IP:%p SP:%p\n", m_crawl.pRD->pCallerContext->Rip, m_crawl.pRD->pCallerContext->Rsp));
+#endif
 #endif // PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME
 
     if ( !( (m_crawl.pFrame != FRAME_TOP) &&

@@ -187,6 +187,9 @@ void DacDbiInterfaceImpl::SetStackWalkCurrentContext(VMPTR_Thread           vmTh
     T_CONTEXT * pContext2 = GetContextBufferFromHandle(pSFIHandle);
     CopyMemory(pContext2, pContext, sizeof(*pContext));
 
+    LOG((LF_CORDB, LL_INFO100, " DacDbiInterfaceImpl::SetStackWalkCurrentContext IP: %p SP: %p\n",
+           pContext->Rip, pContext->Rsp));
+
     // update the REGDISPLAY with the given CONTEXT.
     // Be sure that the context is in DDImpl's memory space and not the Right-sides.
     FillRegDisplay(pRD, pContext2);

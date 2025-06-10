@@ -204,6 +204,8 @@ UNWIND_INFO * OOPStackUnwinderAMD64::GetUnwindInfo(TADDR taUnwindInfo)
 
 BOOL DacUnwindStackFrame(CONTEXT * pContext, KNONVOLATILE_CONTEXT_POINTERS* pContextPointers)
 {
+    LOG((LF_CORDB, LL_INFO100, "DacUnwindStackFrame [IN]: pContext=%p, Esp: %p, Rip: %p\n", (void*)pContext, GetSP(pContext), GetIP(pContext)));
+
     BOOL res = OOPStackUnwinderAMD64::Unwind(pContext);
 
     if (res && pContextPointers)
@@ -213,6 +215,8 @@ BOOL DacUnwindStackFrame(CONTEXT * pContext, KNONVOLATILE_CONTEXT_POINTERS* pCon
             *(&pContextPointers->Rax + i) = &pContext->Rax + i;
         }
     }
+
+    LOG((LF_CORDB, LL_INFO100, "DacUnwindStackFrame [OUT]: pContext=%p, Esp: %p, Rip: %p\n", (void*)pContext, GetSP(pContext), GetIP(pContext)));
 
     return res;
 }
@@ -1132,12 +1136,19 @@ Arguments:
     //      unwind codes.
     //
 
+    printf("OOPStackUnwinderAMD64::VirtualUnwind: ControlPc=%p, FunctionEntry=%p, ImageBase=%p FrameOffset=%u RIP=%p RSP=%p RAX=%p UnwindVersion=%u\n",
+           (void*)ControlPc, (void*)FunctionEntry, (void*)ImageBase, FrameOffset, (void*)ContextRecord->Rip, (void*)ContextRecord->Rsp, (void*)ContextRecord->Rax, UnwindVersion);
+    fflush(stdout);
+
     PrologOffset = (ULONG)(ControlPc - (FunctionEntry->BeginAddress + ImageBase));
     if (UnwindInfo->FrameRegister == 0) {
         *EstablisherFrame = ContextRecord->Rsp;
 
     } else if ((PrologOffset >= UnwindInfo->SizeOfProlog) ||
                ((UnwindInfo->Flags & UNW_FLAG_CHAININFO) != 0)) {
+        printf("OOPStackUnwinderAMD64::VirtualUnwind: PrologOffset=%u >= SizeOfProlog=%u or UNW_FLAG_CHAININFO set\n",
+               PrologOffset, UnwindInfo->SizeOfProlog);
+        fflush(stdout);
 
         FrameOffset = UnwindInfo->FrameOffset;
 
@@ -1159,13 +1170,20 @@ Arguments:
 
                 Index += UnwindOpSlots(UnwindOp);
             }
+            printf("OOPStackUnwinderAMD64::VirtualUnwind: FrameOffset was 15, adjusted FrameOffset=%u\n", FrameOffset);
+            fflush(stdout);
         }
 #endif // TARGET_UNIX
 
+        printf("OOPStackUnwinderAMD64::VirtualUnwind: &ContextRecord->Rax[UnwindInfo->FrameRegister]=%p[%u] => %p\n", (void*)ContextRecord->Rax, UnwindInfo->FrameRegister, (void*)(&ContextRecord->Rax)[UnwindInfo->FrameRegister]);
+        fflush(stdout);
         *EstablisherFrame = (&ContextRecord->Rax)[UnwindInfo->FrameRegister];
         *EstablisherFrame -= FrameOffset * 16;
 
     } else {
+        printf("OOPStackUnwinderAMD64::VirtualUnwind: PrologOffset=%u < SizeOfProlog=%u or !UNW_FLAG_CHAININFO\n",
+               PrologOffset, UnwindInfo->SizeOfProlog);
+        fflush(stdout);
         FrameOffset = UnwindInfo->FrameOffset;
         Index = 0;
         while (Index < UnwindInfo->CountOfUnwindCodes) {
@@ -1183,13 +1201,26 @@ Arguments:
 #endif // TARGET_UNIX
 
             Index += UnwindOpSlots(UnwindOp);
+
         }
+        printf("OOPStackUnwinderAMD64::VirtualUnwind: Adjusted FrameOffset=%u Index=%u\n",
+               FrameOffset, Index);
+        fflush(stdout);
 
         if (PrologOffset >= UnwindInfo->UnwindCode[Index].CodeOffset) {
+            printf("OOPStackUnwinderAMD64::VirtualUnwind: PrologOffset=%u >= UnwindCode[%u].CodeOffset=%u\n",
+                   PrologOffset, Index, UnwindInfo->UnwindCode[Index].CodeOffset);
+            fflush(stdout);
+            printf("OOPStackUnwinderAMD64::VirtualUnwind: &ContextRecord->Rax[UnwindInfo->FrameRegister]=%p[%u] => %p\n", (void*)ContextRecord->Rax, UnwindInfo->FrameRegister, (void*)(&ContextRecord->Rax)[UnwindInfo->FrameRegister]);
+            fflush(stdout);
+
             *EstablisherFrame = (&ContextRecord->Rax)[UnwindInfo->FrameRegister];
             *EstablisherFrame -= FrameOffset * 16;
 
         } else {
+            printf("OOPStackUnwinderAMD64::VirtualUnwind: PrologOffset=%u < UnwindCode[%u].CodeOffset=%u\n",
+                   PrologOffset, Index, UnwindInfo->UnwindCode[Index].CodeOffset);
+            fflush(stdout);
             *EstablisherFrame = ContextRecord->Rsp;
         }
     }
@@ -1613,6 +1644,10 @@ Arguments:
     // Control left the specified function outside an epilogue. Unwind the
     // subject function and any chained unwind information.
     //
+
+    printf("[VirtualUnwind] Calling UnwindPrologue, because control left the specified function outside an epilogue RIP=%p EstablisherFrame=%p\n",
+           (PVOID)ControlPc, (PVOID)*EstablisherFrame);
+    fflush(stdout);
 
     Status = UnwindPrologue(ImageBase,
                             ControlPc,

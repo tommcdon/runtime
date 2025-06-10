@@ -1181,6 +1181,7 @@ HRESULT ShimProxyCallback::Exception(ICorDebugAppDomain * pAppDomain, ICorDebugT
 
         HRESULT Dispatch(DispatchArgs args)
         {
+            LOG((LF_CORDB, LL_INFO100, "ExceptionEvent::Dispatch\n"));
             return args.GetCallback2()->Exception(m_pAppDomain, m_pThread, UpdateFrame(m_pThread, m_pFrame), m_nOffset, m_dwEventType, m_dwFlags);
         }
     }; // end class ExceptionEvent

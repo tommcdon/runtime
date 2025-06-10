@@ -1030,7 +1030,13 @@ void EECodeManager::EnsureCallerContextIsValid( PREGDISPLAY  pRD, EECodeInfo * p
             // We need to make a copy here (instead of switching the pointers), in order to preserve the current context
             *(pRD->pCallerContext) = *(pRD->pCurrentContext);
             *(pRD->pCallerContextPointers) = *(pRD->pCurrentContextPointers);
+#ifdef DACCESS_COMPILE
+            LOG((LF_CORDB, LL_INFO100, "EECodeManager::EnsureCallerContextIsValid Current IP:%p SP:%p\n", pRD->pCurrentContext->Rip, pRD->pCurrentContext->Rsp));
+#endif
             Thread::VirtualUnwindCallFrame(pRD->pCallerContext, pRD->pCallerContextPointers, pCodeInfo);
+#ifdef DACCESS_COMPILE
+            LOG((LF_CORDB, LL_INFO100, "EECodeManager::EnsureCallerContextIsValid Caller IP:%p SP:%p\n", pRD->pCallerContext->Rip, pRD->pCallerContext->Rsp));
+#endif
         }
 
         pRD->IsCallerContextValid = TRUE;

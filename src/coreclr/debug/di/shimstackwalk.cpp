@@ -173,6 +173,8 @@ void ShimStackWalk::Populate()
 {
     HRESULT hr = S_OK;
 
+    ::Sleep(1000); // Give the debugger a chance to stop before we start populating the stackwalk.
+
     // query for the ICDThread3 interface
     RSExtSmartPtr<ICorDebugThread3> pThread3;
     hr = m_pThread->QueryInterface(IID_ICorDebugThread3, reinterpret_cast<void **>(&pThread3));
@@ -183,6 +185,10 @@ void ShimStackWalk::Populate()
     hr = pThread3->CreateStackWalk(&pSW);
     IfFailThrow(hr);
 
+    LOG((LF_CORDB, LL_INFO100, "ShimStackWalk::Populate: populating stackwalk for thread 0x%x\n", (CordbThread*)m_pThread.GetValue())->GetVolatileOSThreadID());
+    printf("ShimStackWalk::Populate: populating stackwalk for thread 0x%x\n", ((CordbThread*)m_pThread.GetValue())->GetVolatileOSThreadID());
+    fflush(stdout);
+
     // structs used to store information during the stackwalk
     ChainInfo     chainInfo;
     StackWalkInfo swInfo;
@@ -190,6 +196,10 @@ void ShimStackWalk::Populate()
     // use the ICDStackWalk to retrieve the internal frames
     hr = pThread3->GetActiveInternalFrames(0, &(swInfo.m_cInternalFrames), NULL);
     IfFailThrow(hr);
+
+    LOG((LF_CORDB, LL_INFO100, "ShimStackWalk::Populate: swInfo.m_cInternalFrames = %d\n", swInfo.m_cInternalFrames));
+    printf("ShimStackWalk::Populate: swInfo.m_cInternalFrames = %d\n", swInfo.m_cInternalFrames);
+    fflush(stdout);
 
     // allocate memory for the internal frames
     if (swInfo.m_cInternalFrames > 0)
@@ -236,6 +246,9 @@ void ShimStackWalk::Populate()
         {
             hr = pSW->GetFrame(&pFrame);
             IfFailThrow(hr);
+
+            LOG((LF_CORDB, LL_INFO100, "ShimStackWalk::Populate: Frame Pointer = %p\n", pFrame.GetValue() ? ((CordbFrame*)pFrame.GetValue())->m_fp.GetSPValue() : 0));
+            printf("ShimStackWalk::Populate: Frame Pointer = %p\n", pFrame.GetValue() ? ((CordbFrame*)pFrame.GetValue())->m_fp.GetSPValue() : 0);
         }
 
         // This next clause processes the current frame, regardless of whether it's an internal frame or a
@@ -264,6 +277,12 @@ void ShimStackWalk::Populate()
                 // check whether we should process the next internal frame or the next stack frame
                 swInfo.m_fProcessingInternalFrame = (CheckInternalFrame(pFrame, &swInfo, pThread3, pSW) == TRUE);
             }
+
+            printf("ShimStackWalk::Populate: Processing %s frame\n",
+                   swInfo.m_fProcessingInternalFrame ? "internal" : "stack");
+            fflush(stdout);
+            LOG((LF_CORDB, LL_INFO100, "ShimStackWalk::Populate: Processing %s frame\n",
+                   swInfo.m_fProcessingInternalFrame ? "internal" : "stack"));
 
             // The only thing we do while we are skipping frames is to check whether we have reached the
             // parent frame, and we only need to check if we are processing a stack frame.
@@ -298,6 +317,8 @@ void ShimStackWalk::Populate()
                 // stopped right at the spot where they are being constructed. And that is
                 // just a facet of the general data structure consistency problems the debugger
                 // will always face
+                printf("ShimStackWalk::Populate: Filtering out M2U frame\n");
+                fflush(stdout);
             }
             else
             {
@@ -307,6 +328,17 @@ void ShimStackWalk::Populate()
                 // track the current enter-unmanaged chain and/or enter-managed chain
                 TrackUMChain(&chainInfo, &swInfo);
 
+                printf("ShimStackWalk::Populate: Tracking %s chain\n",
+                       chainInfo.IsTrackingUMChain() ? "unmanaged" : "managed");
+                fflush(stdout);
+
+                printf("ShimStackWalk::Populate: Current internal frame type is %d\n",
+                       swInfo.m_internalFrameType);
+                fflush(stdout);
+
+                printf("ShimStackWalk::Populate: Processing Internal Frame = %s\n", swInfo.m_fProcessingInternalFrame ? "true" : "false");
+                fflush(stdout);
+
                 if (swInfo.m_fProcessingInternalFrame)
                 {
                     // Check if this is a leaf internal frame.  If so, check its frame type.
@@ -315,8 +347,12 @@ void ShimStackWalk::Populate()
                     // frames.
                     if (swInfo.IsLeafFrame())
                     {
+                        printf("ShimStackWalk::Populate: Processing leaf internal frame of type %d\n",
+                               swInfo.m_internalFrameType);
+                        fflush(stdout);
                         if (swInfo.m_internalFrameType == STUBFRAME_EXCEPTION)
                         {
+                            printf("ShimStackWalk::Populate: Skipping leaf internal frame of type STUBFRAME_EXCEPTION\n");
                             // We need to make sure we don't accidentally send an enter-unmanaged chain
                             // because of the leaf STUBFRAME_EXCEPTION.
                             chainInfo.CancelUMChain();
@@ -328,6 +364,7 @@ void ShimStackWalk::Populate()
                     _ASSERTE(!swInfo.IsSkippingFrame());
                     if (ConvertInternalFrameToDynamicMethod(&swInfo))
                     {
+                        printf("ShimStackWalk::Populate: Converted internal frame to dynamic method\n");
                         // We have just converted a STUBFRAME_JIT_COMPILATION to a
                         // STUBFRAME_LIGHTWEIGHT_FUNCTION (or to NULL).  Since the latter frame type doesn't
                         // map to any  chain in V2, let's skip the chain handling.
@@ -354,6 +391,7 @@ void ShimStackWalk::Populate()
                 {
                     if (!chainInfo.m_fNeedEnterManagedChain)
                     {
+                        printf("ShimStackWalk::Populate: Processing managed stack frame, set m_fNeedEnterManagedChain = true\n");
                         // If we have hit any managed stack frame, then we may need to send
                         // an enter-managed chain later.  Save the CONTEXT now.
                         SaveChainContext(pSW, &chainInfo, &(chainInfo.m_leafManagedContext));
@@ -371,6 +409,7 @@ void ShimStackWalk::Populate()
                         // (e.g. m_fProcessingInternalFrame) because the rest of the loop doesn't care.
                         if (swInfo.GetCurrentInternalFrame() != NULL)
                         {
+                            printf("ShimStackWalk::Populate: Converted stack frame to dynamic method\n");
                             AppendFrame(swInfo.GetCurrentInternalFrame(), &swInfo);
                         }
                     }
@@ -400,6 +439,10 @@ void ShimStackWalk::Populate()
             }
         }  // process the current frame (managed stack frame or internal frame)
 
+        printf("ShimStackWalk::Populate: Done processing current frame, swInfo.IsSkippingFrame() = %s\n",
+               swInfo.IsSkippingFrame() ? "true" : "false");
+        fflush(stdout);
+
         // We can take care of other types of chains here, but only do so if we are not currently skipping
         // child frames.
         if (!swInfo.IsSkippingFrame())
@@ -409,6 +452,8 @@ void ShimStackWalk::Populate()
             {
                 // We are here because we are processing a native marker stack frame, not because
                 // we have exhausted all the stack frames.
+
+                printf("ShimStackWalk::Populate: Processing native marker stack frame\n");
 
                 // We need to save the CONTEXT to start tracking an unmanaged chain.
                 SaveChainContext(pSW, &chainInfo, &(chainInfo.m_leafNativeContext));
@@ -428,6 +473,9 @@ void ShimStackWalk::Populate()
                     if (!swInfo.m_fSkipChain)
                     {
                         BOOL fNewChain = FALSE;
+                        printf("ShimStackWalk::Populate: Processing internal frame of type %d\n",
+                               swInfo.m_internalFrameType);
+                        fflush(stdout);
 
                         switch (swInfo.m_internalFrameType)
                         {
@@ -472,6 +520,7 @@ void ShimStackWalk::Populate()
 
                         if (fNewChain)
                         {
+                            printf("ShimStackWalk::Populate: Appending new chain of type %d\n", chainInfo.m_reason);
                             chainInfo.m_rootFP = GetFramePointerForChain(swInfo.GetCurrentInternalFrame());
                             AppendChain(&chainInfo, &swInfo);
                         }
@@ -480,12 +529,18 @@ void ShimStackWalk::Populate()
             } // chain handling for a managed stack frame or an internal frame
         } // chain handling
 
+        printf("ShimStackWalk::Populate: Done processing chains, swInfo.IsLeafFrame() = %s\n",
+               swInfo.IsLeafFrame() ? "true" : "false");
+        fflush(stdout);
+
         // Reset the flag for leaf frame if we have processed any frame.  The only case where we should
         // not reset this flag is if the ICDStackWalk is stopped at a native stack frame on creation.
         if (swInfo.IsLeafFrame())
         {
             if (swInfo.m_fProcessingInternalFrame || (pFrame != NULL))
             {
+                printf("ShimStackWalk::Populate: Resetting m_fLeafFrame to false\n");
+                fflush(stdout);
                 swInfo.m_fLeafFrame = false;
             }
         }
@@ -493,10 +548,15 @@ void ShimStackWalk::Populate()
         // advance to the next frame
         if (swInfo.m_fProcessingInternalFrame)
         {
+            printf("ShimStackWalk::Populate: Processing internal frame, incrementing m_curInternalFrame\n");
+            fflush(stdout);
             swInfo.m_curInternalFrame += 1;
         }
         else
         {
+            printf("ShimStackWalk::Populate: Processing stack frame, calling pSW->Next()\n");
+            fflush(stdout);
+
             hr = pSW->Next();
             IfFailThrow(hr);
 
@@ -1199,6 +1259,9 @@ BOOL ShimStackWalk::CheckInternalFrame(ICorDebugFrame *     pNextStackFrame,
     HRESULT hr = E_FAIL;
     BOOL fIsInternalFrameFirst = FALSE;
 
+    printf("ShimStackWalk::CheckInternalFrame: Checking if next frame is an internal frame\n");
+    fflush(stdout);
+
     // Special handling for the case where a managed method contains a M2U internal frame.
     // Normally only IL stubs contain M2U internal frames, but we may have inlined pinvoke calls in
     // optimized code.  In that case, we would have an InlinedCallFrame in a normal managed method on x86.
@@ -1206,6 +1269,7 @@ BOOL ShimStackWalk::CheckInternalFrame(ICorDebugFrame *     pNextStackFrame,
     if (pStackWalkInfo->m_internalFrameType == STUBFRAME_M2U)
     {
         // create a temporary ICDStackWalk
+        printf("ShimStackWalk::CheckInternalFrame: Creating temporary ICDStackWalk for M2U internal frame\n");
         RSExtSmartPtr<ICorDebugStackWalk> pTmpSW;
         hr = pThread3->CreateStackWalk(&pTmpSW);
         IfFailThrow(hr);
@@ -1215,6 +1279,12 @@ BOOL ShimStackWalk::CheckInternalFrame(ICorDebugFrame *     pNextStackFrame,
         ctx.ContextFlags = DT_CONTEXT_FULL;
         hr = pSW->GetContext(ctx.ContextFlags, sizeof(ctx), NULL, reinterpret_cast<BYTE *>(&ctx));
         IfFailThrow(hr);
+
+        LOG((LF_CORDB, LL_INFO100, "ShimStackWalk::CheckInternalFrame: M2U internal frame detected IP=%p SP=%p, creating temporary callstack.\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx)));
+        printf("ShimStackWalk::CheckInternalFrame: M2U internal frame detected IP=%p SP=%p, creating temporary callstack.\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx));
+        fflush(stdout);
+        printf("ShimStackWalk::CheckInternalFrame: RIP=%p RSP=%p RAX=%p\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx), (void*)ctx.Rax);
+        fflush(stdout);
 
         // set the CONTEXT on the temporary ICDStackWalk
         hr = pTmpSW->SetContext(SET_CONTEXT_FLAG_ACTIVE_FRAME, sizeof(ctx), reinterpret_cast<BYTE *>(&ctx));
