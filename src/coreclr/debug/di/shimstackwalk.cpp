@@ -1283,7 +1283,7 @@ BOOL ShimStackWalk::CheckInternalFrame(ICorDebugFrame *     pNextStackFrame,
         LOG((LF_CORDB, LL_INFO100, "ShimStackWalk::CheckInternalFrame: M2U internal frame detected IP=%p SP=%p, creating temporary callstack.\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx)));
         printf("ShimStackWalk::CheckInternalFrame: M2U internal frame detected IP=%p SP=%p, creating temporary callstack.\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx));
         fflush(stdout);
-        printf("ShimStackWalk::CheckInternalFrame: RIP=%p RSP=%p RAX=%p\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx), (void*)ctx.Rax);
+        printf("ShimStackWalk::CheckInternalFrame: RIP=%p RSP=%p &RAX=%p\n", CORDbgGetIP(&ctx), CORDbgGetSP(&ctx), (void*)&ctx.Rax);
         fflush(stdout);
 
         // set the CONTEXT on the temporary ICDStackWalk

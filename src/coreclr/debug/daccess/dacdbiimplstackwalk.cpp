@@ -21,6 +21,8 @@
 
 typedef IDacDbiInterface::StackWalkHandle StackWalkHandle;
 
+#include "typestring.h"
+
 
 // Persistent data needed to do a stackwalk. This is allocated on the forDbi heap.
 // It can survive across multiple DD calls.
@@ -517,6 +519,130 @@ void DacDbiInterfaceImpl::EnumerateInternalFrames(VMPTR_Thread                  
 
     while (pFrame != FRAME_TOP)
     {
+        {
+            // TADDR uControlPc = dac_cast<TADDR>(pFrame->GetIP());
+            // EECodeInfo codeInfo(uControlPc);
+            // MethodDesc * pMD = codeInfo.GetMethodDesc();
+            // StackSString str;
+            // REGDISPLAY tmpRd = { };
+            // T_CONTEXT tmpContext = {};
+            // FillRegDisplay(&tmpRd, &tmpContext);
+            // pFrame->UpdateRegDisplay(&tmpRd);
+            // T_CONTEXT *pContext = tmpRd.pContext;
+            // if (pMD == NULL)
+            // {
+            //     // If we don't have a MethodDesc, we can't get the signature.
+            //     str.SetUTF8("No MethodDesc");
+            // }
+            // else
+            // {
+            //     // Get the signature of the method.
+            //     TypeString::AppendMethodInternal(str, pMD, TypeString::FormatSignature|TypeString::FormatNamespace|TypeString::FormatFullInst);
+            // }
+            
+            int ft = pFrame->GetFrameType();
+            const char * frameTypeName;
+            switch (ft)
+            {
+                case Frame::TYPE_INTERNAL:
+                    frameTypeName = "Internal";
+                    break;
+                case Frame::TYPE_ENTRY:
+                    frameTypeName = "Entry";
+                    break;
+                case Frame::TYPE_EXIT:
+                    frameTypeName = "Exit";
+                    break;
+                case Frame::TYPE_CONTEXT_CROSS:
+                    frameTypeName = "Context Cross";
+                    break;
+                case Frame::TYPE_INTERCEPTION:
+                    frameTypeName = "TYPE_INTERCEPTION";
+                    break;
+                case Frame::TYPE_SECURITY:
+                    frameTypeName = "TYPE_SECURITY";
+                    break;
+                case Frame::TYPE_CALL:
+                    frameTypeName = "TYPE_CALL";
+                    break;
+                case Frame::TYPE_FUNC_EVAL:
+                    frameTypeName = "TYPE_FUNC_EVAL";
+                    break;
+                case Frame::TYPE_HELPER_METHOD_FRAME:
+                    frameTypeName = "TYPE_HELPER_METHOD_FRAME";
+                    break;
+                default:
+                    frameTypeName = "<unknown>";
+            }
+
+            const char * frameVtblName;
+            const TADDR vtablePtr = pFrame->GetVTablePtr();
+            
+            if (vtablePtr == InlinedCallFrame::GetMethodFrameVPtr()) {
+                InlinedCallFrame *pInlinedCallFrame = (InlinedCallFrame *)pFrame;
+                PTR_NDirectMethodDesc pMD = pInlinedCallFrame->m_Datum;
+                TADDR datum = dac_cast<TADDR>(pMD);
+                if ((datum & (TADDR)InlinedCallFrameMarker::Mask) == (TADDR)InlinedCallFrameMarker::ExceptionHandlingHelper)
+                {
+                    frameVtblName = "InlinedCallFrame (ExceptionHandlingHelper)";
+                }
+                else if ((datum & (TADDR)InlinedCallFrameMarker::Mask) == (TADDR)InlinedCallFrameMarker::SecondPassFuncletCaller)
+                {
+                    frameVtblName = "InlinedCallFrame (SecondPassFuncletCaller)";
+                }
+                else
+                {
+                    frameVtblName = "InlinedCallFrame";
+                }
+            }
+#ifdef FEATURE_COMINTEROP
+            else if (vtablePtr == ComMethodFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "ComMethodFrame";
+            }
+            else if (vtablePtr == CLRToCOMMethodFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "CLRToCOMMethodFrame";
+            }
+#endif
+            else if (vtablePtr == FaultingExceptionFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "FaultingExceptionFrame";
+            }
+            else if (vtablePtr == HelperMethodFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "HelperMethodFrame";
+            }
+            else if (vtablePtr == PInvokeCalliFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "PInvokeCalliFrame";
+            }
+            else if (vtablePtr == ExternalMethodFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "ExternalMethodFrame";
+            }
+            else if (vtablePtr == ExceptionFilterFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "ExceptionFilterFrame";
+            }
+            else if (vtablePtr == DebuggerExitFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "DebuggerExitFrame";
+            }
+            else if (vtablePtr == DebuggerU2MCatchHandlerFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "DebuggerU2MCatchHandlerFrame";
+            }
+            else if (vtablePtr == PrestubMethodFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "PrestubMethodFrame";
+            }
+            else if (vtablePtr == FuncEvalFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "FuncEvalFrame";
+            }
+            else if (vtablePtr == StubDispatchFrame::GetMethodFrameVPtr()) {
+                frameVtblName = "StubDispatchFrame";
+            }
+            else {
+                frameVtblName = "<unknown>";
+            }
+
+            //PT_CONTEXT pContext = pFrame->GetRegisterSet()->GetContext();
+
+            printf("EnumerateInternalFrames: ft: %s[%x], frameVtblName=%s\n", (void*)frameTypeName, ft, frameVtblName);
+            fflush(stdout);
+        }
+
 #ifdef FEATURE_EH_FUNCLETS
         if (g_isNewExceptionHandlingEnabled && InlinedCallFrame::FrameHasActiveCall(pFrame))
         {
