@@ -288,13 +288,13 @@ HRESULT CordbStackWalk::GetContext(ULONG32   contextFlags,
                 if (m_pCachedFrame != NULL)
                 {
                     const DT_CONTEXT * pSrcContext = m_pCachedFrame->GetContext();
-                    printf("CordbStackWalk::GetContext reading m_pCachedFrame's context RIP=%p, RSP=%p, RBP=%p\n", 
-                           pSrcContext->Rip, pSrcContext->Rsp, pSrcContext->Rbp);
+                    printf("CordbStackWalk::GetContext reading m_pCachedFrame's context Flags=0x%08x RIP=%p, RSP=%p, RBP=%p\n", 
+                           pSrcContext->ContextFlags, pSrcContext->Rip, pSrcContext->Rsp, pSrcContext->Rbp);
                     fflush(stdout);
                     _ASSERTE(pSrcContext);
                     CORDbgCopyThreadContext(pContext, pSrcContext);
-                    printf("CordbStackWalk::GetContext copy of m_pCachedFrame's context RIP=%p, RSP=%p, RBP=%p\n", 
-                           pContext->Rip, pContext->Rsp, pContext->Rbp);
+                    printf("CordbStackWalk::GetContext copy of m_pCachedFrame's context Flags=0x%08x RIP=%p, RSP=%p, RBP=%p\n", 
+                           pContext->ContextFlags, pContext->Rip, pContext->Rsp, pContext->Rbp);
                 }
                 else
                 {

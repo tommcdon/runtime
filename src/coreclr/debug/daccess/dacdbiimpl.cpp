@@ -5704,6 +5704,10 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
             T_CONTEXT tmpContext = {};
             FillRegDisplay(&tmpRd, &tmpContext);
 
+            printf("DacDbiInterfaceImpl::GetContext - GetThreadContext is not implemented, using FillRegDisplay Flags=%0x RIP=%p RSP=%p RBP=%p\n",
+                tmpContext.ContextFlags, (void*)tmpContext.Rip, (void*)tmpContext.Rsp, (void*)tmpContext.Rbp);
+            fflush(stdout);
+
             // Going through thread Frames and looking for first (deepest one) one that
             // that has context available for stackwalking (SP and PC)
             // For example: RedirectedThreadFrame, InlinedCallFrame, HelperMethodFrame, CLRToCOMMethodFrame
@@ -5711,11 +5715,17 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
             while (frame != NULL && frame != FRAME_TOP)
             {
                 frame->UpdateRegDisplay(&tmpRd);
+                printf("DacDbiInterfaceImpl::GetContext - frame %p Flags=%0x RIP=%p RSP=%p RBP=%p\n",
+                    frame, tmpRd.pContext->ContextFlags, (void*)tmpRd.pContext->Rip, (void*)tmpRd.pContext->Rsp, (void*)tmpRd.pContext->Rbp);
+                fflush(stdout);
                 if (GetRegdisplaySP(&tmpRd) != 0 && GetControlPC(&tmpRd) != 0)
                 {
                     UpdateContextFromRegDisp(&tmpRd, &tmpContext);
+                    printf("DacDbiInterfaceImpl::GetContext - Flags=%0x RIP=%p RSP=%p RBP=%p\n", 
+                        tmpContext.ContextFlags, (void*)tmpContext.Rip, (void*)tmpContext.Rsp, (void*)tmpContext.Rbp);
+                    fflush(stdout);
                     CopyMemory(pContextBuffer, &tmpContext, sizeof(*pContextBuffer));
-                    pContextBuffer->ContextFlags = DT_CONTEXT_CONTROL;
+                    pContextBuffer->ContextFlags = DT_CONTEXT_CONTROL | DT_CONTEXT_INTEGER;
                     return;
                 }
                 frame = frame->Next();
@@ -5727,10 +5737,16 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
         else
         {
             IfFailThrow(hr);
+            printf("DacDbiInterfaceImpl::GetContext - filter context is null, using data target's GetThreadContext Flags=%08x RIP=%p RSP=%p RBP=%p\n",
+                pContextBuffer->ContextFlags, (void*)pContextBuffer->Rip, (void*)pContextBuffer->Rsp, (void*)pContextBuffer->Rbp);
+            fflush(stdout);
         }
     }
     else
     {
+        printf("DacDbiInterfaceImpl::GetContext - using filter context Flags=0x%08x RIP=%x RSP=%x RBP=%x\n",
+               pFilterContext->ContextFlags, (void*)pFilterContext->Rip, (void*)pFilterContext->Rsp, (void*)pFilterContext->Rbp);
+        fflush(stdout);
         *pContextBuffer = *pFilterContext;
     }
 
