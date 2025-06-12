@@ -288,8 +288,13 @@ HRESULT CordbStackWalk::GetContext(ULONG32   contextFlags,
                 if (m_pCachedFrame != NULL)
                 {
                     const DT_CONTEXT * pSrcContext = m_pCachedFrame->GetContext();
+                    printf("CordbStackWalk::GetContext reading m_pCachedFrame's context RIP=%p, RSP=%p, RBP=%p\n", 
+                           pSrcContext->Rip, pSrcContext->Rsp, pSrcContext->Rbp);
+                    fflush(stdout);
                     _ASSERTE(pSrcContext);
                     CORDbgCopyThreadContext(pContext, pSrcContext);
+                    printf("CordbStackWalk::GetContext copy of m_pCachedFrame's context RIP=%p, RSP=%p, RBP=%p\n", 
+                           pContext->Rip, pContext->Rsp, pContext->Rbp);
                 }
                 else
                 {
@@ -320,7 +325,10 @@ HRESULT CordbStackWalk::GetContext(ULONG32   contextFlags,
                 }
                 else
                 {
-                    // We always store the current CONTEXT, so just copy it into the buffer.
+                    printf("CordbStackWalk::GetContext reading m_context RIP=%p, RSP=%p, RBP=%p\n", 
+                           m_context.Rip, m_context.Rsp, m_context.Rbp);
+
+                           // We always store the current CONTEXT, so just copy it into the buffer.
                     CORDbgCopyThreadContext(pContext, &m_context);
                 }
             }

@@ -205,6 +205,8 @@ UNWIND_INFO * OOPStackUnwinderAMD64::GetUnwindInfo(TADDR taUnwindInfo)
 BOOL DacUnwindStackFrame(CONTEXT * pContext, KNONVOLATILE_CONTEXT_POINTERS* pContextPointers)
 {
     LOG((LF_CORDB, LL_INFO100, "DacUnwindStackFrame [IN]: pContext=%p, Esp: %p, Rip: %p\n", (void*)pContext, GetSP(pContext), GetIP(pContext)));
+    printf("DacUnwindStackFrame [IN]: pContext=%p, Esp: %p, Rip: %p\n", (void*)pContext, GetSP(pContext), GetIP(pContext));
+    fflush(stdout);
 
     BOOL res = OOPStackUnwinderAMD64::Unwind(pContext);
 
@@ -217,6 +219,8 @@ BOOL DacUnwindStackFrame(CONTEXT * pContext, KNONVOLATILE_CONTEXT_POINTERS* pCon
     }
 
     LOG((LF_CORDB, LL_INFO100, "DacUnwindStackFrame [OUT]: pContext=%p, Esp: %p, Rip: %p\n", (void*)pContext, GetSP(pContext), GetIP(pContext)));
+    printf("DacUnwindStackFrame [OUT]: pContext=%p, Esp: %p, Rip: %p\n", (void*)pContext, GetSP(pContext), GetIP(pContext));
+    fflush(stdout);
 
     return res;
 }

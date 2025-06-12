@@ -529,7 +529,7 @@ UINT_PTR Thread::VirtualUnwindCallFrame(PREGDISPLAY pRD, EECodeInfo* pCodeInfo /
         StackSString str;
         TypeString::AppendMethodInternal(str, pMD, TypeString::FormatSignature|TypeString::FormatNamespace|TypeString::FormatFullInst);
 
-        printf("VirtualUnwindCallFrame-1: uControlPc: %p, Esp: %p, Rip: %p, Name: %s\n", (void*)uControlPc, (void*)GetSP(pContext), (void*)GetIP(pContext), str.GetUTF8());
+        printf("VirtualUnwindCallFrame-1: uControlPc: %p, Esp: %p, Rip: %p, Name: %s, pRD->IsCallerContextValid: %s\n", (void*)uControlPc, (void*)GetSP(pContext), (void*)GetIP(pContext), str.GetUTF8(), pRD->IsCallerContextValid?"true":"false");
         fflush(stdout);
     }
 #endif
@@ -1351,11 +1351,15 @@ BOOL StackFrameIterator::ResetRegDisp(PREGDISPLAY pRegDisp,
             // before the managed stack frame itself.
 #ifdef DACCESS_COMPILE
             LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::ResetRegDisp: Cur IP: %p, Cur SP: %p\n", m_crawl.pRD->pCurrentContext->Rip, m_crawl.pRD->pCurrentContext->Rsp));
+            printf("StackFrameIterator::ResetRegDisp: Cur IP: %p, Cur SP: %p\n", m_crawl.pRD->pCurrentContext->Rip, m_crawl.pRD->pCurrentContext->Rsp);
+            fflush(stdout);
 #endif
             EECodeManager::EnsureCallerContextIsValid(m_crawl.pRD, NULL, m_codeManFlags);
             curSP = GetSP(m_crawl.pRD->pCallerContext);
 #ifdef DACCESS_COMPILE
             LOG((LF_CORDB, LL_INFO100, "StackFrameIterator::ResetRegDisp: Caller IP: %p, Caller SP: %p\n", m_crawl.pRD->pCallerContext->Rip, m_crawl.pRD->pCallerContext->Rsp));
+            printf("StackFrameIterator::ResetRegDisp: Caller IP: %p, Caller SP: %p\n", m_crawl.pRD->pCallerContext->Rip, m_crawl.pRD->pCallerContext->Rsp);
+            fflush(stdout);
 #endif
         }
 #endif // PROCESS_EXPLICIT_FRAME_BEFORE_MANAGED_FRAME

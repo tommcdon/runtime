@@ -1022,6 +1022,8 @@ void EECodeManager::EnsureCallerContextIsValid( PREGDISPLAY  pRD, EECodeInfo * p
             // We need to make a copy here (instead of switching the pointers), in order to preserve the current context
             *(pRD->pCallerContext) = *(pRD->pCurrentContext);
             // Skip updating context registers for light unwind
+            printf("EECodeManager::EnsureCallerContextIsValid [Light Unwind] Current IP:%p SP:%p\n", pRD->pCurrentContext->Rip, pRD->pCurrentContext->Rsp);
+            fflush(stdout);
             Thread::VirtualUnwindCallFrame(pRD->pCallerContext, NULL, pCodeInfo);
 #endif
         }
@@ -1032,10 +1034,14 @@ void EECodeManager::EnsureCallerContextIsValid( PREGDISPLAY  pRD, EECodeInfo * p
             *(pRD->pCallerContextPointers) = *(pRD->pCurrentContextPointers);
 #ifdef DACCESS_COMPILE
             LOG((LF_CORDB, LL_INFO100, "EECodeManager::EnsureCallerContextIsValid Current IP:%p SP:%p\n", pRD->pCurrentContext->Rip, pRD->pCurrentContext->Rsp));
+            printf("EECodeManager::EnsureCallerContextIsValid Caller IP:%p SP:%p\n", pRD->pCallerContext->Rip, pRD->pCallerContext->Rsp);
+            fflush(stdout);
 #endif
             Thread::VirtualUnwindCallFrame(pRD->pCallerContext, pRD->pCallerContextPointers, pCodeInfo);
 #ifdef DACCESS_COMPILE
             LOG((LF_CORDB, LL_INFO100, "EECodeManager::EnsureCallerContextIsValid Caller IP:%p SP:%p\n", pRD->pCallerContext->Rip, pRD->pCallerContext->Rsp));
+            printf("EECodeManager::EnsureCallerContextIsValid Current IP:%p SP:%p\n", pRD->pCurrentContext->Rip, pRD->pCurrentContext->Rsp);
+            fflush(stdout);
 #endif
         }
 
