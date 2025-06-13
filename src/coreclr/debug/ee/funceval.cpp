@@ -3858,6 +3858,104 @@ void * STDCALL FuncEvalHijackWorker(DebuggerEval *pDE)
     // Push our FuncEvalFrame. The return address is equal to the IP in the saved context in the DebuggerEval. The
     // m_Datum becomes the ptr to the DebuggerEval. The frame address also serves as the address of the catch-handler-found.
     //
+    printf("Setup FuncEvalFrame for IP:%p SP:%p\n", (void*)GetIP(&pDE->m_context), (void*)GetSP(&pDE->m_context));
+    Frame *pFrame = pThread->GetFrame();
+    printf("0\n");
+    while (pFrame != (Frame*)-1 && pFrame != nullptr)
+    {
+        printf("1\n");
+        int frameType = pFrame->GetFrameType();
+        printf("1a\n");
+        FrameIdentifier frameIdentifier = pFrame->GetFrameIdentifier();
+        printf("1b\n");
+        printf("Walk frame %p type 0x%x identifier 0x%llx\n", pFrame, frameType, (unsigned long long)frameIdentifier);
+        printf("1c\n");
+        if (pFrame->GetFrameIdentifier() == FrameIdentifier::RedirectedThreadFrame)
+        {
+            printf("Found redirected thread frame %p\n", pFrame);
+        }
+        printf("2\n");
+        pFrame = pFrame->PtrNextFrame();
+        printf("3\n");
+    }
+    printf("4\n");
+
+    {
+        TADDR previousSP = 0; //start at zero; this allows first check to always succeed.
+        TADDR currentSP = (TADDR)pThread->GetCachedStackLimit() + sizeof(void*); //start at the end of the stack, so first check will always succeed.
+        REGDISPLAY regDisp = { };
+        StackFrameIterator frameIter;
+        FillRegDisplay(&regDisp, &pDE->m_context);
+        frameIter.Init(pThread, NULL, &regDisp, 0);
+        while (frameIter.IsValid())
+        {
+            if (frameIter.GetFrameState() == StackFrameIterator::SFITER_FRAMELESS_METHOD)
+            {
+                currentSP = (TADDR)GetRegdisplaySP(&regDisp);
+
+                if (currentSP <= previousSP)
+                {
+                    printf("Target stack has been corrupted, SP for current frame must be larger than previous frame.\n");
+                    break;
+                }
+            }
+
+            // On windows desktop, the stack pointer should be a multiple
+            // of pointer-size-aligned in the target address space
+            if (currentSP % sizeof(TADDR) != 0)
+            {
+                printf("Target stack has been corrupted, SP must be aligned.\n");
+                break;
+            }
+
+            if (!pThread->IsAddressInStack((void*)currentSP))
+            {
+                printf("Target stack has been corrupted, SP must be in the stack range.\n");
+                break;
+            }
+
+            // Enumerate the code around the call site to help debugger stack walking heuristics
+            PCODE callEnd = GetControlPC(&regDisp);
+
+            MethodDesc* pMD = frameIter.m_crawl.GetFunction();
+            if (pMD != NULL)
+            {
+                const char* name = pMD->GetName();
+                if (name == NULL)
+                {
+                    name = "<unknown>";
+                }
+                printf("Found method %s at IP %p\n", name, (void*)callEnd);
+            }
+
+            Frame *f = frameIter.m_crawl.GetFrame();
+            if (f != nullptr && f != (Frame*)-1)
+            {
+                int frameType = f->GetFrameType();
+                FrameIdentifier frameIdentifier = f->GetFrameIdentifier();
+                printf("StackWalk frame %p type 0x%x identifier 0x%llx\n", f, frameType, (unsigned long long)frameIdentifier);
+            }
+            else if (f == (Frame*)-1)
+            {
+                printf("A \"-1\" Frame found at IP %p\n", (void*)callEnd);
+            }
+            else
+            {
+                printf("Null Frame found at IP %p\n", (void*)callEnd);
+            }
+
+            previousSP = currentSP;
+
+            if (frameIter.Next() != SWA_CONTINUE)
+            {
+                break;
+            }
+        }
+    }
+
+    printf("5\n");
+
+
     FuncEvalFrame FEFrame(pDE, GetIP(&pDE->m_context), true);
     FEFrame.Push();
 

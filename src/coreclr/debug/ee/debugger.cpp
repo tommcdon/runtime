@@ -15087,6 +15087,8 @@ HRESULT Debugger::FuncEvalSetup(DebuggerIPCE_FuncEvalInfo *pEvalInfo,
     {
         _ASSERTE(filterContext != NULL);
 
+        printf("Setting filterContext IP from %p to FuncEvalHijack [%p] and RCX to pDE [%p] for thread %x\n", (void*)::GetIP(filterContext), (void*)GetEEFuncEntryPoint(::FuncEvalHijack), pDE, pThread->GetOSThreadId());
+
         ::SetIP(filterContext, (UINT_PTR)GetEEFuncEntryPoint(::FuncEvalHijack));
 
         // Don't be fooled into thinking you can push things onto the thread's stack now. If the thread is stopped at a

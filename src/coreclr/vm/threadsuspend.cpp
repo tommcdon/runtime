@@ -2295,10 +2295,12 @@ void Thread::HandleThreadAbort ()
 
         if (IsRudeAbort())
         {
+            printf("Thread %x is being aborted with a rude abort.\n", GetOSThreadId());
             exceptObj = CLRException::GetBestThreadAbortException();
         }
         else
         {
+            printf("Thread %x is being aborted with a normal abort.\n", GetOSThreadId());
             EEException eeExcept(kThreadAbortException);
             exceptObj = CLRException::GetThrowableFromException(&eeExcept);
         }
@@ -5756,7 +5758,7 @@ BOOL CheckActivationSafePoint(SIZE_T ip)
 //       address to take the thread to the appropriate stub (based on the return
 //       type of the method) which will then handle preparing the thread for GC.
 //
-void HandleSuspensionForInterruptedThread(CONTEXT *interruptedContext)
+void HandleSuspensionForInterruptedThread(CONTEXT *interruptedContext, bool suspendForDebugger, bool isThreadAbort)
 {
     struct AutoClearPendingThreadActivation
     {
@@ -5806,10 +5808,25 @@ void HandleSuspensionForInterruptedThread(CONTEXT *interruptedContext)
 
         frame.Push(pThread);
 
+        if (suspendForDebugger)
+        {
+            printf("BEGIN: OS Thread %x is at a GC safe point, pulsing GC mode.\n", pThread->GetOSThreadId());
+        }
+
         pThread->PulseGCMode();
+
+        if (suspendForDebugger)
+        {
+            printf("END: OS Thread %x pulsed GC mode.\n", pThread->GetOSThreadId());
+        }
 
         INSTALL_MANAGED_EXCEPTION_DISPATCHER;
         INSTALL_UNWIND_AND_CONTINUE_HANDLER;
+
+        if (isThreadAbort)
+        {
+            printf("BEGIN: OS Thread %x is being aborted, handling thread abort.\n", pThread->GetOSThreadId());
+        }
 
         pThread->HandleThreadAbort();
 
@@ -5896,7 +5913,7 @@ void Thread::ApcActivationCallback(ULONG_PTR Parameter)
         case ActivationReason::SuspendForGC:
         case ActivationReason::SuspendForDebugger:
         case ActivationReason::ThreadAbort:
-            HandleSuspensionForInterruptedThread(pContext);
+            HandleSuspensionForInterruptedThread(pContext, reason == ActivationReason::SuspendForDebugger, reason == ActivationReason::ThreadAbort);
             break;
 
         default:
