@@ -5830,6 +5830,9 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
                     fflush(stdout);
                     CopyMemory(pContextBuffer, &tmpContext, sizeof(*pContextBuffer));
                     pContextBuffer->ContextFlags = DT_CONTEXT_CONTROL | DT_CONTEXT_INTEGER;
+                    printf("DacDbiInterfaceImpl::GetContext - set frame context flags to DT_CONTEXT_CONTROL | DT_CONTEXT_INTEGER, Flags=%0x RIP=%p RSP=%p RBP=%p\n",
+                        pContextBuffer->ContextFlags, (void*)pContextBuffer->Rip, (void*)pContextBuffer->Rsp, (void*)pContextBuffer->Rbp);
+                    fflush(stdout);
                     return;
                 }
                 frame = frame->Next();
