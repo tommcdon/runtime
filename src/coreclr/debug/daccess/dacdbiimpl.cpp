@@ -5714,6 +5714,110 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
             Frame *frame = pThread->GetFrame();
             while (frame != NULL && frame != FRAME_TOP)
             {
+                {
+                                
+                    int ft = frame->GetFrameType();
+                    const char * frameTypeName;
+                    switch (ft)
+                    {
+                        case Frame::TYPE_INTERNAL:
+                            frameTypeName = "Internal";
+                            break;
+                        case Frame::TYPE_ENTRY:
+                            frameTypeName = "Entry";
+                            break;
+                        case Frame::TYPE_EXIT:
+                            frameTypeName = "Exit";
+                            break;
+                        case Frame::TYPE_CONTEXT_CROSS:
+                            frameTypeName = "Context Cross";
+                            break;
+                        case Frame::TYPE_INTERCEPTION:
+                            frameTypeName = "TYPE_INTERCEPTION";
+                            break;
+                        case Frame::TYPE_SECURITY:
+                            frameTypeName = "TYPE_SECURITY";
+                            break;
+                        case Frame::TYPE_CALL:
+                            frameTypeName = "TYPE_CALL";
+                            break;
+                        case Frame::TYPE_FUNC_EVAL:
+                            frameTypeName = "TYPE_FUNC_EVAL";
+                            break;
+                        case Frame::TYPE_HELPER_METHOD_FRAME:
+                            frameTypeName = "TYPE_HELPER_METHOD_FRAME";
+                            break;
+                        default:
+                            frameTypeName = "<unknown>";
+                    }
+
+                    const char * frameVtblName;
+                    const TADDR vtablePtr = frame->GetVTablePtr();
+
+                    if (vtablePtr == InlinedCallFrame::GetMethodFrameVPtr()) {
+                        InlinedCallFrame *pInlinedCallFrame = (InlinedCallFrame *)frame;
+                        PTR_NDirectMethodDesc pMD = pInlinedCallFrame->m_Datum;
+                        TADDR datum = dac_cast<TADDR>(pMD);
+                        if ((datum & (TADDR)InlinedCallFrameMarker::Mask) == (TADDR)InlinedCallFrameMarker::ExceptionHandlingHelper)
+                        {
+                            frameVtblName = "InlinedCallFrame (ExceptionHandlingHelper)";
+                        }
+                        else if ((datum & (TADDR)InlinedCallFrameMarker::Mask) == (TADDR)InlinedCallFrameMarker::SecondPassFuncletCaller)
+                        {
+                            frameVtblName = "InlinedCallFrame (SecondPassFuncletCaller)";
+                        }
+                        else
+                        {
+                            frameVtblName = "InlinedCallFrame";
+                        }
+                    }
+        #ifdef FEATURE_COMINTEROP
+                    else if (vtablePtr == ComMethodFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "ComMethodFrame";
+                    }
+                    else if (vtablePtr == CLRToCOMMethodFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "CLRToCOMMethodFrame";
+                    }
+        #endif
+                    else if (vtablePtr == FaultingExceptionFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "FaultingExceptionFrame";
+                    }
+                    else if (vtablePtr == HelperMethodFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "HelperMethodFrame";
+                    }
+                    else if (vtablePtr == PInvokeCalliFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "PInvokeCalliFrame";
+                    }
+                    else if (vtablePtr == ExternalMethodFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "ExternalMethodFrame";
+                    }
+                    else if (vtablePtr == ExceptionFilterFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "ExceptionFilterFrame";
+                    }
+                    else if (vtablePtr == DebuggerExitFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "DebuggerExitFrame";
+                    }
+                    else if (vtablePtr == DebuggerU2MCatchHandlerFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "DebuggerU2MCatchHandlerFrame";
+                    }
+                    else if (vtablePtr == PrestubMethodFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "PrestubMethodFrame";
+                    }
+                    else if (vtablePtr == FuncEvalFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "FuncEvalFrame";
+                    }
+                    else if (vtablePtr == StubDispatchFrame::GetMethodFrameVPtr()) {
+                        frameVtblName = "StubDispatchFrame";
+                    }
+                    else {
+                        frameVtblName = "<unknown>";
+                    }
+
+                    //PT_CONTEXT pContext = pFrame->GetRegisterSet()->GetContext();
+
+                    printf("DacDbiInterfaceImpl::GetContext: ft: %s[%x], frameVtblName=%s\n", (void*)frameTypeName, ft, frameVtblName);
+                    fflush(stdout);
+                }
                 frame->UpdateRegDisplay(&tmpRd);
                 printf("DacDbiInterfaceImpl::GetContext - frame %p Flags=%0x RIP=%p RSP=%p RBP=%p\n",
                     frame, tmpRd.pContext->ContextFlags, (void*)tmpRd.pContext->Rip, (void*)tmpRd.pContext->Rsp, (void*)tmpRd.pContext->Rbp);
@@ -5744,7 +5848,7 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
     }
     else
     {
-        printf("DacDbiInterfaceImpl::GetContext - using filter context Flags=0x%08x RIP=%x RSP=%x RBP=%x\n",
+        printf("DacDbiInterfaceImpl::GetContext - using filter context Flags=0x%08x RIP=%p RSP=%p RBP=%p\n",
                pFilterContext->ContextFlags, (void*)pFilterContext->Rip, (void*)pFilterContext->Rsp, (void*)pFilterContext->Rbp);
         fflush(stdout);
         *pContextBuffer = *pFilterContext;

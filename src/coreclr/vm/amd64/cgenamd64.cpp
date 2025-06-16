@@ -135,6 +135,12 @@ void InlinedCallFrame::UpdateRegDisplay(const PREGDISPLAY pRD, bool updateFloats
 
     SyncRegDisplayToCurrentContext(pRD);
 
+#ifdef DACCESS_COMPILE
+    printf("InlinedCallFrame::UpdateRegDisplay Flags=%08x rip:%p rsp:%p rbp:%p\n",
+           pRD->pCurrentContext->ContextFlags, (void*)pRD->pCurrentContext->Rip, (void*)pRD->pCurrentContext->Rsp, (void*)pRD->pCurrentContext->Rbp);
+    fflush(stdout);
+#endif // DACCESS_COMPILE
+
     LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    InlinedCallFrame::UpdateRegDisplay(rip:%p, rsp:%p)\n", pRD->ControlPC, pRD->SP));
 }
 
