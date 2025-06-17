@@ -1357,6 +1357,12 @@ void DacDbiInterfaceImpl::UpdateContextFromRegDisp(REGDISPLAY * pRegDisp,
         *pContext = *pRegDisp->pContext;
     }
 #else // TARGET_X86 && !FEATURE_EH_FUNCLETS
+    printf("DacDbiInterfaceImpl::UpdateContextFromRegDisp source context flags=%08x RIP=%p RSP=%p RBP=%p\n", 
+           pRegDisp->pCurrentContext->ContextFlags,
+           (void*)pRegDisp->pCurrentContext->Rip,
+           (void*)pRegDisp->pCurrentContext->Rsp,
+           (void*)pRegDisp->pCurrentContext->Rbp);
+    fflush(stdout);
     *pContext = *pRegDisp->pCurrentContext;
 #endif // !TARGET_X86 || FEATURE_EH_FUNCLETS
 }
