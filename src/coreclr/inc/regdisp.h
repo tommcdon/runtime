@@ -484,7 +484,7 @@ inline void FillRegDisplay(const PREGDISPLAY pRD, PT_CONTEXT pctx, PT_CONTEXT pC
 #else // !FEATURE_EH_FUNCLETS
     pRD->pContext   = pctx;
 #ifdef DACCESS_COMPILE
-    printf("FillRegDisplay: pContext->ContextFlags = %08x\n", pctx->ContextFlags);
+    printf("FillRegDisplay: pContext->ContextFlags = %08x RIP=%p RSP=%p RBP=%p\n", pctx->ContextFlags, (void*)pctx->Rip, (void*)pctx->Rsp, (void*)pctx->Rbp);
     fflush(stdout);
 #endif // DACCESS_COMPILE
 
