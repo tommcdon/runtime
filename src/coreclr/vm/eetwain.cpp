@@ -1091,6 +1091,10 @@ void EECodeManager::LightUnwindStackFrame(PREGDISPLAY pRD, EECodeInfo* pCodeInfo
 
     if (pRD->IsCallerContextValid)
     {
+#ifdef DACCESS_COMPILE
+        printf("EECodeManager::LightUnwindStackFrame [Caller Context Valid] Current IP:%p SP:%p RBP:%p\n", (void*)pRD->pCurrentContext->Rip, (void*)pRD->pCurrentContext->Rsp, (void*)pRD->pCurrentContext->Rbp);
+        fflush(stdout);
+#endif
         pRD->pCurrentContext->Rbp = pRD->pCallerContext->Rbp;
         pRD->pCurrentContext->Rsp = pRD->pCallerContext->Rsp;
         pRD->pCurrentContext->Rip = pRD->pCallerContext->Rip;

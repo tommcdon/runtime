@@ -6894,7 +6894,10 @@ bool Thread::InitRegDisplay(const PREGDISPLAY pRD, PT_CONTEXT pctx, bool validCo
 #endif // DACCESS_COMPILE
         }
     }
-
+#ifdef DACCESS_COMPILE
+    printf("Thread::InitRegDisplay: pRD=%p, pctx=%p, validContext=%d\n", pRD, pctx, validContext);
+    fflush(stdout);
+#endif // DACCESS_COMPILE
     FillRegDisplay( pRD, pctx );
 
     return true;
@@ -6905,7 +6908,10 @@ void Thread::FillRegDisplay(const PREGDISPLAY pRD, PT_CONTEXT pctx, bool fLightU
 {
     WRAPPER_NO_CONTRACT;
     SUPPORTS_DAC;
-
+#ifdef DACCESS_COMPILE
+    printf("Thread::FillRegDisplay: init context flags = %08x, lightunwind = %d\n", pctx->ContextFlags, fLightUnwind);
+    fflush(stdout);
+#endif // DACCESS_COMPILE
     ::FillRegDisplay(pRD, pctx, NULL, fLightUnwind);
 
 #if defined(DEBUG_REGDISPLAY) && !defined(TARGET_X86)

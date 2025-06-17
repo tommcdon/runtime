@@ -483,6 +483,10 @@ inline void FillRegDisplay(const PREGDISPLAY pRD, PT_CONTEXT pctx, PT_CONTEXT pC
 
 #else // !FEATURE_EH_FUNCLETS
     pRD->pContext   = pctx;
+#ifdef DACCESS_COMPILE
+    printf("FillRegDisplay: pContext->ContextFlags = %08x\n", pctx->ContextFlags);
+    fflush(stdout);
+#endif // DACCESS_COMPILE
 
     // Setup the references
     pRD->pCurrentContextPointers = &pRD->ctxPtrsOne;
@@ -521,7 +525,13 @@ inline void FillRegDisplay(const PREGDISPLAY pRD, PT_CONTEXT pctx, PT_CONTEXT pC
 #endif // !DACCESS_COMPILE
 
     if (fLightUnwind)
+    {
+        #ifdef DACCESS_COMPILE
+        printf("FillRegDisplay: Light unwind, skipping volatile context pointers\n");
+        fflush(stdout);
+        #endif // DACCESS_COMPILE
         return;
+    }
 
     FillContextPointers(&pRD->ctxPtrsOne, pctx);
 

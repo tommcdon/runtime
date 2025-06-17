@@ -1030,7 +1030,11 @@ StackWalkAction Thread::StackWalkFrames(PSTACKWALKFRAMESCALLBACK pCallback,
     {
         // Initialize the context
         memset(&ctx, 0x00, sizeof(T_CONTEXT));
-        LOG((LF_GCROOTS, LL_INFO100000, "STACKWALK    starting with partial context\n"));
+        LOG((LF_GCROOTS, LL_INFO100000, "Thread::StackWalkFrames    starting with partial context\n"));
+#ifdef DACCESS_COMPILE
+        printf("Thread::StackWalkFrames    starting with partial context\n");
+        fflush(stdout);
+#endif // DACCESS_COMPILE
         FillRegDisplay(&rd, &ctx, !!(flags & LIGHTUNWIND));
     }
 
@@ -3456,6 +3460,10 @@ void SetUpRegdisplayForStackWalk(Thread * pThread, T_CONTEXT * pContext, REGDISP
     {
         ZeroMemory(pContext, sizeof(*pContext));
         FillRegDisplay(pRegdisplay, pContext);
+#ifdef DACCESS_COMPILE
+        printf("SetUpRegdisplayForStackWalk: zeroed context\n");
+        fflush(stdout);
+#endif // DACCESS_COMPILE
 
         if (ISREDIRECTEDTHREAD(pThread))
         {
