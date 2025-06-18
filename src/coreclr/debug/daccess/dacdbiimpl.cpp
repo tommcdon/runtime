@@ -5825,13 +5825,14 @@ void DacDbiInterfaceImpl::GetContext(VMPTR_Thread vmThread, DT_CONTEXT * pContex
                 if (GetRegdisplaySP(&tmpRd) != 0 && GetControlPC(&tmpRd) != 0)
                 {
                     UpdateContextFromRegDisp(&tmpRd, &tmpContext);
-                    printf("DacDbiInterfaceImpl::GetContext - Flags=%0x RIP=%p RSP=%p RBP=%p\n", 
-                        tmpContext.ContextFlags, (void*)tmpContext.Rip, (void*)tmpContext.Rsp, (void*)tmpContext.Rbp);
+                    tmpContext.Rax = 0x42423142;
+                    printf("DacDbiInterfaceImpl::GetContext - Flags=%0x RIP=%p RSP=%p RBP=%p RAX=%p\n",
+                        tmpContext.ContextFlags, (void*)tmpContext.Rip, (void*)tmpContext.Rsp, (void*)tmpContext.Rbp, (void*)tmpContext.Rax);
                     fflush(stdout);
                     CopyMemory(pContextBuffer, &tmpContext, sizeof(*pContextBuffer));
                     pContextBuffer->ContextFlags = DT_CONTEXT_CONTROL | DT_CONTEXT_INTEGER;
-                    printf("DacDbiInterfaceImpl::GetContext - set frame context flags to DT_CONTEXT_CONTROL | DT_CONTEXT_INTEGER, Flags=%0x RIP=%p RSP=%p RBP=%p\n",
-                        pContextBuffer->ContextFlags, (void*)pContextBuffer->Rip, (void*)pContextBuffer->Rsp, (void*)pContextBuffer->Rbp);
+                    printf("DacDbiInterfaceImpl::GetContext - set frame context flags to DT_CONTEXT_CONTROL | DT_CONTEXT_INTEGER, Flags=%0x RIP=%p RSP=%p RBP=%p RAX=%p\n",
+                        pContextBuffer->ContextFlags, (void*)pContextBuffer->Rip, (void*)pContextBuffer->Rsp, (void*)pContextBuffer->Rbp, (void*)pContextBuffer->Rax);
                     fflush(stdout);
                     return;
                 }

@@ -394,8 +394,20 @@ void ShimStackWalk::Populate()
                 {
                     if (!chainInfo.m_fNeedEnterManagedChain)
                     {
-                        printf("ShimStackWalk::Populate: Processing managed stack frame, set m_fNeedEnterManagedChain = true\n");
-                        fflush(stdout);
+                        {
+                            DT_CONTEXT ctx= { };
+                            ctx.ContextFlags = DT_CONTEXT_FULL;
+                            hr = pSW->GetContext(ctx.ContextFlags, sizeof(ctx), NULL, reinterpret_cast<BYTE *>(&ctx));
+                            IfFailThrow(hr);
+
+                            printf("ShimStackWalk::Populate: Processing managed stack frame, set m_fNeedEnterManagedChain = true, Flags=%08x RIP=%p RSP=%p RBP=%p\n",
+                                ctx.ContextFlags, (void*)ctx.Rip, (void*)ctx.Rsp, (void*)ctx.Rbp);
+                            fflush(stdout);
+
+                            // printf("ShimStackWalk::Populate: Managed Leaf Context Flags=%08x RIP=%p RSP=%p RBP=%p\n",
+                            //     chainInfo.m_leafManagedContext.ContextFlags, (void*)chainInfo.m_leafManagedContext.Rip, (void*)chainInfo.m_leafManagedContext.Rsp, (void*)chainInfo.m_leafManagedContext.Rbp);
+                            // fflush(stdout);
+                        }
                         // If we have hit any managed stack frame, then we may need to send
                         // an enter-managed chain later.  Save the CONTEXT now.
                         SaveChainContext(pSW, &chainInfo, &(chainInfo.m_leafManagedContext));
@@ -458,8 +470,21 @@ void ShimStackWalk::Populate()
                 // We are here because we are processing a native marker stack frame, not because
                 // we have exhausted all the stack frames.
 
-                printf("ShimStackWalk::Populate: Processing native marker stack frame\n");
-                fflush(stdout);
+
+                {
+                    DT_CONTEXT ctx= { };
+                    ctx.ContextFlags = DT_CONTEXT_FULL;
+                    hr = pSW->GetContext(ctx.ContextFlags, sizeof(ctx), NULL, reinterpret_cast<BYTE *>(&ctx));
+                    IfFailThrow(hr);
+
+                    printf("ShimStackWalk::Populate: Processing native marker stack frame, set m_fNeedEnterManagedChain = true, Flags=%08x RIP=%p RSP=%p RBP=%p\n",
+                        ctx.ContextFlags, (void*)ctx.Rip, (void*)ctx.Rsp, (void*)ctx.Rbp);
+                    fflush(stdout);
+
+                    // printf("ShimStackWalk::Populate: Native Leaf Context Flags=%08x RIP=%p RSP=%p RBP=%p\n",
+                    //     chainInfo.m_leafNativeContext.ContextFlags, (void*)chainInfo.m_leafNativeContext.Rip, (void*)chainInfo.m_leafNativeContext.Rsp, (void*)chainInfo.m_leafNativeContext.Rbp);
+                    // fflush(stdout);
+                }
 
                 // We need to save the CONTEXT to start tracking an unmanaged chain.
                 SaveChainContext(pSW, &chainInfo, &(chainInfo.m_leafNativeContext));
@@ -1123,6 +1148,12 @@ void ShimStackWalk::AppendChainWorker(StackWalkInfo *     pStackWalkInfo,
                                       CorDebugChainReason chainReason,
                                       BOOL                fIsManagedChain)
 {
+    {
+        printf("ShimStackWalk::AppendChainWorker: Appending chain with Context Flags=%08x RIP=%p RSP=%p RBP=%p RAX=%p, fpRoot=%p, chainReason=%d, fIsManagedChain=%s\n",
+               pLeafContext->ContextFlags, (void*)pLeafContext->Rip, (void*)pLeafContext->Rsp, (void*)pLeafContext->Rbp, (void*)pLeafContext->Rax,
+               (void*)fpRoot.GetSPValue(), chainReason, fIsManagedChain ? "true" : "false");
+        fflush(stdout);
+    }
     // first, create the chain
     NewHolder<ShimChain> pChain(new ShimChain(this,
                                               pLeafContext,
