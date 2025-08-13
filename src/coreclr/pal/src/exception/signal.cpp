@@ -741,6 +741,7 @@ Parameters :
 --*/
 static void sigtrap_handler(int code, siginfo_t *siginfo, void *context)
 {
+    printf("sigtrap_handler 0x%8.8X\n", code);
     if (PALIsInitialized())
     {
         if (common_signal_handler(code, siginfo, context, 0))
@@ -1068,6 +1069,7 @@ Note:
 __attribute__((noinline))
 static bool common_signal_handler(int code, siginfo_t *siginfo, void *sigcontext, int numParams, ...)
 {
+    printf("common_signal_handler 0x%8.8X\n", code);
 #if !HAVE_MACH_EXCEPTIONS
     sigset_t signal_set;
     CONTEXT signalContextRecord;

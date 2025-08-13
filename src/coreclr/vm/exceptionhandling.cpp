@@ -1363,7 +1363,9 @@ BOOL IsSafeToCallExecutionManager()
 
 BOOL IsSafeToHandleHardwareException(PCONTEXT contextRecord, PEXCEPTION_RECORD exceptionRecord)
 {
-#ifdef FEATURE_EMULATE_SINGLESTEP
+    printf("IsSafeToHandleHardwareException 0x%8.8X at %p\n", exceptionRecord->ExceptionCode, (void*)GetIP(contextRecord));
+
+#ifdef FEATURE_EMULATE_SINGLESTEP    
     Thread *pThread = GetThreadNULLOk();
     if (pThread && pThread->IsSingleStepEnabled() &&
         exceptionRecord->ExceptionCode != STATUS_BREAKPOINT &&
@@ -1418,6 +1420,7 @@ static inline BOOL HandleSingleStep(PCONTEXT pContext, PEXCEPTION_RECORD pExcept
 
 BOOL HandleHardwareException(PAL_SEHException* ex)
 {
+    printf("HandleHardwareException 0x%8.8X at %p\n", ex->GetExceptionRecord()->ExceptionCode, (void*)GetIP(ex->GetContextRecord()));
     _ASSERTE(IsSafeToHandleHardwareException(ex->GetContextRecord(), ex->GetExceptionRecord()));
 
     if (ex->GetExceptionRecord()->ExceptionCode == EXCEPTION_STACK_OVERFLOW)
