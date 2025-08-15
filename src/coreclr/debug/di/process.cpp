@@ -963,7 +963,9 @@ CordbProcess::CordbProcess(ULONG64 clrInstanceId,
     m_writableMetadataUpdateMode(LegacyCompatPolicy)
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     ,
-    m_dwOutOfProcessStepping(0)
+    m_dwOutOfProcessStepping(0),
+    m_fDetachInProgress(FALSE),
+    m_dwProcessedFlares(0)
 #endif
 {
     _ASSERTE((m_id == 0) == (pShim == NULL));
@@ -3104,13 +3106,28 @@ void CordbProcess::DetachShim()
             this->NeuterChildren();
         }
 
+        m_fDetachInProgress = TRUE;
+        m_dwProcessedFlares = 0;
+
         // Go ahead and detach from the entire process now. This is like sending a "Continue".
         DebuggerIPCEvent * pIPCEvent = (DebuggerIPCEvent *) _alloca(CorDBIPC_BUFFER_SIZE);
         InitIPCEvent(pIPCEvent, DB_IPCE_DETACH_FROM_PROCESS, true, VMPTR_AppDomain::NullPtr());
-
+        
         hr = m_cordb->SendIPCEvent(this, pIPCEvent, CorDBIPC_BUFFER_SIZE);
         hr = WORST_HR(hr, pIPCEvent->hr);
         IfFailThrow(hr);
+
+        _ASSERTE(pIPCEvent->type == DB_IPCE_DETACH_FROM_PROCESS_RESULT);
+        printf("Is DetachFromProcessResult = %d\n", pIPCEvent->type == DB_IPCE_DETACH_FROM_PROCESS_RESULT);
+
+        printf("D::HIPCE dwDispatchedFlares=0x%x\n", pIPCEvent->DetachFromProcessResult.dwDispatchedFlares);
+        while (m_dwProcessedFlares < pIPCEvent->DetachFromProcessResult.dwDispatchedFlares)
+        {
+            // Wait for the flares to be processed
+            ::Sleep(100);
+        }
+        printf("Done processing flares!!!\n");
+        m_fDetachInProgress = FALSE;
     }
     else
     {
@@ -11114,6 +11131,12 @@ void CordbProcess::FilterClrNotification(
 void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 {
     LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded\n"));
+
+    if (m_fDetachInProgress)
+    {
+        DWORD dwProcessedFlares = InterlockedIncrement(&m_dwProcessedFlares);
+        printf("Detach in progress - %d\n", dwProcessedFlares);
+    }
 
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
     // Before we can read the left side context information, we must:

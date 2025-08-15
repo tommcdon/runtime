@@ -5451,6 +5451,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     bool retVal;
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     DebuggerSteppingInfo debuggerSteppingInfo;
+    bool fIsProcessingExceptionEvent = false;
 #endif
 
     {
@@ -5462,7 +5463,8 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
             retVal = DebuggerController::DispatchNativeException(exception, context,
                                                                code, thread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-                                                               ,&debuggerSteppingInfo
+                                                               ,&debuggerSteppingInfo,
+                                                               &fIsProcessingExceptionEvent
 #endif
                                                                );
         }
@@ -5475,11 +5477,21 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 #if defined(OUT_OF_PROCESS_SETTHREADCONTEXT) && !defined(DACCESS_COMPILE)
     if (retVal && fIsVEH)
     {
+        if (fIsProcessingExceptionEvent)
+        {
+            if (DebuggerController::g_fProcessingDetach)
+            {
+                InterlockedIncrement(&DebuggerController::g_dwDispatchedFlares);
+            }
+            InterlockedDecrement(&DebuggerController::g_dwActiveDispatchedExceptions);
+            printf("Processing exception event g_dwDispatchedFlares=%d g_dwActiveDispatchedExceptions=%d\n", DebuggerController::g_dwDispatchedFlares.LoadWithoutBarrier(), DebuggerController::g_dwActiveDispatchedExceptions.LoadWithoutBarrier());
+        }
         // This does not return. Out-of-proc debugger will update the thread context
         // within this call.
         SendSetThreadContextNeeded(context, &debuggerSteppingInfo);
     }
 #endif
+    InterlockedDecrement(&DebuggerController::g_dwActiveDispatchedExceptions);
     return retVal;
 }
 
@@ -10776,6 +10788,8 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
         m_pRCThread->RightSideDetach();
 
+        printf("Detach: Disabled all controllers - number of patches left: %d\n", DebuggerController::GetActiveDispatchedExceptions());
+        fflush(stdout);
 
         // Clear JMC status
         {
@@ -10812,11 +10826,7 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
             m_pModules->Clear();
 
         }
-
-        // Reply to the detach message before we release any Runtime threads. This ensures that the debugger will get
-        // the detach reply before the process exits if the main thread is near exiting.
-        m_pRCThread->SendIPCReply();
-
+        
         if (this->m_isBlockedOnGarbageCollectionEvent)
         {
             this->m_stopped = FALSE;
@@ -10824,9 +10834,15 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         }
         else
         {
+            printf("Continue process...\n");
+            fflush(stdout);
+
+            // start counting the number of flares we have sent
+            DebuggerController::g_fProcessingDetach = TRUE;
+
             // Let the process run free now... there is no debugger to bother it anymore.
             fContinue = ResumeThreads(pEvent->vmAppDomain.GetRawPtr());
-
+            
             //
             // Go ahead and release the TSL now that we're continuing. This ensures that we've held
             // the thread store lock the entire time the Runtime was just stopped.
@@ -10834,10 +10850,40 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
             ThreadSuspend::UnlockThreadStore(FALSE, ThreadSuspend::SUSPEND_FOR_DEBUGGER);
         }
 
+        //flush stdout
+        fflush(stdout);
+
+        // wait for all dispatched exceptions to continued so that we can have an accurate count of flares being sent
+        {
+            int x;
+            int y = 0;
+            while ((x = DebuggerController::GetActiveDispatchedExceptions()) > 0 && y++ < 500)
+            {
+                printf("Waiting for patches to be removed... (%d remaining)\n", x);
+                fflush(stdout);
+                Sleep(100);
+            }
+        }
+
+        printf("g_dwDispatchedFlares = %d\n", DebuggerController::g_dwDispatchedFlares.LoadWithoutBarrier());
+        fflush(stdout);
+
+        // Send the detach result back to the RS.
+        {
+            DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
+            InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
+
+            pResult->DetachFromProcessResult.dwDispatchedFlares = DebuggerController::GetDispatchedFlares();
+            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
+            printf("D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares);
+
+            m_pRCThread->SendIPCReply();
+        }
+        
         break;
 
-#ifndef DACCESS_COMPILE
-
+        #ifndef DACCESS_COMPILE
+        
     case DB_IPCE_FUNC_EVAL:
         {
             // This is a synchronous event (reply required)
@@ -16220,6 +16266,9 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo
 
     bool fIsInPlaceSingleStep = pDebuggerSteppingInfo != NULL && pDebuggerSteppingInfo->IsInPlaceSingleStep();
     PRD_TYPE opcode = pDebuggerSteppingInfo != NULL ? pDebuggerSteppingInfo->GetOpcode() : CORDbg_BREAK_INSTRUCTION;
+
+    static int x = 0;
+    printf("SetThreadContextNeededFlare[%d]: ContextFlags=0x%x contextSize=%d fIsInPlaceSingleStep=%d opcode=%I64x\n", x++, contextFlags, contextSize, fIsInPlaceSingleStep, opcode);
 
     // send the context to the right side
     LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode));

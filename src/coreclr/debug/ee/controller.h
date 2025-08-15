@@ -1083,7 +1083,8 @@ class DebuggerController
                                         Thread *thread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                         ,
-                                        DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL
+                                        DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL,
+                                        bool *fIsProcessingExceptionEvent = NULL
 #endif
                                         );
 
@@ -1157,6 +1158,10 @@ class DebuggerController
 
     static int GetTotalMethodEnter() {LIMITED_METHOD_CONTRACT;  return g_cTotalMethodEnter; }
 
+    static BOOL GetProcessingDetach() {LIMITED_METHOD_CONTRACT;  return g_fProcessingDetach; }
+    static DWORD GetActiveDispatchedExceptions() {LIMITED_METHOD_CONTRACT;  return g_dwActiveDispatchedExceptions; }
+    static DWORD GetDispatchedFlares() {LIMITED_METHOD_DAC_CONTRACT;  return g_dwDispatchedFlares; }
+
 #if defined(_DEBUG)
     // Debug check that we only have 1 thread-starter per thread.
     // Check this new one against all existing ones.
@@ -1209,6 +1214,27 @@ private:
 
     // Write is protected by both Debugger + Controller Lock
     static int g_cTotalMethodEnter;
+
+    // When detach is initiated, the runtime is synchronized.
+    // This is a running count of dispatched exceptions that
+    // could result in a SetThreadContextNeeded event.
+    // Detach will use this to get an accurate count of
+    // SetThreadContextNeeded flares after continuing.
+    // State is tracked globally because the controllers are deleted
+    // during the detach operation
+    // This variable is only used while the debugger is attached
+    static Volatile<DWORD> g_dwActiveDispatchedExceptions;
+
+    // During detach we need to wait until all flares have been processed
+    // before allowing the detach to proceed. Once this flag is set
+    // true, we will start tracking the number of dispatched flares.
+    static Volatile<BOOL> g_fProcessingDetach;
+
+    // This is the number of flares that have been sent after 
+    // continuing inside of a detach request 
+    // This will be sent to the right side to ensure that it stays attached
+    // long enough to process any SetThreadContextNeeded events
+    static Volatile<DWORD> g_dwDispatchedFlares;
 
     static bool BindPatch(DebuggerControllerPatch *patch,
                           MethodDesc *fd,
