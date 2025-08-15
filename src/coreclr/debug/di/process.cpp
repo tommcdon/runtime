@@ -3112,7 +3112,7 @@ void CordbProcess::DetachShim()
         // Go ahead and detach from the entire process now. This is like sending a "Continue".
         DebuggerIPCEvent * pIPCEvent = (DebuggerIPCEvent *) _alloca(CorDBIPC_BUFFER_SIZE);
         InitIPCEvent(pIPCEvent, DB_IPCE_DETACH_FROM_PROCESS, true, VMPTR_AppDomain::NullPtr());
-        
+
         hr = m_cordb->SendIPCEvent(this, pIPCEvent, CorDBIPC_BUFFER_SIZE);
         hr = WORST_HR(hr, pIPCEvent->hr);
         IfFailThrow(hr);

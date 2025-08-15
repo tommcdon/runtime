@@ -4158,6 +4158,7 @@ private:
     Volatile<BOOL> m_fDetachInProgress;
     Volatile<DWORD> m_dwProcessedFlares;
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
+
 };
 
 // Some IMDArocess APIs are supported as interop-only.

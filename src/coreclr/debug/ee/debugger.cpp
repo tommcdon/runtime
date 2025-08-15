@@ -10842,7 +10842,7 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
             // Let the process run free now... there is no debugger to bother it anymore.
             fContinue = ResumeThreads(pEvent->vmAppDomain.GetRawPtr());
-            
+
             //
             // Go ahead and release the TSL now that we're continuing. This ensures that we've held
             // the thread store lock the entire time the Runtime was just stopped.
