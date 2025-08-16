@@ -10786,6 +10786,7 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
         m_pRCThread->RightSideDetach();
 
+
         // Clear JMC status
         {
             LOG((LF_CORDB, LL_EVERYTHING, "Setting all JMC methods to false:\n"));
@@ -10865,9 +10866,9 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         // wait for all dispatched exceptions to continued so that we can have an accurate count of flares being sent
         {
             int y = 0;
+            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Waiting for patches to be removed... (%d remaining)\n", DebuggerController::GetActiveDispatchedExceptions()));
             while (DebuggerController::GetActiveDispatchedExceptions() > 0 && y++ < 50000)
             {
-                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Waiting for patches to be removed... (%d remaining)\n", DebuggerController::GetActiveDispatchedExceptions()));
                 Sleep(100);
             }
         }
@@ -10890,7 +10891,7 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         break;
 
 #ifndef DACCESS_COMPILE
-        
+
     case DB_IPCE_FUNC_EVAL:
         {
             // This is a synchronous event (reply required)

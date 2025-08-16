@@ -3106,8 +3106,10 @@ void CordbProcess::DetachShim()
             this->NeuterChildren();
         }
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         m_fDetachInProgress = TRUE;
         m_dwProcessedFlares = 0;
+#endif
 
         // Go ahead and detach from the entire process now. This is like sending a "Continue".
         DebuggerIPCEvent * pIPCEvent = (DebuggerIPCEvent *) _alloca(CorDBIPC_BUFFER_SIZE);
@@ -3118,16 +3120,16 @@ void CordbProcess::DetachShim()
         IfFailThrow(hr);
 
         _ASSERTE(pIPCEvent->type == DB_IPCE_DETACH_FROM_PROCESS_RESULT);
-        printf("Is DetachFromProcessResult = %d\n", pIPCEvent->type == DB_IPCE_DETACH_FROM_PROCESS_RESULT);
 
-        printf("D::HIPCE dwDispatchedFlares=0x%x\n", pIPCEvent->DetachFromProcessResult.dwDispatchedFlares);
-        while (m_dwProcessedFlares < pIPCEvent->DetachFromProcessResult.dwDispatchedFlares)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        int x = 0;
+        while (m_dwProcessedFlares < pIPCEvent->DetachFromProcessResult.dwDispatchedFlares && x++ < 50000)
         {
             // Wait for the flares to be processed
             ::Sleep(100);
         }
-        printf("Done processing flares!!!\n");
         m_fDetachInProgress = FALSE;
+#endif
     }
     else
     {
@@ -11135,7 +11137,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
     if (m_fDetachInProgress)
     {
         DWORD dwProcessedFlares = InterlockedIncrement(&m_dwProcessedFlares);
-        printf("Detach in progress - %d\n", dwProcessedFlares);
+        LOG((LF_CORDB, LL_INFO10000, "HSTCN: Detach in progress - %d\n", dwProcessedFlares));
     }
 
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)

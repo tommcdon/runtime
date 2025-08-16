@@ -674,8 +674,6 @@ DebuggerControllerPatch *DebuggerPatchTable::AddPatchForMethodDef(DebuggerContro
     patch->pAppDomain = pAppDomain;
     patch->patchId = m_patchId++;
 
-    printf("[AddPatchForMethodDef] Add Patch: DebuggerController:%p patchId:0x%zx added\n", patch->controller, patch->patchId);
-
     if (kind == PATCH_KIND_IL_PRIMARY)
     {
         _ASSERTE(dji == NULL);
