@@ -45,8 +45,8 @@ CrstStatic                      DebuggerController::g_criticalSection;
 int                             DebuggerController::g_cTotalMethodEnter = 0;
 
 Volatile<BOOL>                  DebuggerController::g_fProcessingDetach = false;
-Volatile<DWORD>                 DebuggerController::g_dwActiveDispatchedExceptions = 0;
-Volatile<DWORD>                 DebuggerController::g_dwDispatchedFlares = 0;
+Volatile<DWORD>                 DebuggerController::g_cActiveDispatchedExceptions = 0;
+Volatile<DWORD>                 DebuggerController::g_cDispatchedFlares = 0;
 
 // Is this patch at a position at which it's safe to take a stack?
 bool DebuggerControllerPatch::IsSafeForStackTrace()
@@ -4364,7 +4364,7 @@ void DebuggerController::TriggerExternalMethodFixup(PCODE target)
     _ASSERTE(!"This code should be unreachable. If your controller enables ExternalMethodFixup events, it should also override this callback to do something useful when the event arrives.");
 }
 
-/*static*/ DWORD DebuggerController::GetPendingDeletedControllers()
+/*static*/ int DebuggerController::GetPendingDeletedControllers()
 {
     CONTRACTL
     {
@@ -4374,12 +4374,17 @@ void DebuggerController::TriggerExternalMethodFixup(PCODE target)
     CONTRACTL_END;
     
     ControllerLockHolder lockController;
-    DWORD dwTotalPendingDeletedControllers = 0;
+    int dwTotalPendingDeletedControllers = 0;
 
     for (DebuggerController* p = g_controllers; p != NULL; p = p->m_next)
     {
-        if (p->IsDeleted())
-            dwTotalPendingDeletedControllers++;
+        _ASSERTE(p->IsDeleted());
+        if (!p->IsDeleted())
+        {
+            printf("NOPE!!!\n");
+            fflush(stdout);
+        }
+        dwTotalPendingDeletedControllers++;
     }
 
     return dwTotalPendingDeletedControllers;
@@ -4513,7 +4518,8 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         if (DebuggerController::GetProcessingDetach())
         {
-            InterlockedIncrement(&DebuggerController::g_dwActiveDispatchedExceptions);
+            InterlockedIncrement(&DebuggerController::g_cActiveDispatchedExceptions);
+            printf("Unexpected additional callback into VEH during detach!!\n");
         }
 #endif
 

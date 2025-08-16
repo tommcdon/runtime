@@ -5453,6 +5453,15 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     DebuggerSteppingInfo debuggerSteppingInfo;
 #endif
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    if (DebuggerController::GetProcessingDetach())
+    {
+        InterlockedIncrement(&DebuggerController::g_cActiveDispatchedExceptions);
+        printf("Unexpected dispatched exception!\n");
+        fflush(stdout);
+    }
+#endif
+
     {
         // Don't stop for native debugging anywhere inside our inproc-Filters.
         CantStopHolder hHolder;
@@ -5477,9 +5486,36 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     {
         if (DebuggerController::GetProcessingDetach())
         {
-            InterlockedIncrement(&DebuggerController::g_dwDispatchedFlares);
-            InterlockedDecrement(&DebuggerController::g_dwActiveDispatchedExceptions);
-            LOG((LF_CORDB, LL_INFO1000000, "D::FCNE Processing exception event g_dwDispatchedFlares=%d g_dwActiveDispatchedExceptions=%d\n", DebuggerController::g_dwDispatchedFlares.LoadWithoutBarrier(), DebuggerController::g_dwActiveDispatchedExceptions.LoadWithoutBarrier()));
+            int cDispatchedFlares = (int)InterlockedIncrement(&DebuggerController::g_cDispatchedFlares);
+            _ASSERTE(cDispatchedFlares > 0);
+            int cActiveDispatchedExceptions = (int)InterlockedDecrement(&DebuggerController::g_cActiveDispatchedExceptions);
+            if (cActiveDispatchedExceptions == 0)
+            {
+                LOG((LF_CORDB, LL_INFO1000000, "D::FCNE Sending last exception event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", cDispatchedFlares, cActiveDispatchedExceptions));
+                {
+                    DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
+                    InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
+
+                    pResult->DetachFromProcessResult.cDispatchedFlares = cDispatchedFlares;
+                    LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE cDispatchedFlares=%d\n", pResult->DetachFromProcessResult.cDispatchedFlares));
+
+                    printf("Not so easy detach\n");
+                    fflush(stdout);
+                    m_pRCThread->SendIPCReply();
+                }
+            }
+            else if (cActiveDispatchedExceptions < 0)
+            {
+                LOG((LF_CORDB, LL_INFO1000000, "D::FCNE ERROR: g_cActiveDispatchedExceptions went negative! g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", cDispatchedFlares, cActiveDispatchedExceptions));
+                InterlockedDecrement(&DebuggerController::g_cDispatchedFlares);
+                printf("Unexpected dispatched exception count!!!\n");
+                fflush(stdout);
+            }
+            else
+            {
+                LOG((LF_CORDB, LL_INFO1000000, "D::FCNE Processing exception event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", DebuggerController::g_cDispatchedFlares.LoadWithoutBarrier(), DebuggerController::g_cActiveDispatchedExceptions.LoadWithoutBarrier()));
+            }
+            _ASSERTE(cActiveDispatchedExceptions >= 0);
         }
         // This does not return. Out-of-proc debugger will update the thread context
         // within this call.
@@ -5487,7 +5523,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
     else if (DebuggerController::GetProcessingDetach())
     {
-        InterlockedDecrement(&DebuggerController::g_dwActiveDispatchedExceptions);
+        InterlockedDecrement(&DebuggerController::g_cActiveDispatchedExceptions);
     }
 #endif
     return retVal;
@@ -10833,8 +10869,8 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
                 DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
                 InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
 
-                pResult->DetachFromProcessResult.dwDispatchedFlares = 0; // unused if OUT_OF_PROCESS_SETTHREADCONTEXT is disabled
-                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
+                pResult->DetachFromProcessResult.cDispatchedFlares = 0;
+                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE cDispatchedFlares=%d\n", pResult->DetachFromProcessResult.cDispatchedFlares));
 
                 m_pRCThread->SendIPCReply();
             }
@@ -10849,13 +10885,33 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                 if (bUsingOutOfProcEvents)
                 {
-                    DWORD dwPendingDeletedControllers = DebuggerController::GetPendingDeletedControllers();
-                    LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Continue process... with %d pending deleted controllers\n", dwPendingDeletedControllers));
+                    int cNumberOfControllers = DebuggerController::GetPendingDeletedControllers();
+                    LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Continue process... with %d pending deleted controllers\n", cNumberOfControllers));
 
                     // start counting the number of flares we have sent
                     DebuggerController::SetDispatchedFlares(0); // resets the count of Debugger::SendSetThreadContextNeeded to zero
-                    DebuggerController::SetActiveDispatchedExceptions(dwPendingDeletedControllers); // sets the number of controllers we expect to handle in Debugger::FirstChanceNativeException
-                    DebuggerController::SetProcessingDetach(TRUE); // this enables counting the number of queued Debugger::SendSetThreadContextNeeded
+                    DebuggerController::SetActiveDispatchedExceptions(cNumberOfControllers); // sets the number of controllers we expect to handle in Debugger::FirstChanceNativeException
+
+                    // Send the detach result back to the RS.
+                    if (cNumberOfControllers == 0)
+                    {
+                        DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
+                        InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
+
+                        pResult->DetachFromProcessResult.cDispatchedFlares = cNumberOfControllers;
+                        LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE cDispatchedFlares=%d\n", pResult->DetachFromProcessResult.cDispatchedFlares));
+
+                        printf("Easy Detach\n");
+                        fflush(stdout);
+                        m_pRCThread->SendIPCReply();
+                    }
+                    else
+                    {
+                        // this enables counting the number of queued Debugger::SendSetThreadContextNeeded
+                        // once we have an accurate count of the number of controllers
+                        // respond to this IPC
+                        DebuggerController::SetProcessingDetach(TRUE);
+                    }
                 }
 #endif
 
@@ -10868,33 +10924,6 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
                 //
                 ThreadSuspend::UnlockThreadStore(FALSE, ThreadSuspend::SUSPEND_FOR_DEBUGGER);
             }
-
-#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-            // wait for all dispatched exceptions to continued so that we can have an accurate count of flares being sent
-            if (DebuggerController::GetProcessingDetach())
-            {
-                int y = 0;
-                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Waiting for patches to be removed... (%d remaining)\n", DebuggerController::GetActiveDispatchedExceptions()));
-                while (DebuggerController::GetActiveDispatchedExceptions() > 0 && y++ < 50000)
-                {
-                    Sleep(100);
-                }
-            }
-
-            // We are done processing pending deleted controllers and all flares that will be sent have been accounted for
-            DebuggerController::SetProcessingDetach(FALSE);
-
-            // Send the detach result back to the RS.
-            {
-                DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
-                InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
-
-                pResult->DetachFromProcessResult.dwDispatchedFlares = DebuggerController::GetDispatchedFlares();
-                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
-
-                m_pRCThread->SendIPCReply();
-            }
-#endif
         }
         
         break;

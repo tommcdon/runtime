@@ -965,7 +965,7 @@ CordbProcess::CordbProcess(ULONG64 clrInstanceId,
     ,
     m_dwOutOfProcessStepping(0),
     m_fDetachInProgress(FALSE),
-    m_dwProcessedFlares(0)
+    m_cProcessedFlares(0)
 #endif
 {
     _ASSERTE((m_id == 0) == (pShim == NULL));
@@ -3107,8 +3107,14 @@ void CordbProcess::DetachShim()
         }
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        m_fDetachInProgress = TRUE;
-        m_dwProcessedFlares = 0;
+        class DetachInProgressGuard
+        {
+            CordbProcess * m_pProcess;
+        public:
+            DetachInProgressGuard(CordbProcess * pProcess) { m_pProcess = pProcess; m_pProcess->m_fDetachInProgress = true; m_pProcess->m_cProcessedFlares = 0; }
+            ~DetachInProgressGuard() { m_pProcess->m_fDetachInProgress = false; }
+        };
+        DetachInProgressGuard detachInProgressGuard(this);
 #endif
 
         // Go ahead and detach from the entire process now. This is like sending a "Continue".
@@ -3123,7 +3129,7 @@ void CordbProcess::DetachShim()
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         int x = 0;
-        while (m_dwProcessedFlares < pIPCEvent->DetachFromProcessResult.dwDispatchedFlares && x++ < 50000)
+        while (m_cProcessedFlares < pIPCEvent->DetachFromProcessResult.cDispatchedFlares && x++ < 50000)
         {
             // Wait for the flares to be processed
             ::Sleep(100);
@@ -11136,7 +11142,7 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 
     if (m_fDetachInProgress)
     {
-        DWORD dwProcessedFlares = InterlockedIncrement(&m_dwProcessedFlares);
+        DWORD dwProcessedFlares = InterlockedIncrement(&m_cProcessedFlares);
         LOG((LF_CORDB, LL_INFO10000, "HSTCN: Detach in progress - %d\n", dwProcessedFlares));
     }
 

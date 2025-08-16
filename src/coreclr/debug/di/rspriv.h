@@ -4156,7 +4156,7 @@ public:
     
 private:
     Volatile<BOOL> m_fDetachInProgress;
-    Volatile<DWORD> m_dwProcessedFlares;
+    Volatile<DWORD> m_cProcessedFlares;
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
 };

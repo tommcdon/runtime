@@ -2387,7 +2387,7 @@ struct MSLAYOUT DebuggerIPCEvent
 
         struct MSLAYOUT
         {
-            DWORD dwDispatchedFlares;
+            DWORD cDispatchedFlares;
         } DetachFromProcessResult;
     };
 };

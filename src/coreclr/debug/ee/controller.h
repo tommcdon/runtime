@@ -1157,13 +1157,13 @@ class DebuggerController
 
     static int GetTotalMethodEnter() {LIMITED_METHOD_CONTRACT;  return g_cTotalMethodEnter; }
 
-    static BOOL GetProcessingDetach() {LIMITED_METHOD_CONTRACT;  return g_fProcessingDetach; }
-    static void SetProcessingDetach(BOOL fProcessingDetach) {LIMITED_METHOD_CONTRACT;  g_fProcessingDetach = fProcessingDetach; }   
-    static DWORD GetActiveDispatchedExceptions() {LIMITED_METHOD_CONTRACT;  return g_dwActiveDispatchedExceptions; }
-    static DWORD SetActiveDispatchedExceptions(DWORD dwActiveDispatchedExceptions) { LIMITED_METHOD_CONTRACT; return g_dwActiveDispatchedExceptions = dwActiveDispatchedExceptions; }
-    static DWORD GetPendingDeletedControllers();
-    static DWORD GetDispatchedFlares() {LIMITED_METHOD_DAC_CONTRACT;  return g_dwDispatchedFlares; }
-    static DWORD SetDispatchedFlares(DWORD dwDispatchedFlares) { LIMITED_METHOD_DAC_CONTRACT; return g_dwDispatchedFlares = dwDispatchedFlares; }
+    static bool GetProcessingDetach() {LIMITED_METHOD_CONTRACT;  return g_fProcessingDetach; }
+    static void SetProcessingDetach(bool fProcessingDetach) {LIMITED_METHOD_CONTRACT;  g_fProcessingDetach = fProcessingDetach; }
+    static int GetActiveDispatchedExceptions() {LIMITED_METHOD_CONTRACT;  return g_cActiveDispatchedExceptions; }
+    static void SetActiveDispatchedExceptions(int cActiveDispatchedExceptions) { LIMITED_METHOD_CONTRACT;  g_cActiveDispatchedExceptions = cActiveDispatchedExceptions; }
+    static int GetPendingDeletedControllers();
+    static int GetDispatchedFlares() {LIMITED_METHOD_DAC_CONTRACT;  return g_cDispatchedFlares; }
+    static void SetDispatchedFlares(int cDispatchedFlares) { LIMITED_METHOD_DAC_CONTRACT; g_cDispatchedFlares = cDispatchedFlares; }
 
 #if defined(_DEBUG)
     // Debug check that we only have 1 thread-starter per thread.
@@ -1226,7 +1226,7 @@ private:
     // State is tracked globally because the controllers are deleted
     // during the detach operation
     // This variable is only used while the debugger is attached
-    static Volatile<DWORD> g_dwActiveDispatchedExceptions;
+    static Volatile<DWORD> g_cActiveDispatchedExceptions;
 
     // During detach we need to wait until all flares have been processed
     // before allowing the detach to proceed. Once this flag is set
@@ -1237,7 +1237,7 @@ private:
     // continuing inside of a detach request 
     // This will be sent to the right side to ensure that it stays attached
     // long enough to process any SetThreadContextNeeded events
-    static Volatile<DWORD> g_dwDispatchedFlares;
+    static Volatile<DWORD> g_cDispatchedFlares;
 
     static bool BindPatch(DebuggerControllerPatch *patch,
                           MethodDesc *fd,
