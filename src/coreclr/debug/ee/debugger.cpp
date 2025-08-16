@@ -10823,7 +10823,10 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
         }
 
-#ifndef OUT_OF_PROCESS_SETTHREADCONTEXT
+        bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        if (bUsingOutOfProcEvents)
+#endif
         // Send the detach result back to the RS.
         {
             DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
@@ -10834,7 +10837,6 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
             m_pRCThread->SendIPCReply();
         }
-#endif
         
         if (this->m_isBlockedOnGarbageCollectionEvent)
         {
@@ -10844,12 +10846,16 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         else
         {
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-            DWORD dwPendingDeletedControllers = DebuggerController::GetPendingDeletedControllers();
-            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Continue process... with %d pending deleted controllers\n", dwPendingDeletedControllers));
+            if (bUsingOutOfProcEvents)
+            {
+                DWORD dwPendingDeletedControllers = DebuggerController::GetPendingDeletedControllers();
+                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Continue process... with %d pending deleted controllers\n", dwPendingDeletedControllers));
 
-            // start counting the number of flares we have sent
-            DebuggerController::SetActiveDispatchedExceptions(dwPendingDeletedControllers);
-            DebuggerController::SetProcessingDetach(TRUE);
+                // start counting the number of flares we have sent
+                DebuggerController::SetDispatchedFlares(0); // resets the count of Debugger::SendSetThreadContextNeeded to zero
+                DebuggerController::SetActiveDispatchedExceptions(dwPendingDeletedControllers); // sets the number of controllers we expect to handle in Debugger::FirstChanceNativeException
+                DebuggerController::SetProcessingDetach(TRUE); // this enables counting the number of queued Debugger::SendSetThreadContextNeeded
+            }
 #endif
 
             // Let the process run free now... there is no debugger to bother it anymore.
@@ -10864,6 +10870,7 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         // wait for all dispatched exceptions to continued so that we can have an accurate count of flares being sent
+        if (DebuggerController::GetProcessingDetach())
         {
             int y = 0;
             LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Waiting for patches to be removed... (%d remaining)\n", DebuggerController::GetActiveDispatchedExceptions()));

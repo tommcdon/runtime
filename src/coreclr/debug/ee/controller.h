@@ -1163,6 +1163,7 @@ class DebuggerController
     static DWORD SetActiveDispatchedExceptions(DWORD dwActiveDispatchedExceptions) { LIMITED_METHOD_CONTRACT; return g_dwActiveDispatchedExceptions = dwActiveDispatchedExceptions; }
     static DWORD GetPendingDeletedControllers();
     static DWORD GetDispatchedFlares() {LIMITED_METHOD_DAC_CONTRACT;  return g_dwDispatchedFlares; }
+    static DWORD SetDispatchedFlares(DWORD dwDispatchedFlares) { LIMITED_METHOD_DAC_CONTRACT; return g_dwDispatchedFlares = dwDispatchedFlares; }
 
 #if defined(_DEBUG)
     // Debug check that we only have 1 thread-starter per thread.
