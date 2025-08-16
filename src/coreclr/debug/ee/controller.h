@@ -1083,8 +1083,7 @@ class DebuggerController
                                         Thread *thread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                         ,
-                                        DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL,
-                                        bool *fIsProcessingExceptionEvent = NULL
+                                        DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL
 #endif
                                         );
 
@@ -1159,7 +1158,10 @@ class DebuggerController
     static int GetTotalMethodEnter() {LIMITED_METHOD_CONTRACT;  return g_cTotalMethodEnter; }
 
     static BOOL GetProcessingDetach() {LIMITED_METHOD_CONTRACT;  return g_fProcessingDetach; }
+    static void SetProcessingDetach(BOOL fProcessingDetach) {LIMITED_METHOD_CONTRACT;  g_fProcessingDetach = fProcessingDetach; }   
     static DWORD GetActiveDispatchedExceptions() {LIMITED_METHOD_CONTRACT;  return g_dwActiveDispatchedExceptions; }
+    static DWORD SetActiveDispatchedExceptions(DWORD dwActiveDispatchedExceptions) { LIMITED_METHOD_CONTRACT; return g_dwActiveDispatchedExceptions = dwActiveDispatchedExceptions; }
+    static DWORD GetPendingDeletedControllers();
     static DWORD GetDispatchedFlares() {LIMITED_METHOD_DAC_CONTRACT;  return g_dwDispatchedFlares; }
 
 #if defined(_DEBUG)

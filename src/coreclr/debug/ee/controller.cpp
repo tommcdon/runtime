@@ -794,8 +794,6 @@ DebuggerControllerPatch *DebuggerPatchTable::AddPatchForAddress(DebuggerControll
     else
         patch->patchId = patchId;
 
-    printf("[AddPatchForAddress] Add Patch: DebuggerController:%p requested_patchId:%0zx patchId:0x%zx added\n", patch->controller, patchId, patch->patchId);
-
     patch->dji = dji;
     patch->kind = kind;
 
@@ -968,10 +966,7 @@ int DebuggerPatchTable::GetNumberOfPatches()
             dcp = (DebuggerControllerPatch*)&(((DebuggerControllerPatch *)m_pcEntries)[i]);
 
             if (dcp->IsActivated() || !dcp->IsFree())
-            {
-                printf("Patch: DebuggerControllerPatch:%p DebuggerController:%p patchId:0x%zx IsActivated:%d IsFree:%d opcode:%zx\n", dcp, dcp->controller, dcp->patchId, dcp->IsActivated(), dcp->IsFree(), dcp->opcode);
                 total++;
-            }
         }
     }
     return total;
@@ -1183,8 +1178,6 @@ DebuggerController::~DebuggerController()
 
     _ASSERTE(m_eventQueuedCount == 0);
 
-    printf("DebuggerController destroyed: %p, calling DisableAll\n", this);
-
     DisableAll();
 
     //
@@ -1237,7 +1230,6 @@ void DebuggerController::DebuggerDetachClean()
 void DebuggerController::AddRefPatch(DebuggerControllerPatch *patch)
 {
     LOG((LF_CORDB, LL_INFO10000, "DC::ARP: patchId:0x%zx\n", patch->patchId));
-    printf("Add Ref Patch: DebuggerController:%p patchId:0x%zx added, activating\n", patch->controller, patch->patchId);
     patch->refCount++;
 }
 
@@ -1248,7 +1240,6 @@ void DebuggerController::ReleasePatch(DebuggerControllerPatch *patch)
     if (patch->refCount == 0)
     {
         LOG((LF_CORDB, LL_INFO10000, "DC::RP: patchId:0x%zx deleted, deactivating\n", patch->patchId));
-        printf("Release Patch: DebuggerController:%p patchId:0x%zx deleted, deactivating\n", patch->controller, patch->patchId);
         DeactivatePatch(patch);
         GetPatchTable()->RemovePatch(patch);
     }
@@ -1353,13 +1344,11 @@ void DebuggerController::Dequeue()
 
     LOG((LF_CORDB, LL_INFO10000, "DC::Deq DC: %p m_eventQueuedCount at 0x%x\n",
     this, m_eventQueuedCount));
-    printf("DC::Deq DC: %p m_eventQueuedCount at 0x%x\n", this, m_eventQueuedCount);
     if (--m_eventQueuedCount == 0)
     {
         if (m_deleted)
         {
             TRACE_FREE(this);
-            printf("DC::Deq DC: %p m_eventQueuedCount at 0x%x -- call DeleteInteropSafe\n", this, m_eventQueuedCount);
             DeleteInteropSafe(this);
         }
     }
@@ -4377,6 +4366,27 @@ void DebuggerController::TriggerExternalMethodFixup(PCODE target)
     _ASSERTE(!"This code should be unreachable. If your controller enables ExternalMethodFixup events, it should also override this callback to do something useful when the event arrives.");
 }
 
+/*static*/ DWORD DebuggerController::GetPendingDeletedControllers()
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+    }
+    CONTRACTL_END;
+    
+    ControllerLockHolder lockController;
+    DWORD dwTotalPendingDeletedControllers = 0;
+
+    for (DebuggerController* p = g_controllers; p != NULL; p = p->m_next)
+    {
+        if (p->IsDeleted())
+            dwTotalPendingDeletedControllers++;
+    }
+
+    return dwTotalPendingDeletedControllers;
+}
+
 
 #ifdef _DEBUG
 // See comment in DispatchNativeException
@@ -4409,8 +4419,7 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
                                                  Thread *pCurThread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                                  ,
-                                                 DebuggerSteppingInfo *pDebuggerSteppingInfo,
-                                                 bool *fIsProcessingExceptionEvent
+                                                 DebuggerSteppingInfo *pDebuggerSteppingInfo
 #endif
                                                  )
 {
@@ -4504,9 +4513,8 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         }
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        if (fIsProcessingExceptionEvent != NULL)
+        if (DebuggerController::GetProcessingDetach())
         {
-            *fIsProcessingExceptionEvent = true;
             InterlockedIncrement(&DebuggerController::g_dwActiveDispatchedExceptions);
         }
 #endif
