@@ -10823,77 +10823,79 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
         }
 
-        bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
-#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        if (bUsingOutOfProcEvents)
-#endif
-        // Send the detach result back to the RS.
         {
-            DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
-            InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
+            bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+            if (!bUsingOutOfProcEvents)
+#endif
+            // Send the detach result back to the RS.
+            {
+                DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
+                InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
 
-            pResult->DetachFromProcessResult.dwDispatchedFlares = 0; // unused if OUT_OF_PROCESS_SETTHREADCONTEXT is disabled
-            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
+                pResult->DetachFromProcessResult.dwDispatchedFlares = 0; // unused if OUT_OF_PROCESS_SETTHREADCONTEXT is disabled
+                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
 
-            m_pRCThread->SendIPCReply();
-        }
+                m_pRCThread->SendIPCReply();
+            }
         
-        if (this->m_isBlockedOnGarbageCollectionEvent)
-        {
-            this->m_stopped = FALSE;
-            SetEvent(this->GetGarbageCollectionBlockerEvent());
-        }
-        else
-        {
-#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-            if (bUsingOutOfProcEvents)
+            if (this->m_isBlockedOnGarbageCollectionEvent)
             {
-                DWORD dwPendingDeletedControllers = DebuggerController::GetPendingDeletedControllers();
-                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Continue process... with %d pending deleted controllers\n", dwPendingDeletedControllers));
-
-                // start counting the number of flares we have sent
-                DebuggerController::SetDispatchedFlares(0); // resets the count of Debugger::SendSetThreadContextNeeded to zero
-                DebuggerController::SetActiveDispatchedExceptions(dwPendingDeletedControllers); // sets the number of controllers we expect to handle in Debugger::FirstChanceNativeException
-                DebuggerController::SetProcessingDetach(TRUE); // this enables counting the number of queued Debugger::SendSetThreadContextNeeded
+                this->m_stopped = FALSE;
+                SetEvent(this->GetGarbageCollectionBlockerEvent());
             }
+            else
+            {
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+                if (bUsingOutOfProcEvents)
+                {
+                    DWORD dwPendingDeletedControllers = DebuggerController::GetPendingDeletedControllers();
+                    LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Continue process... with %d pending deleted controllers\n", dwPendingDeletedControllers));
+
+                    // start counting the number of flares we have sent
+                    DebuggerController::SetDispatchedFlares(0); // resets the count of Debugger::SendSetThreadContextNeeded to zero
+                    DebuggerController::SetActiveDispatchedExceptions(dwPendingDeletedControllers); // sets the number of controllers we expect to handle in Debugger::FirstChanceNativeException
+                    DebuggerController::SetProcessingDetach(TRUE); // this enables counting the number of queued Debugger::SendSetThreadContextNeeded
+                }
 #endif
 
-            // Let the process run free now... there is no debugger to bother it anymore.
-            fContinue = ResumeThreads(pEvent->vmAppDomain.GetRawPtr());
+                // Let the process run free now... there is no debugger to bother it anymore.
+                fContinue = ResumeThreads(pEvent->vmAppDomain.GetRawPtr());
 
-            //
-            // Go ahead and release the TSL now that we're continuing. This ensures that we've held
-            // the thread store lock the entire time the Runtime was just stopped.
-            //
-            ThreadSuspend::UnlockThreadStore(FALSE, ThreadSuspend::SUSPEND_FOR_DEBUGGER);
-        }
+                //
+                // Go ahead and release the TSL now that we're continuing. This ensures that we've held
+                // the thread store lock the entire time the Runtime was just stopped.
+                //
+                ThreadSuspend::UnlockThreadStore(FALSE, ThreadSuspend::SUSPEND_FOR_DEBUGGER);
+            }
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        // wait for all dispatched exceptions to continued so that we can have an accurate count of flares being sent
-        if (DebuggerController::GetProcessingDetach())
-        {
-            int y = 0;
-            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Waiting for patches to be removed... (%d remaining)\n", DebuggerController::GetActiveDispatchedExceptions()));
-            while (DebuggerController::GetActiveDispatchedExceptions() > 0 && y++ < 50000)
+            // wait for all dispatched exceptions to continued so that we can have an accurate count of flares being sent
+            if (DebuggerController::GetProcessingDetach())
             {
-                Sleep(100);
+                int y = 0;
+                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE Waiting for patches to be removed... (%d remaining)\n", DebuggerController::GetActiveDispatchedExceptions()));
+                while (DebuggerController::GetActiveDispatchedExceptions() > 0 && y++ < 50000)
+                {
+                    Sleep(100);
+                }
             }
-        }
 
-        // We are done processing pending deleted controllers and all flares that will be sent have been accounted for
-        DebuggerController::SetProcessingDetach(FALSE);
+            // We are done processing pending deleted controllers and all flares that will be sent have been accounted for
+            DebuggerController::SetProcessingDetach(FALSE);
 
-        // Send the detach result back to the RS.
-        {
-            DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
-            InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
+            // Send the detach result back to the RS.
+            {
+                DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
+                InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
 
-            pResult->DetachFromProcessResult.dwDispatchedFlares = DebuggerController::GetDispatchedFlares();
-            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
+                pResult->DetachFromProcessResult.dwDispatchedFlares = DebuggerController::GetDispatchedFlares();
+                LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE dwDispatchedFlares=0x%x\n", pResult->DetachFromProcessResult.dwDispatchedFlares));
 
-            m_pRCThread->SendIPCReply();
-        }
+                m_pRCThread->SendIPCReply();
+            }
 #endif
+        }
         
         break;
 
