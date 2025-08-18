@@ -5490,6 +5490,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
             _ASSERTE(cDispatchedFlares > 0);
             int cActiveDispatchedExceptions = DebuggerController::DecrementActiveDispatchedExceptions();
             printf("Processing event: EventCode=%8.8X cActiveDispatchedExceptions=%d cDispatchedFlares=%d\n", exception->ExceptionCode, cActiveDispatchedExceptions, cDispatchedFlares);
+            fflush(stdout);
             if (cActiveDispatchedExceptions == 0)
             {
                 LOG((LF_CORDB, LL_INFO1000000, "D::FCNE Sending last exception event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", cDispatchedFlares, cActiveDispatchedExceptions));
@@ -9010,6 +9011,14 @@ void Debugger::ThreadCreated(Thread* pRuntimeThread)
         CORDBDebuggerSetUnrecoverableWin32Error(this, 0, false);
         return;
     }
+    
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Debugger::ThreadCreated!!!!!!\n");
+        fflush(stdout);
+        int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+        LOG((LF_CORDB, LL_INFO10000, "DebuggerThreadStarter allocated, incrementing ActiveDispatchedExceptions - cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions));
+    }
 
     starter->EnableTraceCall(LEAF_MOST_FRAME);
 }
@@ -10529,6 +10538,13 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
                 }
                 TRACE_ALLOC(pStepper);
 
+                if (DebuggerController::GetProcessingDetach())
+                {
+                    printf("Step!\n");
+                    int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+                    LOG((LF_CORDB, LL_INFO10000, "DebuggerThreadStarter allocated, incrementing ActiveDispatchedExceptions - cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions));
+                }
+
                 unsigned int cRanges = pEvent->StepData.totalRangeCount;
 
                 _ASSERTE(cRanges == 0 || ((cRanges > 0) && (cRanges == pEvent->StepData.rangeCount)));
@@ -10830,6 +10846,8 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
 
     case DB_IPCE_DETACH_FROM_PROCESS:
         LOG((LF_CORDB, LL_INFO10000, "Detaching from process!\n"));
+        printf("Detaching from process!\n");
+        fflush(stdout);
 
         // Delete all controllers (remove patches etc.)
         DebuggerController::DeleteAllControllers();

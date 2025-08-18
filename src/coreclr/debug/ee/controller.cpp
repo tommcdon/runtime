@@ -1101,6 +1101,7 @@ DebuggerController::DebuggerController(Thread * pThread, AppDomain * pAppDomain)
     m_exceptionHook(false),
     m_traceCall(0),
     m_traceCallFP(ROOT_MOST_FRAME),
+    m_isDebuggerPatchSkip(false),
     m_unwindFP(LEAF_MOST_FRAME),
     m_eventQueuedCount(0),
     m_deleted(false),
@@ -1156,8 +1157,15 @@ void DebuggerController::DeleteAllControllers()
     while (pDebuggerController != NULL)
     {
         pNextDebuggerController = pDebuggerController->m_next;
-        pDebuggerController->DebuggerDetachClean();
-        pDebuggerController->Delete();
+        if (!pDebuggerController->DebuggerDetachClean())
+        {
+            pDebuggerController->Delete();
+            {
+                int numActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+                printf("DebuggerController::DeleteAllControllers of an active DebuggerPatchSkip during detach, incrementing active dispatched exceptions!! %d\n", numActiveDispatchedExceptions);
+                fflush(stdout);
+            }
+        }
         pDebuggerController = pNextDebuggerController;
     }
 }
@@ -1219,9 +1227,10 @@ void DebuggerController::Delete()
     }
 }
 
-void DebuggerController::DebuggerDetachClean()
+bool DebuggerController::DebuggerDetachClean()
 {
     //do nothing here
+    return true;
 }
 
 //static
@@ -2699,8 +2708,11 @@ DebuggerPatchSkip *DebuggerController::ActivatePatchSkip(Thread *thread,
         // !!! check result
         LOG((LF_CORDB,LL_INFO10000, "DC::APS: About to skip from PC=0x%p\n", PC));
         skip = new (interopsafe) DebuggerPatchSkip(thread, patch);
+        printf("Allocate new DebuggerPatchSkip! %p\n", skip);
+        fflush(stdout);
         if (DebuggerController::GetProcessingDetach())
         {
+            DebuggerController::IncrementActiveDispatchedExceptions();
             int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
             printf("Allocate new DebuggerPatchSkip during detach!! cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions);
             fflush(stdout);
@@ -3461,7 +3473,7 @@ void DebuggerController::EnableExceptionHook()
     m_exceptionHook = true;
     if (DebuggerController::GetProcessingDetach())
     {
-       printf("EnableExceptionHook called while Processing detach m_deleted=%d\n", this->m_deleted);
+       printf("EnableExceptionHook called while Processing detach m_deleted=%d %p\n", this->m_deleted, this);
        fflush(stdout);
     }
 }
@@ -4708,6 +4720,8 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
     LOG((LF_CORDB, LL_INFO10000,
          "DPS::DPS: Patch skip 0x%p\n", patch->address));
 
+    m_isDebuggerPatchSkip = true;
+
     // On ARM the single-step emulation already utilizes a per-thread execution buffer similar to the scheme
     // below. As a result we can skip most of the instruction parsing logic that's instead internalized into
     // the single-step emulation itself.
@@ -4818,16 +4832,19 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
 
 DebuggerPatchSkip::~DebuggerPatchSkip()
 {
+    printf("Deleting DebuggerPatchSkip! %p  m_exceptionHook=%d\n", this, m_exceptionHook);
+    fflush(stdout);
+
 #ifndef FEATURE_EMULATE_SINGLESTEP
     _ASSERTE(m_pSharedPatchBypassBuffer);
     m_pSharedPatchBypassBuffer->Release();
 #endif // !FEATURE_EMULATE_SINGLESTEP
 }
 
-void DebuggerPatchSkip::DebuggerDetachClean()
+bool DebuggerPatchSkip::DebuggerDetachClean()
 {
 // Since for ARM/ARM64 SharedPatchBypassBuffer isn't existed, we don't have to anything here.
-#ifndef !defined(FEATURE_EMULATE_SINGLESTEP)
+#ifndef FEATURE_EMULATE_SINGLESTEP
    // Fix for Bug 1176448
    // When a debugger is detaching from the debuggee, we need to move the IP if it is pointing
    // somewhere in PatchBypassBuffer.All managed threads are suspended during detach, so changing
@@ -4848,7 +4865,12 @@ void DebuggerPatchSkip::DebuggerDetachClean()
     bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
     if (bUsingOutOfProcEvents)
     {
-        return;
+        if (DebuggerController::GetProcessingDetach())
+        {
+            printf("DebuggerDetachClean skipped for DebuggerPatchSkip!\n");
+            fflush(stdout);
+        }
+        return false;
     }
 #endif
 
@@ -4868,6 +4890,8 @@ void DebuggerPatchSkip::DebuggerDetachClean()
 
     printf("DebuggerPatchSkip::DebuggerDetachClean\n");
     fflush(stdout);
+
+    return true;
 #endif // !FEATURE_EMULATE_SINGLESTEP
 }
 
@@ -8528,6 +8552,11 @@ TP_RESULT DebuggerThreadStarter::TriggerPatch(DebuggerControllerPatch *patch,
     BOOL managed = patch->IsManagedPatch();
 
     LOG((LF_CORDB,LL_INFO1000, "DebuggerThreadStarter::TriggerPatch for thread 0x%x\n", Debugger::GetThreadIdHelper(thread)));
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Allocate new DebuggerThreadStarter during detach!!\n");
+        fflush(stdout);
+    }
 
     if (module == NULL && managed)
     {
@@ -8593,6 +8622,11 @@ TP_RESULT DebuggerThreadStarter::TriggerPatch(DebuggerControllerPatch *patch,
 void DebuggerThreadStarter::TriggerTraceCall(Thread *thread, const BYTE *ip)
 {
     LOG((LF_CORDB, LL_EVERYTHING, "DTS::TTC called\n"));
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("DebuggerThreadStarter::TriggerTraceCall during detach!!\n");
+        fflush(stdout);
+    }
 #ifdef DEBUGGING_SUPPORTED
     if (AppDomain::GetCurrentDomain()->IsDebuggerAttached())
     {
@@ -8622,6 +8656,12 @@ bool DebuggerThreadStarter::SendEvent(Thread *thread, bool fIpChanged)
     _ASSERTE(!fIpChanged);
 
     LOG((LF_CORDB, LL_INFO10000, "DTS::SE: in DebuggerThreadStarter's SendEvent\n"));
+
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("DebuggerThreadStarter::SendEvent -> calling  g_pDebugger->ThreadStarted during detach!!\n");
+        fflush(stdout);
+    }
 
     // Send the thread started event.
     g_pDebugger->ThreadStarted(thread);
