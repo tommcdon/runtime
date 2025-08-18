@@ -5456,8 +5456,8 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     if (DebuggerController::GetProcessingDetach())
     {
-        InterlockedIncrement(&DebuggerController::g_cActiveDispatchedExceptions);
-        printf("Unexpected dispatched exception!\n");
+        int cActiveDispatchedExceptions = DebuggerController::g_cActiveDispatchedExceptions;//(int)InterlockedIncrement(&DebuggerController::g_cActiveDispatchedExceptions);
+        printf("NEW EVENT: %8.8X, cActiveDispatchedExceptions = %d, isDetach = %d!\n", exception->ExceptionCode, cActiveDispatchedExceptions, DebuggerController::GetProcessingDetach());
         fflush(stdout);
     }
 #endif
@@ -5486,20 +5486,23 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     {
         if (DebuggerController::GetProcessingDetach())
         {
-            int cDispatchedFlares = (int)InterlockedIncrement(&DebuggerController::g_cDispatchedFlares);
+            int cDispatchedFlares = DebuggerController::IncrementDispatchedFlares();
             _ASSERTE(cDispatchedFlares > 0);
-            int cActiveDispatchedExceptions = (int)InterlockedDecrement(&DebuggerController::g_cActiveDispatchedExceptions);
+            int cActiveDispatchedExceptions = DebuggerController::DecrementActiveDispatchedExceptions();
+            printf("Processing event: EventCode=%8.8X cActiveDispatchedExceptions=%d cDispatchedFlares=%d\n", exception->ExceptionCode, cActiveDispatchedExceptions, cDispatchedFlares);
             if (cActiveDispatchedExceptions == 0)
             {
                 LOG((LF_CORDB, LL_INFO1000000, "D::FCNE Sending last exception event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", cDispatchedFlares, cActiveDispatchedExceptions));
                 {
+                    DebuggerController::SetProcessingDetach(false);
+
                     DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
                     InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
 
                     pResult->DetachFromProcessResult.cDispatchedFlares = cDispatchedFlares;
                     LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE cDispatchedFlares=%d\n", pResult->DetachFromProcessResult.cDispatchedFlares));
 
-                    printf("Not so easy detach\n");
+                    printf("***Not so easy detach complete*** with cDispatchedFlares=%d, sending reply\n", cDispatchedFlares);
                     fflush(stdout);
                     m_pRCThread->SendIPCReply();
                 }
@@ -5508,12 +5511,14 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
             {
                 LOG((LF_CORDB, LL_INFO1000000, "D::FCNE ERROR: g_cActiveDispatchedExceptions went negative! g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", cDispatchedFlares, cActiveDispatchedExceptions));
                 InterlockedDecrement(&DebuggerController::g_cDispatchedFlares);
-                printf("Unexpected dispatched exception count!!!\n");
+                printf("******* !!!!!!!!!!!!! Unexpected dispatched exception count!!! ExceptionCode=%8.8X\n", exception->ExceptionCode);
                 fflush(stdout);
             }
             else
             {
                 LOG((LF_CORDB, LL_INFO1000000, "D::FCNE Processing exception event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", DebuggerController::g_cDispatchedFlares.LoadWithoutBarrier(), DebuggerController::g_cActiveDispatchedExceptions.LoadWithoutBarrier()));
+                printf("Processing exception event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d ExceptionCode=%8.8X\n", DebuggerController::g_cDispatchedFlares.LoadWithoutBarrier(), DebuggerController::g_cActiveDispatchedExceptions.LoadWithoutBarrier(), exception->ExceptionCode);
+                fflush(stdout);
             }
             _ASSERTE(cActiveDispatchedExceptions >= 0);
         }
@@ -5523,7 +5528,23 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     }
     else if (DebuggerController::GetProcessingDetach())
     {
-        InterlockedDecrement(&DebuggerController::g_cActiveDispatchedExceptions);
+        int cActiveDispatchedExceptions = DebuggerController::DecrementActiveDispatchedExceptions();
+        printf("Skipping event as we were told to ignore it cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions);
+        fflush(stdout);
+        if (cActiveDispatchedExceptions == 0)
+        {
+            DebuggerController::SetProcessingDetach(false);
+            DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
+            InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);
+
+            int cDispatchedFlares = (int)DebuggerController::g_cDispatchedFlares;
+            pResult->DetachFromProcessResult.cDispatchedFlares = cDispatchedFlares;
+            LOG((LF_CORDB, LL_INFO1000000, "D::HIPCE cDispatchedFlares=%d\n", pResult->DetachFromProcessResult.cDispatchedFlares));
+
+            printf("***Not so easy detach complete*** with cDispatchedFlares=%d, sending reply\n", cDispatchedFlares);
+            fflush(stdout);
+            m_pRCThread->SendIPCReply();
+        }
     }
 #endif
     return retVal;
@@ -10860,8 +10881,8 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         }
 
         {
-            bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+            bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
             if (!bUsingOutOfProcEvents)
 #endif
             // Send the detach result back to the RS.
@@ -10891,6 +10912,9 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
                     // start counting the number of flares we have sent
                     DebuggerController::SetDispatchedFlares(0); // resets the count of Debugger::SendSetThreadContextNeeded to zero
                     DebuggerController::SetActiveDispatchedExceptions(cNumberOfControllers); // sets the number of controllers we expect to handle in Debugger::FirstChanceNativeException
+
+                    printf("Out of proc detach initiated, waiting for %d controllers to finish...\n", cNumberOfControllers);
+                    fflush(stdout);
 
                     // Send the detach result back to the RS.
                     if (cNumberOfControllers == 0)

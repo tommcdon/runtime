@@ -1161,9 +1161,12 @@ class DebuggerController
     static void SetProcessingDetach(bool fProcessingDetach) {LIMITED_METHOD_CONTRACT;  g_fProcessingDetach = fProcessingDetach; }
     static int GetActiveDispatchedExceptions() {LIMITED_METHOD_CONTRACT;  return g_cActiveDispatchedExceptions; }
     static void SetActiveDispatchedExceptions(int cActiveDispatchedExceptions) { LIMITED_METHOD_CONTRACT;  g_cActiveDispatchedExceptions = cActiveDispatchedExceptions; }
+    static int IncrementActiveDispatchedExceptions() { LIMITED_METHOD_CONTRACT;  return (int)InterlockedIncrement(&g_cActiveDispatchedExceptions); }
+    static int DecrementActiveDispatchedExceptions() { LIMITED_METHOD_CONTRACT;  return (int)InterlockedDecrement(&g_cActiveDispatchedExceptions); }
     static int GetPendingDeletedControllers();
     static int GetDispatchedFlares() {LIMITED_METHOD_DAC_CONTRACT;  return g_cDispatchedFlares; }
     static void SetDispatchedFlares(int cDispatchedFlares) { LIMITED_METHOD_DAC_CONTRACT; g_cDispatchedFlares = cDispatchedFlares; }
+    static int IncrementDispatchedFlares() { LIMITED_METHOD_DAC_CONTRACT;  return (int)InterlockedIncrement(&g_cDispatchedFlares); }
 
 #if defined(_DEBUG)
     // Debug check that we only have 1 thread-starter per thread.
@@ -2098,31 +2101,31 @@ public:
         LOG((LF_CORDB, LL_INFO100000,"DCQ::dcqE\n"));
 
         _ASSERTE( dc != NULL );
-
+        
         if (m_dwEventsCount == m_dwEventsAlloc)
         {
             if (m_events == NULL)
-                m_dwNewEventsAlloc = EVENTS_INIT_ALLOC;
+            m_dwNewEventsAlloc = EVENTS_INIT_ALLOC;
             else
-                m_dwNewEventsAlloc = m_dwEventsAlloc<<1;
-
+            m_dwNewEventsAlloc = m_dwEventsAlloc<<1;
+            
             DebuggerController **newEvents = new (nothrow) DebuggerController * [m_dwNewEventsAlloc];
-
+            
             if (newEvents == NULL)
-                return FALSE;
-
+            return FALSE;
+            
             if (m_events != NULL)
-                // The final argument to CopyMemory cannot over/underflow.
-                // The amount of memory copied has a strict upper bound of the size of the array,
-                // which cannot exceed the pointer size for the platform.
-               CopyMemory(newEvents, m_events, (SIZE_T)sizeof(*m_events) * (SIZE_T)m_dwEventsAlloc);
-
+            // The final argument to CopyMemory cannot over/underflow.
+            // The amount of memory copied has a strict upper bound of the size of the array,
+            // which cannot exceed the pointer size for the platform.
+            CopyMemory(newEvents, m_events, (SIZE_T)sizeof(*m_events) * (SIZE_T)m_dwEventsAlloc);
+            
             m_events = newEvents;
             m_dwEventsAlloc = m_dwNewEventsAlloc;
         }
-
+        
         dc->Enqueue();
-
+        
         // Make sure to place high priority patches into
         // the event list first. This ensures, for
         // example, that thread starts fire before
@@ -2133,7 +2136,7 @@ public:
             for (i = 0; i < m_dwEventsCount; i++)
             {
                 _ASSERTE(m_events[i] != NULL);
-
+                
                 if (m_events[i]->GetDCType() > dc->GetDCType())
                 {
                     // The final argument to CopyMemory cannot over/underflow.
@@ -2144,15 +2147,20 @@ public:
                     break;
                 }
             }
-
+            
             if (i == m_dwEventsCount)
-                m_events[m_dwEventsCount] = dc;
-
+            m_events[m_dwEventsCount] = dc;
+            
             m_dwEventsCount++;
         }
         else
-            m_events[m_dwEventsCount++] = dc;
+        m_events[m_dwEventsCount++] = dc;
 
+        // if (DebuggerController::GetProcessingDetach())
+        // {
+        //     int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+        //     //printf("!!!!DCQ::dcqE during detach!! cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions);
+        // }
         return TRUE;
     }
 
@@ -2191,18 +2199,24 @@ public:
             "0x%x of 0x%x\n", dw, m_dwEventsCount));
 
         _ASSERTE(dw < m_dwEventsCount);
-
+        
         m_events[dw]->Dequeue();
-
+        
         // Note that if we're taking the element off the end (m_dwEventsCount-1),
         // the following will no-op.
         // The final argument to MoveMemory cannot over/underflow.
         // The amount of memory copied has a strict upper bound of the size of the array,
         // which cannot exceed the pointer size for the platform.
         MoveMemory(&(m_events[dw]),
-                   &(m_events[dw + 1]),
-                   (SIZE_T)sizeof(DebuggerController *) * (SIZE_T)(m_dwEventsCount - dw - 1));
+        &(m_events[dw + 1]),
+        (SIZE_T)sizeof(DebuggerController *) * (SIZE_T)(m_dwEventsCount - dw - 1));
         m_dwEventsCount--;
+
+        // if (DebuggerController::GetProcessingDetach())
+        // {
+        //     int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+        //     //printf("!!!!DCQ::dcqE during detach!! cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions);
+        // }
     }
 };
 

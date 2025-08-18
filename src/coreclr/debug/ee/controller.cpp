@@ -2699,6 +2699,12 @@ DebuggerPatchSkip *DebuggerController::ActivatePatchSkip(Thread *thread,
         // !!! check result
         LOG((LF_CORDB,LL_INFO10000, "DC::APS: About to skip from PC=0x%p\n", PC));
         skip = new (interopsafe) DebuggerPatchSkip(thread, patch);
+        if (DebuggerController::GetProcessingDetach())
+        {
+            int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+            printf("Allocate new DebuggerPatchSkip during detach!! cActiveDispatchedExceptions=%d\n", cActiveDispatchedExceptions);
+            fflush(stdout);
+        }
         TRACE_ALLOC(skip);
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
@@ -3453,6 +3459,11 @@ void DebuggerController::EnableExceptionHook()
     ControllerLockHolder lockController;
 
     m_exceptionHook = true;
+    if (DebuggerController::GetProcessingDetach())
+    {
+       printf("EnableExceptionHook called while Processing detach m_deleted=%d\n", this->m_deleted);
+       fflush(stdout);
+    }
 }
 
 void DebuggerController::DisableExceptionHook()
@@ -3536,6 +3547,9 @@ BOOL DebuggerController::DispatchExceptionHook(Thread *thread,
     }
 
     LOG((LF_CORDB, LL_INFO1000, "DC::DEH: returning 0x%x!\n", tpr));
+
+    printf("DispatchExceptionHook return %d\n", tpr != TPR_IGNORE_AND_STOP);
+    fflush(stdout);
 
     return (tpr != TPR_IGNORE_AND_STOP);
 }
@@ -4515,13 +4529,13 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
             return false;
         }
 
-#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        if (DebuggerController::GetProcessingDetach())
-        {
-            InterlockedIncrement(&DebuggerController::g_cActiveDispatchedExceptions);
-            printf("Unexpected additional callback into VEH during detach!!\n");
-        }
-#endif
+// #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+//         if (DebuggerController::GetProcessingDetach())
+//         {
+//             InterlockedIncrement(&DebuggerController::g_cActiveDispatchedExceptions);
+//             printf("Unexpected additional callback into VEH during detach!!\n");
+//         }
+// #endif
 
         FireEtwDebugExceptionProcessingStart();
 
@@ -4813,7 +4827,7 @@ DebuggerPatchSkip::~DebuggerPatchSkip()
 void DebuggerPatchSkip::DebuggerDetachClean()
 {
 // Since for ARM/ARM64 SharedPatchBypassBuffer isn't existed, we don't have to anything here.
-#ifndef FEATURE_EMULATE_SINGLESTEP
+#ifndef !defined(FEATURE_EMULATE_SINGLESTEP)
    // Fix for Bug 1176448
    // When a debugger is detaching from the debuggee, we need to move the IP if it is pointing
    // somewhere in PatchBypassBuffer.All managed threads are suspended during detach, so changing
@@ -4829,6 +4843,15 @@ void DebuggerPatchSkip::DebuggerDetachClean()
    // 2. Create a "stack walking" implementation for native code and use it to get the current IP and
    // set the IP to the right place.
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    // during detach we need to ensure the context is only being updated out of process
+    bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
+    if (bUsingOutOfProcEvents)
+    {
+        return;
+    }
+#endif
+
     Thread *thread = GetThreadNULLOk();
     if (thread != NULL)
     {
@@ -4842,6 +4865,9 @@ void DebuggerPatchSkip::DebuggerDetachClean()
             SetIP(context, (PCODE)((BYTE *)GetIP(context) - (patchBypass - (BYTE *)m_address)));
         }
     }
+
+    printf("DebuggerPatchSkip::DebuggerDetachClean\n");
+    fflush(stdout);
 #endif // !FEATURE_EMULATE_SINGLESTEP
 }
 
@@ -4876,6 +4902,10 @@ TP_RESULT DebuggerPatchSkip::TriggerPatch(DebuggerControllerPatch *patch,
     DisableAll();
     EnableExceptionHook();
     EnableSingleStep(); //gets us back to where we want.
+
+    printf("DebuggerPatchSkip::TriggerPatch returning TPR_IGNORE\n");
+    fflush(stdout);
+
     return TPR_IGNORE; // don't actually want to stop here....
 }
 
@@ -4965,6 +4995,11 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
             {
                 if (!IsInPlaceSingleStep())
                 {
+                    if (DebuggerController::GetProcessingDetach())
+                    {
+                        printf("DebuggerPatchSkip::TriggerExceptionHook: Instruction bypass\n");
+                        fflush(stdout);
+                    }
                     LOG((LF_CORDB, LL_INFO10000, "Bypass instruction redirected because still in skip area.\n"
                         "\tm_fIsCall = %s, patchBypass = %p, m_address = %p\n",
                         (m_instrAttrib.m_fIsCall ? "true" : "false"), patchBypass, m_address));
@@ -4984,6 +5019,9 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
                 {
                     LOG((LF_CORDB, LL_INFO10000, "Bypass instruction redirected because we landed in managed or stub code\n"));
                     SetIP(context, newIP);
+
+                    printf("DebuggerPatchSkip::TriggerExceptionHook: Bypass instruction redirected because we landed in managed or stub code 0x%8.8X\n", exception->ExceptionCode);
+                    fflush(stdout);
                 }
 
                 // If we have no idea where things have gone, then we assume that the IP needs no adjusting (which
@@ -4992,6 +5030,8 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
                 else
                 {
                     LOG((LF_CORDB, LL_INFO10000, "Bypass instruction not redirected because we're not in managed or stub code.\n"));
+                    printf("DebuggerPatchSkip::TriggerExceptionHook: Bypass instruction not redirected because we're not in managed or stub code\n");
+                    fflush(stdout);
                     return (TPR_IGNORE_AND_STOP);
                 }
             }
@@ -5000,6 +5040,9 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
         {
             LOG((LF_CORDB, LL_INFO10000, "Bypass instruction redirected because it wasn't a single step exception.\n"));
             SetIP(context, (PCODE)((BYTE *)GetIP(context) - (patchBypass - (BYTE *)m_address)));
+
+            printf("DebuggerPatchSkip::TriggerExceptionHook: Bypass instruction redirected because it wasn't a single step exception %8.8X.\n", exception->ExceptionCode);
+            fflush(stdout);
         }
 
         LOG((LF_CORDB, LL_ALWAYS, "DPS::TEH: IP now at %p\n", GetIP(context)));
@@ -5022,6 +5065,9 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
     if (!IsSingleStep(exception->ExceptionCode))
     {
         Delete();
+
+        printf("DebuggerPatchSkip::TriggerExceptionHook: Mark for deletion\n");
+        fflush(stdout);
     }
 
     DisableExceptionHook();
@@ -5079,6 +5125,8 @@ bool DebuggerPatchSkip::TriggerSingleStep(Thread *thread, const BYTE *ip)
 
     TRACE_FREE(this);
     Delete();
+    printf("DebuggerPatchSkip::TriggerSingleStep: Mark for deletion\n");
+    fflush(stdout);
     return false;
 }
 
@@ -5113,6 +5161,12 @@ DebuggerBreakpoint::DebuggerBreakpoint(Module *module,
     {
         _ASSERTE(!native || offset == 0);
         (*pSucceed) = AddILPatch(pAppDomain, module, md, NULL, ilEnCVersion, offset, !native);
+    }
+
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Allocate new DebuggerBreakpoint during detach!!\n");
+        fflush(stdout);
     }
 }
 
@@ -5184,6 +5238,13 @@ DebuggerStepper::DebuggerStepper(Thread *thread,
 #ifdef _DEBUG
     m_fReadyToSend = false;
 #endif
+
+
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Allocate new DebuggerStepper during detach!!\n");
+        fflush(stdout);
+    }
 }
 
 DebuggerStepper::~DebuggerStepper()
@@ -8447,6 +8508,12 @@ DebuggerThreadStarter::DebuggerThreadStarter(Thread *thread)
 #if defined(_DEBUG)
     EnsureUniqueThreadStarter(this);
 #endif
+
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Allocate new DebuggerThreadStarter during detach!!\n");
+        fflush(stdout);
+    }
 }
 
 // TP_RESULT DebuggerThreadStarter::TriggerPatch()   If we're in a
@@ -8791,6 +8858,12 @@ DebuggerFuncEvalComplete::DebuggerFuncEvalComplete(Thread *thread,
 
     // Add an unmanaged patch at the destination.
     AddAndActivateNativePatchForAddress((CORDB_ADDRESS_TYPE*)dest, LEAF_MOST_FRAME, FALSE, TRACE_UNMANAGED);
+
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Allocate new DebuggerFuncEvalComplete during detach!!\n");
+        fflush(stdout);
+    }
 }
 
 TP_RESULT DebuggerFuncEvalComplete::TriggerPatch(DebuggerControllerPatch *patch,
@@ -9162,6 +9235,12 @@ DebuggerContinuableExceptionBreakpoint::DebuggerContinuableExceptionBreakpoint(T
     _ASSERTE( jitInfo != NULL );
     // Add a native patch at the specified native offset, which is where we are going to resume execution.
     AddBindAndActivateNativeManagedPatch(jitInfo->m_nativeCodeVersion.GetMethodDesc(), jitInfo, nativeOffset, LEAF_MOST_FRAME, pAppDomain);
+
+    if (DebuggerController::GetProcessingDetach())
+    {
+        printf("Allocate new DebuggerContinuableExceptionBreakpoint during detach!!\n");
+        fflush(stdout);
+    }
 }
 
 //---------------------------------------------------------------------------------------
