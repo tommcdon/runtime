@@ -1204,6 +1204,7 @@ DebuggerController::~DebuggerController()
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     if (sendDetachComplete && g_pDebugger != NULL)
     {
+        LOG((LF_CORDB, LL_INFO1000, "DC::~DC: Sending DetachComplete\n"));
         g_pDebugger->SendDetachComplete();
     }
 #endif
@@ -4385,27 +4386,40 @@ void DebuggerController::TriggerExternalMethodFixup(PCODE target)
 bool DebuggerController::CanSendDetach(bool fDecrementActiveExceptions)
 {
     bool fCanSendDetach = true;
-#ifdef OUTOF_PROCESS_SETTHREADCONTEXT
-    fCanSendDetach = !g_pDebugInterface->IsOutOfProcessSetContextEnabled();
-    if (fCanSendDetach)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    fCanSendDetach = g_pDebugInterface == NULL || !g_pDebugInterface->IsOutOfProcessSetContextEnabled();
+    if (!fCanSendDetach)
     {
         ControllerLockHolder lockController;
         bool fHasControllers = (g_controllers != NULL);
         int cActiveDispatchedExceptions = fDecrementActiveExceptions ? DebuggerController::DecrementActiveDispatchedExceptions() : DebuggerController::GetActiveDispatchedExceptions();
+#ifdef _DEBUG
+        if (fDecrementActiveExceptions)
+        {
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Decremented Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
+        }
+#endif
+        printf("DebuggerController::CanSendDetach - fHasControllers=%d, cActiveDispatchedExceptions=%d\n",
+               fHasControllers, cActiveDispatchedExceptions);
+        fflush(stdout);
+        LOG((LF_CORDB, LL_INFO10000, "DC::CSD Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
         if (!fHasControllers && cActiveDispatchedExceptions == 0)
         {
-            if (DebuggerController::GetProcessingDetach())
-            {
-                // If we are processing a detach, then signal that we can now send a detach event.
-                DebuggerController::SetProcessingDetach(FALSE);
-                fCanSendDetach = true;
-            }
-            else
-            {
-                // this will cause DC::DNE to respond to this IPC once the queue of pending controllers has been processed
-                DebuggerController::SetProcessingDetach(TRUE);
-                fCanSendDetach = false;
-            }
+            printf("DebuggerController::CanSendDetach - Can Detach\n");
+            fflush(stdout);
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Can Detach\n"));
+            // No outstanding controllers or active dispatched exceptions, so it is safe to detach
+            DebuggerController::SetProcessingDetach(FALSE);
+            fCanSendDetach = true;
+        }
+        else if (!DebuggerController::GetProcessingDetach())
+        {
+            printf("DebuggerController::CanSendDetach - Unable to Detach, need to drain existing controllers or exception processin\n");
+            fflush(stdout);
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Unable to Detach, need to drain existing controllers or exception processing\n"));
+            // this will cause DC::DNE to respond to this IPC once the queue of pending controllers has been processed
+            DebuggerController::SetProcessingDetach(TRUE);
+            fCanSendDetach = false;
         }
     }
 #endif
@@ -4563,8 +4577,11 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
 
         
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        if (g_pDebugInterface != NULL && g_pDebugInterface->IsOutOfProcessSetContextEnabled())
         {
             int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
+            printf("DC::DNE, ++active dispatched exceptions: %d\n", cActiveDispatchedExceptions);
+            fflush(stdout);
             LOG((LF_CORDB, LL_INFO10000, "DC::DNE Incremented Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
         }
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
@@ -4700,19 +4717,29 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
     {
         if (fDebuggers)
         {
-            DebuggerController::IncrementDispatchedFlares();
+            int cDispatchedFlares = DebuggerController::IncrementDispatchedFlares();
+            printf("Dispatched flares: %d\n", cDispatchedFlares);
+            fflush(stdout);
+            LOG((LF_CORDB, LL_INFO10000, "DC::DNE Incremented Dispatched Flare Count = %d\n", cDispatchedFlares));
         }
 
         if (DebuggerController::GetProcessingDetach())
         {
+            printf("DC::DNE, Processing Detach: calling CanSendDetach...\n");
+            fflush(stdout);
             if (DebuggerController::CanSendDetach(true) && g_pDebugger != NULL)
             {
+                printf("DC::DNE, Detaching...\n");
+                fflush(stdout);
                 g_pDebugger->SendDetachComplete();
             }
         }
-        else
+        else if (g_pDebugInterface != NULL && g_pDebugInterface->IsOutOfProcessSetContextEnabled())
         {
-            DebuggerController::DecrementActiveDispatchedExceptions();
+            int cActiveDispatchedExceptions = DebuggerController::DecrementActiveDispatchedExceptions();
+            printf("DC::DNE, NOT processing Detach, --active dispatched exceptions: %d\n", cActiveDispatchedExceptions);
+            fflush(stdout);
+            LOG((LF_CORDB, LL_INFO10000, "DC::DNE Decremented Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
         }
     }
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
@@ -4874,7 +4901,7 @@ bool DebuggerPatchSkip::DebuggerDetachClean()
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     // during detach we need to ensure the context is only being updated out of process
-    bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
+    bool bUsingOutOfProcEvents = g_pDebugInterface != NULL && g_pDebugInterface->IsOutOfProcessSetContextEnabled();
     if (bUsingOutOfProcEvents)
     {
         return false; // return false so that we do not delete this controller
