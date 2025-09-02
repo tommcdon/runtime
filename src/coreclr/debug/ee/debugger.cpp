@@ -10191,8 +10191,7 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         // the RS sends a single-attaching event and attaches at the first response from the Left-side.
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         DebuggerController::ResetDispatchedFlares();  // reset flare count on debugger attach
-        printf("Resetting dispatched flares on debugger attach\n");
-        fflush(stdout);
+        LOG((LF_CORDB, LL_INFO10000, "D:HIPCE: Resetting dispatched flares on debugger attach\n"));
 #endif
         StartCanaryThread();
 
@@ -10822,8 +10821,6 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
         if (DebuggerController::CanSendDetach())
 #endif
         {
-            printf("Sending detach immediately\n");
-            fflush(stdout);
             LOG((LF_CORDB, LL_INFO10000, "D::HIPCE Sending detach IPC response before continue\n"));
             // Reply to the detach message before we release any Runtime threads. This ensures that the debugger will get
             // the detach reply before the process exits if the main thread is near exiting.
@@ -10835,8 +10832,6 @@ bool Debugger::HandleIPCEvent(DebuggerIPCEvent * pEvent)
             m_pRCThread->SendIPCReply();
         }
 
-        printf("Detach - resuming process\n");
-        fflush(stdout);
         LOG((LF_CORDB, LL_INFO10000, "D::HIPCE Detach - resuming process\n"));
 
         if (this->m_isBlockedOnGarbageCollectionEvent)
@@ -16272,11 +16267,7 @@ void Debugger::SendDetachComplete()
     int cDispatchedFlares = DebuggerController::GetDispatchedFlares();
     int cActiveDispatchedExceptions = DebuggerController::GetActiveDispatchedExceptions();
 
-    printf("SendDetachComplete: g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n",
-           cDispatchedFlares, cActiveDispatchedExceptions);
-    fflush(stdout);
-
-    LOG((LF_CORDB, LL_INFO1000000, "D::SendDetachComplete Sending detach complete event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d g_cNumControllers=%d\n", cDispatchedFlares, cActiveDispatchedExceptions, cNumControllers));
+    LOG((LF_CORDB, LL_INFO1000000, "D::SendDetachComplete Sending detach complete event g_cDispatchedFlares=%d g_cActiveDispatchedExceptions=%d\n", cDispatchedFlares, cActiveDispatchedExceptions));
 
     DebuggerIPCEvent * pResult = m_pRCThread->GetIPCEventReceiveBuffer();
     InitIPCEvent(pResult, DB_IPCE_DETACH_FROM_PROCESS_RESULT, NULL);

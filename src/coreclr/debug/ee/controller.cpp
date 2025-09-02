@@ -4396,30 +4396,26 @@ bool DebuggerController::CanSendDetach(bool fDecrementActiveExceptions)
 #ifdef _DEBUG
         if (fDecrementActiveExceptions)
         {
-            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Decremented Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD --active dispatched exceptions count = %d, HasControllers = %d\n", cActiveDispatchedExceptions, fHasControllers));
+        }
+        else
+        {
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD active dispatched exceptions count = %d, HasControllers = %d\n", cActiveDispatchedExceptions, fHasControllers));
         }
 #endif
-        printf("DebuggerController::CanSendDetach - fHasControllers=%d, cActiveDispatchedExceptions=%d\n",
-               fHasControllers, cActiveDispatchedExceptions);
-        fflush(stdout);
-        LOG((LF_CORDB, LL_INFO10000, "DC::CSD Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
         if (!fHasControllers && cActiveDispatchedExceptions == 0)
         {
-            printf("DebuggerController::CanSendDetach - Can Detach\n");
-            fflush(stdout);
-            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Can Detach\n"));
             // No outstanding controllers or active dispatched exceptions, so it is safe to detach
             DebuggerController::SetProcessingDetach(FALSE);
             fCanSendDetach = true;
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Can Detach\n"));
         }
         else if (!DebuggerController::GetProcessingDetach())
         {
-            printf("DebuggerController::CanSendDetach - Unable to Detach, need to drain existing controllers or exception processin\n");
-            fflush(stdout);
-            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Unable to Detach, need to drain existing controllers or exception processing\n"));
             // this will cause DC::DNE to respond to this IPC once the queue of pending controllers has been processed
             DebuggerController::SetProcessingDetach(TRUE);
             fCanSendDetach = false;
+            LOG((LF_CORDB, LL_INFO10000, "DC::CSD Unable to Detach, need to drain existing controllers or exception processing\n"));
         }
     }
 #endif
@@ -4580,9 +4576,7 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         if (g_pDebugInterface != NULL && g_pDebugInterface->IsOutOfProcessSetContextEnabled())
         {
             int cActiveDispatchedExceptions = DebuggerController::IncrementActiveDispatchedExceptions();
-            printf("DC::DNE, ++active dispatched exceptions: %d\n", cActiveDispatchedExceptions);
-            fflush(stdout);
-            LOG((LF_CORDB, LL_INFO10000, "DC::DNE Incremented Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
+            LOG((LF_CORDB, LL_INFO10000, "DC::DNE ++active dispatched exceptions count = %d\n", cActiveDispatchedExceptions));
         }
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
@@ -4718,28 +4712,22 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         if (fDebuggers)
         {
             int cDispatchedFlares = DebuggerController::IncrementDispatchedFlares();
-            printf("Dispatched flares: %d\n", cDispatchedFlares);
-            fflush(stdout);
-            LOG((LF_CORDB, LL_INFO10000, "DC::DNE Incremented Dispatched Flare Count = %d\n", cDispatchedFlares));
+            LOG((LF_CORDB, LL_INFO10000, "DC::DNE ++dispatched flare count = %d\n", cDispatchedFlares));
         }
 
         if (DebuggerController::GetProcessingDetach())
         {
-            printf("DC::DNE, Processing Detach: calling CanSendDetach...\n");
-            fflush(stdout);
+            LOG((LF_CORDB, LL_INFO10000, "DC::DNE, Processing Detach: calling CanSendDetach...\n"));
             if (DebuggerController::CanSendDetach(true) && g_pDebugger != NULL)
             {
-                printf("DC::DNE, Detaching...\n");
-                fflush(stdout);
+                LOG((LF_CORDB, LL_INFO10000, "DC::DNE, Detaching...\n"));
                 g_pDebugger->SendDetachComplete();
             }
         }
         else if (g_pDebugInterface != NULL && g_pDebugInterface->IsOutOfProcessSetContextEnabled())
         {
             int cActiveDispatchedExceptions = DebuggerController::DecrementActiveDispatchedExceptions();
-            printf("DC::DNE, NOT processing Detach, --active dispatched exceptions: %d\n", cActiveDispatchedExceptions);
-            fflush(stdout);
-            LOG((LF_CORDB, LL_INFO10000, "DC::DNE Decremented Active Dispatched Exceptions Count = %d\n", cActiveDispatchedExceptions));
+            LOG((LF_CORDB, LL_INFO10000, "DC::DNE, NOT processing Detach, --active dispatched exceptions: %d\n", cActiveDispatchedExceptions));
         }
     }
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
