@@ -1812,6 +1812,10 @@ extern "C" void JIT_PatchpointWorkerWorkerWithPolicy(TransitionBlock * pTransiti
         const int transitionLogLevel = isNewMethod ? LL_INFO10 : LL_INFO1000;
         LOG((LF_TIEREDCOMPILATION, transitionLogLevel, "Jit_Patchpoint: patchpoint [%d] (0x%p) TRANSITION to ip 0x%p\n", ppId, ip, osrMethodCode));
 
+
+        printf("JIT_PatchpointWorkerWorkerWithPolicy [%p] calling SetIP\n", GetThreadNULLOk());
+        fflush(stdout);
+
         // Install new entry point as IP
         SetIP(pFrameContext, osrMethodCode);
 

@@ -163,6 +163,9 @@ public:
     HRESULT GetMDStructuresVersion(ULONG32* pMDStructuresVersion);
     HRESULT EnableGCNotificationEvents(BOOL fEnable);
     HRESULT GetDomainAssemblyFromModule(VMPTR_Module vmModule, OUT VMPTR_DomainAssembly *pVmDomainAssembly);
+    bool ClearSetIP(VMPTR_Thread vmThread);
+    bool HasPendingSetIP();
+    bool HasActivePatchSkip(VMPTR_Thread vmThread);
 
 private:
     void TypeHandleToExpandedTypeInfoImpl(AreValueTypesBoxed              boxed,

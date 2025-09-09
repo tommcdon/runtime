@@ -2082,6 +2082,8 @@ StackWalkAction DebuggerWalkStack(Thread *thread,
             // which encapsulates the platform variances.  This could all be avoided if we used
             // StackWalkFrames instead of StackWalkFramesEx.
             //
+            printf("DebuggerWalkStack calling SetIP)\n");
+            fflush(stdout);
             ::SetIP(context, 0);
             ::SetSP(context, 0);
             FillRegDisplay(&data.regDisplay, context);

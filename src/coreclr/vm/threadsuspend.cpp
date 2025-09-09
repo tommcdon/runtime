@@ -1016,6 +1016,10 @@ BOOL Thread::ReadyForAsyncException()
         {
              CONTEXT ctx;
              ctx.ContextFlags = CONTEXT_CONTROL;
+
+             printf("ReadyForAsyncException [%p] calling SetIP\n", GetThreadNULLOk());
+             fflush(stdout);
+
              SetIP(&ctx, 0);
              SetSP(&ctx, 0);
              FillRegDisplay(&rd, &ctx);
@@ -2738,6 +2742,9 @@ void __stdcall Thread::RedirectedHandledJITCase(RedirectReason reason)
 
         STRESS_LOG1(LF_EH, LL_INFO10, "resume under control: ip: %p (handled jit case)\n", uResumePC);
 
+        printf("RedirectedHandledJITCase [%p] calling SetIP\n", GetThreadNULLOk());
+        fflush(stdout);
+
         SetIP(pThread->m_OSContext, uResumePC);
 
 #if defined(TARGET_ARM)
@@ -2747,6 +2754,9 @@ void __stdcall Thread::RedirectedHandledJITCase(RedirectReason reason)
         // Since we have set a new IP, we have to clear conditional execution flags too.
         ClearITState(pThread->m_OSContext);
 #endif // TARGET_ARM
+
+        printf("RedirectedHandledJITCase [%p] calling SetIP\n", GetThreadNULLOk());
+        fflush(stdout);
 
         SetIP(pCtx, uAbortAddr);
     }
@@ -2924,6 +2934,10 @@ BOOL Thread::RedirectThreadAtHandledJITCase(PFN_REDIRECTTARGET pTgt)
     DWORD dwOrigCpsr = pCtx->Cpsr;
     ClearITState(pCtx);
 #endif
+
+    printf("RedirectThreadAtHandledJITCase [%p] calling SetIP\n", GetThreadNULLOk());
+    fflush(stdout);
+
     _ASSERTE(ExecutionManager::IsManagedCode(dwOrigEip));
     SetIP(pCtx, (PCODE)pTgt);
 
@@ -2952,6 +2966,9 @@ BOOL Thread::RedirectThreadAtHandledJITCase(PFN_REDIRECTTARGET pTgt)
 
         return FALSE;
     }
+
+    printf("RedirectThreadAtHandledJITCase [%p] calling SetIP\n", GetThreadNULLOk());
+    fflush(stdout);
 
     // Restore original IP
     SetIP(pCtx, dwOrigEip);
@@ -3073,6 +3090,9 @@ BOOL Thread::RedirectCurrentThreadAtHandledJITCase(PFN_REDIRECTTARGET pTgt, CONT
 
     ////////////////////////////////////////////////////
     // Now redirect the thread to the helper function
+
+    printf("RedirectCurrentThreadAtHandeledJITCase [%p] calling SetIP\n", GetThreadNULLOk());
+    fflush(stdout);
 
     SetIP(pCurrentThreadCtx, (PCODE)pTgt);
 
@@ -3876,6 +3896,10 @@ BOOL Thread::ResumeUnderControl(CONTEXT *pCtx)
     if (fSucceeded)
     {
         PCODE resumePC = GetIP(m_OSContext);
+
+        printf("ResumeUnderControl [%p] calling SetIP\n", GetThreadNULLOk());
+        fflush(stdout);
+
         SetIP(m_OSContext, GetEEFuncEntryPoint(THROW_CONTROL_FOR_THREAD_FUNCTION));
         SetThrowControlForThread(InducedThreadRedirect);
         STRESS_LOG1(LF_SYNC, LL_INFO100, "ResumeUnderControl for Thread %p\n", this);
@@ -3915,6 +3939,8 @@ BOOL Thread::ResumeUnderControl(CONTEXT *pCtx)
         m_OSContext->Rcx = keepRcx;
 #endif // TARGET_AMD64
 
+        printf("ResumeUnderControl [%p] calling SetIP\n", GetThreadNULLOk());
+        fflush(stdout);
         SetIP(m_OSContext, resumePC);
 
         fSuccess = TRUE;

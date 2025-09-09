@@ -938,7 +938,11 @@ Debugger::Debugger()
     m_willBlockOnGarbageCollectionEvent(FALSE),
     m_isGarbageCollectionEventsEnabled(FALSE),
     m_isGarbageCollectionEventsEnabledLatch(FALSE)
-{
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    ,
+    m_cPendingSetIP(0)
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
+    {
     CONTRACTL
     {
         WRAPPER(THROWS);
@@ -5447,10 +5451,29 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     {
         return true;
     }
+    if (code == EXCEPTION_BREAKPOINT && exception->ExceptionAddress == SetThreadContextNeededFlare)
+    {
+        // PCODE pc;
+        // TADDR sp;
+        // thread->GetPCandSP(&pc, &sp); // just to update the cached PC and SP
+        PCODE ip = ::GetIP(context);
+        ::SetIP(context, ip + 1); // move past the INT3 instruction
+
+        // ::SetIP(context, pc);
+        // ::SetSP(context, sp);
+        printf("[%p] Ignoring Flare in VEH, not resetting IP=%p and SP=%p!\n", thread, (void*)GetIP(context), (void*)GetSP(context));
+        fflush(stdout);
+        return true;
+    }
 
     bool retVal;
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     DebuggerSteppingInfo debuggerSteppingInfo;
+    bool fDidAllocateDebuggerPatchSkip = false;
+    PCODE pc = GetIP(context); // save a copy of the context PC before it gets modified
+    TADDR sp = GetSP(context); // save a copy of the context SP before it gets modified
+    thread->SetPCandSP(pc, sp);
+    printf("D::FCNE: [%p] ENTER RIP=%p, RSP=%p, code=%x\n", (void*)thread, (void*)pc, (void*)sp, code);
 #endif
 
     {
@@ -5463,6 +5486,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                                                code, thread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                                                ,&debuggerSteppingInfo
+                                                               ,&fDidAllocateDebuggerPatchSkip
 #endif
                                                                );
         }
@@ -5475,9 +5499,75 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 #if defined(OUT_OF_PROCESS_SETTHREADCONTEXT) && !defined(DACCESS_COMPILE)
     if (retVal && fIsVEH)
     {
+        bool isSS = DebuggerController::IsSingleStepEnabled(thread);
+        DebuggerPatchSkip *patchSkip = thread->GetActiveDebuggerPatchSkip();
+        bool isPatchSkipEnabled = patchSkip != nullptr;
+        if (isPatchSkipEnabled != fDidAllocateDebuggerPatchSkip)
+        {
+            // this is unexpected
+            printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!D::FCNE: [%p] patchSkip (%p) != fDidAllocateDebuggerPatchSkip (%d)!\n", (void*)thread, (void*)patchSkip, fDidAllocateDebuggerPatchSkip);
+            fflush(stdout);
+        }
+        printf("D::FCNE: [%p] EXIT  RIP=%p RSP=%p SS=%d isPatchSkipEnabled=%d fDidAllocateDebuggerPatchSkip=%d DebuggerAttached=%d\n", (void*)thread, (void*)GetIP(context), (void*)GetSP(context), isSS, isPatchSkipEnabled, fDidAllocateDebuggerPatchSkip, CORDebuggerAttached());
+        fflush(stdout);
+
         // This does not return. Out-of-proc debugger will update the thread context
         // within this call.
-        SendSetThreadContextNeeded(context, &debuggerSteppingInfo);
+        SendSetThreadContextNeeded(context, &debuggerSteppingInfo, fDidAllocateDebuggerPatchSkip);
+        printf("***** [%p] SendSetThreadContextNeeded returned! Resetting PC=%p RSP=%p if isPatchSkipEnabled\n", thread, (void*)GetIP(context), (void*)GetSP(context));
+        fflush(stdout);
+
+        // if (isPatchSkipEnabled)
+        // {
+        //     // if we return, we were likely detaching as the debugger is no longer attached
+        //     // revert PC and SP back to the original values
+        //     printf("***** [%p] Reverting PC and SP back to original values PC=%p RSP=%p\n", thread, (void*)pc, (void*)sp);
+        //     fflush(stdout);
+        //     ::SetIP(context, pc);
+        //     //::SetSP(context, sp);
+
+        //     thread->EndDebuggerPatchSkip();
+        //     //patchSkip->Delete();
+
+        //     // remove the single-step flag if it was set
+        //     if (IsSSFlagEnabled(reinterpret_cast<DT_CONTEXT *>(context) ARM_ARG(pThread) ARM64_ARG(pThread) RISCV64_ARG(pThread) LOONGARCH64_ARG(pThread)))
+        //     {
+        //         printf("***** [%p] Reverting single-step flag!\n", thread);
+        //         fflush(stdout);
+        //         UnsetSSFlag((reinterpret_cast<DT_CONTEXT *>(context) ARM_ARG(pThread) ARM64_ARG(pThread) RISCV64_ARG(pThread) LOONGARCH64_ARG(pThread)));
+        //     }
+        // }
+        // else
+        // {
+        //     printf("***** [%p] Not reverting PC and SP back to original values PC=%p RSP=%p\n", thread, (void*)GetIP(context), (void*)GetSP(context));
+        //     fflush(stdout);
+        // }
+
+        // {
+        //     DWORD64 ssp = GetSSP(context);
+        //     PCODE ip = GetIP(context);
+        //     TADDR sp = GetSP(context);
+        //     printf("***** [%p] 1 RIP=%p RSP=%p SSP=%p\n", thread, (void*)GetIP(context), (void*)GetSP(context), (void*)*(DWORD64*)GetSSP(context));
+        //     if (ssp != 0)
+        //     {
+        //         DWORD64 ssp_candidate = ssp;
+        //         for (int i = 0; i < 10 && ssp_candidate != 0 && *(DWORD64*)ssp_candidate != (DWORD64)ip && *(DWORD64*)ssp_candidate != (DWORD64)(ip+1); i++)
+        //         {
+        //             ssp_candidate -= 8;
+        //             //printf("***** [%p] 2 RIP=%p RSP=%p SSP=%p\n", thread, (void*)GetIP(context), (void*)GetSP(context), (void*)*(DWORD64*)ssp_candidate);
+        //         }
+        //         if ((void*)*(DWORD64*)ssp_candidate == (void*)(ip+1))
+        //         {
+        //             (*(DWORD64*)ssp_candidate)--; // AV!
+        //         }
+        //         // if (ssp_candidate != ssp)
+        //         // {
+        //         //     SetSSP(context, ssp_candidate);
+        //         // }
+        //     }
+        //     printf("***** [%p] 3 RIP=%p RSP=%p SSP=%p\n", thread, (void*)GetIP(context), (void*)GetSP(context), (void*)*(DWORD64*)GetSSP(context));
+        //     fflush(stdout);
+        // }
     }
 #endif
     return retVal;
@@ -14582,6 +14672,9 @@ HRESULT Debugger::FuncEvalSetup(DebuggerIPCE_FuncEvalInfo *pEvalInfo,
     {
         _ASSERTE(filterContext != NULL);
 
+        printf("FuncEval [%p] Calling SetIP\n", pThread);
+        fflush(stdout);
+
         ::SetIP(filterContext, (UINT_PTR)GetEEFuncEntryPoint(::FuncEvalHijack));
 
         // Don't be fooled into thinking you can push things onto the thread's stack now. If the thread is stopped at a
@@ -16167,7 +16260,7 @@ void Debugger::StartCanaryThread()
 
 #ifndef DACCESS_COMPILE
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo *pDebuggerSteppingInfo)
+void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo *pDebuggerSteppingInfo, bool fDidAllocateDebuggerPatchSkip)
 {
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
@@ -16220,12 +16313,23 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo
 
     bool fIsInPlaceSingleStep = pDebuggerSteppingInfo != NULL && pDebuggerSteppingInfo->IsInPlaceSingleStep();
     PRD_TYPE opcode = pDebuggerSteppingInfo != NULL ? pDebuggerSteppingInfo->GetOpcode() : CORDbg_BREAK_INSTRUCTION;
-
+    
     // send the context to the right side
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode));
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x fDidAllocateDebuggerPatchSkip=%d\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode, fDidAllocateDebuggerPatchSkip));
+
+    SetThreadContextNeededFlags setThreadContextNeededFlags = kSetThreadContextNeeded_None;
+    if (fIsInPlaceSingleStep)
+    {
+        setThreadContextNeededFlags = (SetThreadContextNeededFlags)(setThreadContextNeededFlags | kSetThreadContextNeeded_IsInPlaceSingleStep);
+    }
+    if (fDidAllocateDebuggerPatchSkip)
+    {
+        setThreadContextNeededFlags = (SetThreadContextNeededFlags)(setThreadContextNeededFlags | kSetThreadContextNeeded_IsDebuggerPatchSkip);
+    }
+
     EX_TRY
     {
-        SetThreadContextNeededFlare((TADDR)pContext, contextSize, fIsInPlaceSingleStep, opcode);
+        SetThreadContextNeededFlare((TADDR)pContext, contextSize, setThreadContextNeededFlags, opcode);
     }
     EX_CATCH
     {

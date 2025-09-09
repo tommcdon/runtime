@@ -2108,6 +2108,8 @@ void EECodeManager::ResumeAfterCatch(CONTEXT *pContext, size_t targetSSP, bool f
         pContext->Ra = dwResumePC;
 #endif
 
+        printf("ResumeAfterCatch [%p] calling SetIP\n", pThread);
+        fflush(stdout);
         SetIP(pContext, uAbortAddr);
     }
     else

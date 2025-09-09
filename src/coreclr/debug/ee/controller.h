@@ -1083,7 +1083,8 @@ class DebuggerController
                                         Thread *thread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                         ,
-                                        DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL
+                                        DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL,
+                                        bool * pfDidAllocationDebuggerPatchSkip = NULL
 #endif
                                         );
 
@@ -1142,7 +1143,8 @@ class DebuggerController
                                           SCAN_TRIGGER which
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                           ,
-                                          DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL
+                                          DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL,
+                                          bool * pfDidAllocateDebuggerPatchSkip = NULL
 #endif
                                           );
 
@@ -1490,9 +1492,12 @@ class DebuggerSteppingInfo
 public:
     bool IsInPlaceSingleStep() { return fIsInPlaceSingleStep; }
     PRD_TYPE GetOpcode() { return opcode; }
-    void EnableInPlaceSingleStepOverCall(PRD_TYPE opcode)
+    void EnableInPlaceSingleStepOverCall()
     {
         this->fIsInPlaceSingleStep = true;
+    }
+    void SetOpcode(PRD_TYPE opcode)
+    {
         this->opcode = opcode;
     }
 };

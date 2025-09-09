@@ -659,6 +659,9 @@ PCODE Thread::VirtualUnwindLeafCallFrame(T_CONTEXT* pContext)
     uControlPc = NULL;
 #endif
 
+    printf("VirtualUnwindLeafCallFrame [%p] calling SetIP\n", GetThreadNULLOk());
+    fflush(stdout);
+
     SetIP(pContext, uControlPc);
 
 

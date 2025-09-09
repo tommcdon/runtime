@@ -3904,6 +3904,8 @@ void * STDCALL FuncEvalHijackWorker(DebuggerEval *pDE)
     // EIP is worthless anyway.
     if (!pDE->m_evalDuringException)
     {
+        printf("FuncEvalHijackWorker [%p] Setting IP in context to %p\n", (void*)pThread, (void*)FEFrame.GetReturnAddress());
+        g_pDebugger->RecordSetIP(pThread);
         SetIP(&pDE->m_context, (SIZE_T)FEFrame.GetReturnAddress());
     }
 

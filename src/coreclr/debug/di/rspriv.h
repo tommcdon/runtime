@@ -2924,6 +2924,8 @@ class UnmanagedThreadTracker
     HANDLE m_hThread = INVALID_HANDLE_VALUE;
     CORDB_ADDRESS_TYPE *m_pPatchSkipAddress = NULL;
     DWORD m_dwSuspendCount = 0;
+    bool m_fProcessingPatchSkip = false;
+    VMPTR_Thread m_vmThread = VMPTR_Thread::NullPtr();
 
 public:
     UnmanagedThreadTracker(DWORD wThreadId, HANDLE hThread) : m_dwThreadId(wThreadId), m_hThread(hThread) {}
@@ -2934,9 +2936,13 @@ public:
     void SetPatchSkipAddress(CORDB_ADDRESS_TYPE *pPatchSkipAddress) { m_pPatchSkipAddress = pPatchSkipAddress; }
     CORDB_ADDRESS_TYPE *GetPatchSkipAddress() const { return m_pPatchSkipAddress; }
     void ClearPatchSkipAddress() { m_pPatchSkipAddress = NULL; }
+    void SetProcessingPatchSkip(bool fProcessingPatchSkip) { m_fProcessingPatchSkip = fProcessingPatchSkip; }
+    bool IsProcessingPatchSkip() const { return m_fProcessingPatchSkip; }
     void Suspend();
     void Resume();
     void Close();
+    void SetVMThread(VMPTR_Thread vmThread) { m_vmThread = vmThread; }
+    VMPTR_Thread GetVMThread() const { return m_vmThread; }
 };
 
 class EMPTY_BASES_DECL CUnmanagedThreadSHashTraits : public DefaultSHashTraits<UnmanagedThreadTracker*>
@@ -3316,6 +3322,13 @@ public:
     }
 
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    enum SetThreadContextNeededFlags
+    {
+        kSetThreadContextNeeded_None                = 0x0,
+        kSetThreadContextNeeded_IsInPlaceSingleStep = 0x1,
+        kSetThreadContextNeeded_IsDebuggerPatchSkip = 0x2,
+        kSetThreadContextNeeded_AllFlags            = 0x3
+    };
     void HandleSetThreadContextNeeded(DWORD dwThreadId);
     bool HandleInPlaceSingleStep(DWORD dwThreadId, PVOID pExceptionAddress);
 #endif
@@ -4153,6 +4166,18 @@ private:
     DWORD m_dwOutOfProcessStepping;
 public:
     void HandleDebugEventForInPlaceStepping(const DEBUG_EVENT * pEvent);
+    bool TryDetach();
+    UnmanagedThreadTracker* GetUnmanagedThreadTracker(DWORD dwThreadId);
+
+private:
+    HANDLE m_detachSetThreadContextNeededEvent;
+    enum DetachState
+    {
+        DS_None = 0,
+        DS_DetachInProgress,
+        DS_DetachComplete
+    };
+    Volatile<DetachState> m_fDetachInProgress;
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
 };
@@ -10160,6 +10185,11 @@ public:
 
     HRESULT SendDetachProcessEvent(CordbProcess *pProcess);
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+//    HRESULT SendCanDetach();
+    HRESULT FireTryDetach();
+#endif
+
 #ifdef FEATURE_INTEROP_DEBUGGING
     HRESULT SendUnmanagedContinue(CordbProcess *pProcess,
                                   EUMContinueType eContType);
@@ -10210,6 +10240,11 @@ private:
     void HandleUnmanagedContinue();
 
     void ExitProcess(bool fDetach);
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    void CanDetach();
+
+#endif
 
 private:
     RSSmartPtr<Cordb>    m_cordb;

@@ -630,6 +630,9 @@ AdjustContextForVirtualStub(
     {
         pExceptionRecord->ExceptionAddress = (PVOID)callsite;
     }
+
+    printf("AdjustContextForVirtualStub [%p] calling SetIP\n", pThread);
+    fflush(stdout);
     SetIP(pContext, callsite);
 
     return TRUE;

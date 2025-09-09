@@ -6509,6 +6509,8 @@ VEH_ACTION WINAPI CLRVectoredExceptionHandlerPhase2(PEXCEPTION_POINTERS pExcepti
         // the choice to break the no-trigger region after taking all necessary precautions.
         if (IsDebuggerFault(pExceptionRecord, pExceptionInfo->ContextRecord, pExceptionRecord->ExceptionCode, GetThreadNULLOk()))
         {
+            printf("VEH [%p] Continue Execution IP=%p SP=%p\n", GetThreadNULLOk(), (void*)GetIP(pExceptionInfo->ContextRecord), (void*)GetSP(pExceptionInfo->ContextRecord));
+            fflush(stdout);
             return VEH_CONTINUE_EXECUTION;
         }
     }
@@ -6525,6 +6527,8 @@ VEH_ACTION WINAPI CLRVectoredExceptionHandlerPhase2(PEXCEPTION_POINTERS pExcepti
     {
         // A breakpoint outside managed code and outside the runtime will have to be handled by some
         //  other piece of code.
+        printf("VEH [%p] Debugger didn't handle breakpoint or Single Step\n", GetThreadNULLOk());
+        fflush(stdout);
 
         BOOL fExternalException = FALSE;
 
