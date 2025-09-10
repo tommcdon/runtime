@@ -10900,8 +10900,13 @@ enum
     W32ETA_CREATE_PROCESS    = 1,
     W32ETA_ATTACH_PROCESS    = 2,
     W32ETA_CONTINUE          = 3,
-    W32ETA_DETACH            = 4,
-    W32ETA_TRY_DETACH        = 5
+    W32ETA_DETACH            = 4
+};
+
+enum
+{
+    W32ETAA_NONE             = 0,
+    W32ETAA_TRY_DETACH       = 1
 };
 
 
@@ -10920,7 +10925,9 @@ CordbWin32EventThread::CordbWin32EventThread(
     ) :
     m_thread(NULL), m_threadControlEvent(NULL),
     m_actionTakenEvent(NULL), m_run(TRUE),
-    m_action(W32ETA_NONE)
+    m_action(W32ETA_NONE),
+    m_threadControlAsyncEvent(NULL),
+    m_asyncAction(W32ETAA_NONE)
 {
     m_cordb.Assign(pCordb);
     _ASSERTE(pCordb != NULL);
@@ -10946,6 +10953,9 @@ CordbWin32EventThread::~CordbWin32EventThread()
 
     if (m_actionTakenEvent != NULL)
         CloseHandle(m_actionTakenEvent);
+
+    if (m_threadControlAsyncEvent != NULL)
+        CloseHandle(m_threadControlAsyncEvent);
 
     if (m_pNativePipeline != NULL)
     {
@@ -10973,6 +10983,10 @@ HRESULT CordbWin32EventThread::Init()
 
     m_actionTakenEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (m_actionTakenEvent == NULL)
+        return HRESULT_FROM_GetLastError();
+
+    m_threadControlAsyncEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (m_threadControlAsyncEvent == NULL)
         return HRESULT_FROM_GetLastError();
 
     m_pNativePipeline = NewPipelineForThisPlatform();
@@ -11251,6 +11265,12 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
 
         LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Corrupted HandleSetThreadContextNeeded message received\n"));
 
+        ThrowHR(E_UNEXPECTED);
+    }
+
+    if (fIsDebuggerPatchSkip != GetDAC()->HasActivePatchSkip(curThread->GetVMThread()))
+    {
+        LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Inconsistent patch skip state\n"));
         ThrowHR(E_UNEXPECTED);
     }
 
@@ -11850,12 +11870,13 @@ void CordbWin32EventThread::Win32EventLoop()
         //    A frozen process can't send any debug events, so don't bother looking for them.
 
 
-        unsigned int cWaitCount = 1;
+        unsigned int cWaitCount = 2;
 
-        HANDLE rghWaitSet[2];
+        HANDLE rghWaitSet[3];
 
         rghWaitSet[0] = m_threadControlEvent;
-
+        rghWaitSet[1] = m_threadControlAsyncEvent;
+        
         DWORD dwWaitTimeout = INFINITE;
         DEBUG_EVENT event = {};
         if (m_pProcess != NULL)
@@ -11917,8 +11938,8 @@ void CordbWin32EventThread::Win32EventLoop()
         // that will ensure that we only wait for an Exit event once.
         if ((m_pProcess != NULL) && fDidNotJustGetExitProcessEvent)
         {
-            rghWaitSet[1] = m_pProcess->UnsafeGetProcessHandle();
-            cWaitCount = 2;
+            rghWaitSet[2] = m_pProcess->UnsafeGetProcessHandle();
+            cWaitCount = 3;
         }
 
         // See if any process that we aren't attached to as the Win32 debugger have exited. (Note: this is a
@@ -11940,49 +11961,57 @@ void CordbWin32EventThread::Win32EventLoop()
         // If we haven't timed out, or if it wasn't the thread control event
         // that was set, then a process has
         // exited...
-        if ((dwStatus != WAIT_TIMEOUT) && (dwStatus != WAIT_OBJECT_0))
+        if ((dwStatus != WAIT_TIMEOUT) && (dwStatus > WAIT_OBJECT_0 + 1))
         {
             // Grab the process that exited.
-            _ASSERTE((dwStatus - WAIT_OBJECT_0) == 1);
+            _ASSERTE((dwStatus - WAIT_OBJECT_0) == 2);
             ExitProcess(false); // not detach
             fEventAvailable = false;
         }
-        // Should we create a process?
-        else if (m_action == W32ETA_CREATE_PROCESS)
+        else if (dwStatus == WAIT_OBJECT_0 || dwStatus == WAIT_TIMEOUT) // synchronous control event or timeout
         {
-            CreateProcess();
-        }
-        // Should we attach to a process?
-        else if (m_action == W32ETA_ATTACH_PROCESS)
-        {
-            AttachProcess();
-        }
-        // Should we detach from a process?
-        else if (m_action == W32ETA_DETACH)
-        {
-            ExitProcess(true); // detach case
-
-            // Once we detach, we don't need to continue any outstanding event.
-            // So act like we never got the event.
-            fEventAvailable = false;
-            _ASSERTE(m_pProcess == NULL); // W32 cleared process pointer
-        }
-        else if (m_action == W32ETA_TRY_DETACH)
-        {
-            m_action = W32ETA_NONE;
-            if (m_pProcess != NULL)
+            // Should we create a process?
+            if (m_action == W32ETA_CREATE_PROCESS)
             {
-                m_pProcess->TryDetach();
+                CreateProcess();
+            }
+            // Should we attach to a process?
+            else if (m_action == W32ETA_ATTACH_PROCESS)
+            {
+                AttachProcess();
+            }
+            // Should we detach from a process?
+            else if (m_action == W32ETA_DETACH)
+            {
+                ExitProcess(true); // detach case
+
+                // Once we detach, we don't need to continue any outstanding event.
+                // So act like we never got the event.
+                fEventAvailable = false;
+                _ASSERTE(m_pProcess == NULL); // W32 cleared process pointer
+            }
+#ifdef FEATURE_INTEROP_DEBUGGING
+            // Should we continue the process?
+            else if (m_action == W32ETA_CONTINUE)
+            {
+                HandleUnmanagedContinue();
+            }
+#endif // FEATURE_INTEROP_DEBUGGING
+        }
+        else if (dwStatus == WAIT_OBJECT_0 + 1) // async control event
+        {
+            if (m_asyncAction == W32ETAA_TRY_DETACH)
+            {
+                m_asyncAction = W32ETAA_NONE;
+                if (m_pProcess != NULL)
+                {
+                    if (m_pProcess->TryDetach())
+                    {
+                        fEventAvailable = false;
+                    }
+                }
             }
         }
-
-#ifdef FEATURE_INTEROP_DEBUGGING
-        // Should we continue the process?
-        else if (m_action == W32ETA_CONTINUE)
-        {
-            HandleUnmanagedContinue();
-        }
-#endif // FEATURE_INTEROP_DEBUGGING
 
         // We don't need to sweep the FCH threads since we never hijack a thread in cooperative mode.
 
@@ -15011,9 +15040,9 @@ void CordbWin32EventThread::ExitProcess(bool fDetach)
 
 HRESULT CordbWin32EventThread::FireTryDetach()
 {
-    m_action = W32ETA_TRY_DETACH;
+    m_asyncAction = W32ETAA_TRY_DETACH;
 
-    BOOL succ = SetEvent(m_threadControlEvent);
+    BOOL succ = SetEvent(m_threadControlAsyncEvent);
 
     return succ ? S_OK : HRESULT_FROM_GetLastError();
 }
@@ -15651,6 +15680,11 @@ bool CordbProcess::TryDetach()
 {
     _ASSERTE(m_fDetachInProgress == DS_DetachInProgress);
 
+    if (m_fDetachInProgress != DS_DetachInProgress)
+    {
+        return false;
+    }
+
     if (m_dwOutOfProcessStepping > 0)
     {
         return false;
@@ -15667,7 +15701,10 @@ bool CordbProcess::TryDetach()
     {
         UnmanagedThreadTracker * pUnmanagedThread = *curIter;
         _ASSERTE(pUnmanagedThread != NULL);
-        if (pUnmanagedThread != NULL && (pUnmanagedThread->IsProcessingPatchSkip() || GetDAC()->HasActivePatchSkip(pUnmanagedThread->GetVMThread())))
+        if (pUnmanagedThread != NULL && 
+            (pUnmanagedThread->IsProcessingPatchSkip() /* || 
+            GetDAC()->HasActivePatchSkip(pUnmanagedThread->GetVMThread())*/
+        ))
         {
             return false;
         }

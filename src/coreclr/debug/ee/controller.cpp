@@ -4515,25 +4515,6 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
 
         FireEtwDebugExceptionProcessingStart();
 
-#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        g_pDebugger->RecordSetIP(pCurThread);
-#endif
-
-        // struct DebuggerThreadBusyHolder
-        // {
-        //     DebuggerThreadBusyHolder(Thread * pThread)
-        //         : m_pThread(pThread)
-        //     {
-        //         LIMITED_METHOD_CONTRACT;
-        //         m_pThread->SetDebuggerThreadIsBusy(true);
-        //     }
-        //     ~DebuggerThreadBusyHolder()
-        //     {
-        //         LIMITED_METHOD_CONTRACT;
-        //         m_pThread->SetDebuggerThreadIsBusy(false);
-        //     }
-        // } dtbh(pCurThread);
-
         // We should never be here if the debugger was never involved.
         CONTEXT * pOldContext;
         pOldContext = pCurThread->GetFilterContext();
@@ -4555,6 +4536,10 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         }
         // Otherwise it is an error to nest at all
         _ASSERTE(pOldContext == NULL);
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        g_pDebugger->RecordSetIP(pCurThread);
+#endif
 
         fDispatch = DebuggerController::DispatchExceptionHook(pCurThread,
                                                                    pContext,

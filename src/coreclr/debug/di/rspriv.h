@@ -10317,6 +10317,9 @@ private:
             EUMContinueType eContType;
         } continueData;
     }                    m_actionData;
+
+    HANDLE               m_threadControlAsyncEvent;
+    unsigned int         m_asyncAction;
 };
 
 
