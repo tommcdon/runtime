@@ -606,7 +606,7 @@ public:
         TSNC_Unknown                    = 0x00000000, // threads are initialized this way
 
         TSNC_DebuggerUserSuspend        = 0x00000001, // marked "suspended" by the debugger
-        // unused                       = 0x00000002,
+        TSNC_DebuggerSetIP              = 0x00000002, // marked by SetIP by the debugger
         TSNC_DebuggerIsStepping         = 0x00000004, // debugger is stepping this thread
         TSNC_DebuggerIsManagedException = 0x00000008, // EH is re-raising a managed exception.
         // unused                       = 0x00000010,
@@ -3560,6 +3560,12 @@ public:
         InterlockedExchangeT(m_debuggerActivePatchSkipper.GetPointer(), NULL);
         _ASSERTE(!m_debuggerActivePatchSkipper.Load());
     }
+    DebuggerPatchSkip* GetActiveDebuggerPatchSkip()
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        return m_debuggerActivePatchSkipper.Load();
+    }
 
 private:
 
@@ -3854,6 +3860,9 @@ public:
 
 private:
     bool m_isInForbidSuspendForDebuggerRegion;
+
+    PCODE m_PC;  // last known PC
+    TADDR m_SP;  // last known SP
 
 #ifndef DACCESS_COMPILE
 public:

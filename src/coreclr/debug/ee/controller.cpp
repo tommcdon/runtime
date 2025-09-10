@@ -2698,11 +2698,18 @@ DebuggerPatchSkip *DebuggerController::ActivatePatchSkip(Thread *thread,
         skip = new (interopsafe) DebuggerPatchSkip(thread, patch);
         TRACE_ALLOC(skip);
 
+        printf("[%p] ###### Allocated DebuggerPatchSkip %p\n", thread, skip);
+        fflush(stdout);
+
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        if (pDebuggerSteppingInfo != NULL && skip != NULL && skip->IsInPlaceSingleStep())
+        if (pDebuggerSteppingInfo != NULL)
         {
-            // send the opcode to the right side so it can be restored during single-step
-            pDebuggerSteppingInfo->EnableInPlaceSingleStepOverCall(patch->opcode);
+            pDebuggerSteppingInfo->SetOpcode(patch->opcode);
+            if (skip != NULL && skip->IsInPlaceSingleStep())
+            {
+                // send the opcode to the right side so it can be restored during single-step
+                pDebuggerSteppingInfo->EnableInPlaceSingleStepOverCall();
+            }
         }
 #endif
     }
@@ -3018,7 +3025,9 @@ DPOSS_ACTION DebuggerController::ScanForTriggers(CORDB_ADDRESS_TYPE *address,
 // Note that control will not return from this function in the case of EnC remap
 DPOSS_ACTION DebuggerController::DispatchPatchOrSingleStep(Thread *thread, CONTEXT *context, CORDB_ADDRESS_TYPE *address, SCAN_TRIGGER which
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-,DebuggerSteppingInfo *pDebuggerSteppingInfo
+    ,
+    DebuggerSteppingInfo *pDebuggerSteppingInfo,
+    bool * pfDidAllocateDebuggerPatchSkip
 #endif
 )
 {
@@ -3214,11 +3223,28 @@ Exit:
     }
 #endif
 
-    ActivatePatchSkip(thread, dac_cast<PTR_CBYTE>(GetIP(pCtx)), FALSE
+    DebuggerPatchSkip *pDebuggerPatchSkip = ActivatePatchSkip(thread, dac_cast<PTR_CBYTE>(GetIP(pCtx)), FALSE
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     , pDebuggerSteppingInfo
 #endif
     );
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    if (pfDidAllocateDebuggerPatchSkip != NULL)
+    {
+        *pfDidAllocateDebuggerPatchSkip = (pDebuggerPatchSkip != NULL);
+        // if (!CORDebuggerAttached() && pDebuggerPatchSkip != NULL)
+        // {
+        //     // If we are not attached to the debugger, we need to ensure that the
+        //     // patch skip is deleted
+        //     printf("Delete DebuggerPatchSkip %p\n", pDebuggerPatchSkip);
+        //     fflush(stdout);
+        //     thread->EndDebuggerPatchSkip();
+        //     pDebuggerPatchSkip->Delete();
+        //     pDebuggerPatchSkip = NULL;
+        // }
+    }
+#endif
 
     lockController.Release();
 
@@ -4393,7 +4419,8 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
                                                  Thread *pCurThread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                                  ,
-                                                 DebuggerSteppingInfo *pDebuggerSteppingInfo
+                                                 DebuggerSteppingInfo *pDebuggerSteppingInfo,
+                                                 bool *pfDidAllocateDebuggerPatchSkip
 #endif
                                                  )
 {
@@ -4488,6 +4515,25 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
 
         FireEtwDebugExceptionProcessingStart();
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        g_pDebugger->RecordSetIP(pCurThread);
+#endif
+
+        // struct DebuggerThreadBusyHolder
+        // {
+        //     DebuggerThreadBusyHolder(Thread * pThread)
+        //         : m_pThread(pThread)
+        //     {
+        //         LIMITED_METHOD_CONTRACT;
+        //         m_pThread->SetDebuggerThreadIsBusy(true);
+        //     }
+        //     ~DebuggerThreadBusyHolder()
+        //     {
+        //         LIMITED_METHOD_CONTRACT;
+        //         m_pThread->SetDebuggerThreadIsBusy(false);
+        //     }
+        // } dtbh(pCurThread);
+
         // We should never be here if the debugger was never involved.
         CONTEXT * pOldContext;
         pOldContext = pCurThread->GetFilterContext();
@@ -4569,7 +4615,8 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
                                                        ST_PATCH
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                                        ,
-                                                       pDebuggerSteppingInfo
+                                                       pDebuggerSteppingInfo,
+                                                       pfDidAllocateDebuggerPatchSkip
 #endif
                                                        );
             LOG((LF_CORDB, LL_EVERYTHING, "DC::DNE DispatchPatch call returned\n"));
@@ -4591,7 +4638,8 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
                                         (SCAN_TRIGGER)(ST_PATCH|ST_SINGLE_STEP)
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                                             ,
-                                                            pDebuggerSteppingInfo
+                                                            pDebuggerSteppingInfo,
+                                                            pfDidAllocateDebuggerPatchSkip
 #endif
                                                             );
                 // We pass patch | single step since single steps actually
@@ -4636,6 +4684,14 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
     if (pCurThread->IsSingleStepEnabled())
         pCurThread->ApplySingleStep(pContext);
 #endif // FEATURE_EMULATE_SINGLESTEP
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    if (!fDebuggers)
+    {
+        // if no event will be sent to the debugger, we can reset our state on setting the IP
+        g_pDebugger->ClearSetIP(pCurThread);
+    }
+#endif
 
     FireEtwDebugExceptionProcessingEnd();
 
@@ -4743,6 +4799,8 @@ DebuggerPatchSkip::DebuggerPatchSkip(Thread *thread,
 
     if (!IsInPlaceSingleStep())
     {
+        printf("[DebuggerPatchSkip [%p] calling SetIP\n", (void*)thread);
+        fflush(stdout);
         //set eip to point to buffer...
         SetIP(context, (PCODE)patchBypassRX);
 
@@ -4792,6 +4850,15 @@ void DebuggerPatchSkip::DebuggerDetachClean()
    // 2. Create a "stack walking" implementation for native code and use it to get the current IP and
    // set the IP to the right place.
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    // during detach we need to ensure the context is only being updated out of process
+    bool bUsingOutOfProcEvents = g_pDebugInterface->IsOutOfProcessSetContextEnabled();
+    if (bUsingOutOfProcEvents)
+    {
+        return;
+    }
+#endif
+
     Thread *thread = GetThreadNULLOk();
     if (thread != NULL)
     {
@@ -4802,6 +4869,8 @@ void DebuggerPatchSkip::DebuggerDetachClean()
             (size_t)GetIP(context) >= (size_t)patchBypass &&
             (size_t)GetIP(context) <= (size_t)(patchBypass + MAX_INSTRUCTION_LENGTH + 1))
         {
+            printf("DebuggerDetachClean [%p] calling SetIP\n", (void*)thread);
+            fflush(stdout);
             SetIP(context, (PCODE)((BYTE *)GetIP(context) - (patchBypass - (BYTE *)m_address)));
         }
     }
@@ -4931,6 +5000,9 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
                     LOG((LF_CORDB, LL_INFO10000, "Bypass instruction redirected because still in skip area.\n"
                         "\tm_fIsCall = %s, patchBypass = %p, m_address = %p\n",
                         (m_instrAttrib.m_fIsCall ? "true" : "false"), patchBypass, m_address));
+
+                    printf("DebuggerPatchSkip::TriggerExceptionHook 1 [%p] calling SetIP\n", (void*)thread);
+                    fflush(stdout);
                     SetIP(context, (PCODE)((BYTE *)GetIP(context) - (patchBypass - (BYTE *)m_address)));
                 }
             }
@@ -4945,6 +5017,8 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
                 if (g_pEEInterface->IsManagedNativeCode(dac_cast<PTR_CBYTE>(newIP)) ||
                     (g_pEEInterface->TraceStub(LPBYTE(newIP), &trace)))
                 {
+                    printf("DebuggerPatchSkip::TriggerExceptionHook 2 %p] calling SetIP\n", (void*)thread);
+                    fflush(stdout);
                     LOG((LF_CORDB, LL_INFO10000, "Bypass instruction redirected because we landed in managed or stub code\n"));
                     SetIP(context, newIP);
                 }
@@ -4962,6 +5036,10 @@ TP_RESULT DebuggerPatchSkip::TriggerExceptionHook(Thread *thread, CONTEXT * cont
         else
         {
             LOG((LF_CORDB, LL_INFO10000, "Bypass instruction redirected because it wasn't a single step exception.\n"));
+
+            printf("DebuggerPatchSkip::TriggerExceptionHook 3 [%p] calling SetIP\n", (void*)thread);
+            fflush(stdout);
+
             SetIP(context, (PCODE)((BYTE *)GetIP(context) - (patchBypass - (BYTE *)m_address)));
         }
 

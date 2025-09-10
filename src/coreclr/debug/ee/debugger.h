@@ -1864,7 +1864,14 @@ extern "C" void __stdcall NotifyRightSideOfSyncCompleteFlare(void);
 extern "C" void __stdcall NotifySecondChanceReadyForDataFlare(void);
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
 #if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
-extern "C" void __stdcall SetThreadContextNeededFlare(TADDR pContext, DWORD size, bool fIsInPlaceSingleStep, PRD_TYPE opcode);
+enum SetThreadContextNeededFlags
+{
+    kSetThreadContextNeeded_None                = 0x0,
+    kSetThreadContextNeeded_IsInPlaceSingleStep = 0x1,
+    kSetThreadContextNeeded_IsDebuggerPatchSkip = 0x2,
+    kSetThreadContextNeeded_AllFlags            = 0x3
+};
+extern "C" void __stdcall SetThreadContextNeededFlare(TADDR pContext, DWORD size, SetThreadContextNeededFlags setThreadContextNeededFlags, PRD_TYPE opcode);
 #else
 #error Platform not supported
 #endif
@@ -3023,10 +3030,49 @@ private:
 
 private:
     BOOL m_fOutOfProcessSetContextEnabled;
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    Volatile<LONG> m_cPendingSetIP;
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
+
 public:
     // Used by Debugger::FirstChanceNativeException to update the context from out of process
-    void SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL);
+    void SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo *pDebuggerSteppingInfo = NULL, bool fDidAllocateDebuggerPatchSkip = false);
     BOOL IsOutOfProcessSetContextEnabled();
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    void RecordSetIP(Thread *pThread)
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        if (pThread->HasThreadStateNC(Thread::TSNC_DebuggerSetIP))
+        {
+            // We have already recorded a SetIP for this thread that hasn't been processed yet.
+            return;
+        }
+
+        pThread->SetThreadStateNC(Thread::TSNC_DebuggerSetIP);
+        LONG c = InterlockedIncrement(&m_cPendingSetIP);
+
+        printf("[%p] Recording SetIP m_cPendingSetIP=%ld\n", pThread, c);
+        fflush(stdout);
+    }
+    void ClearSetIP(Thread *pThread)
+    {
+        LIMITED_METHOD_CONTRACT;
+
+        if (!pThread->HasThreadStateNC(Thread::TSNC_DebuggerSetIP))
+        {
+            // We have already cleared the SetIP for this thread.
+            return;
+        }
+
+        pThread->ResetThreadStateNC(Thread::TSNC_DebuggerSetIP);
+        LONG c = InterlockedDecrement(&m_cPendingSetIP);
+
+        printf("[%p] Clearing SetIP m_cPendingSetIP=%ld\n", pThread, c);
+        fflush(stdout);
+    }
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 };
 
 

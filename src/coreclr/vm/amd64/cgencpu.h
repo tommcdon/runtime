@@ -357,6 +357,8 @@ inline void SetIP(CONTEXT* context, PCODE rip)
     }
     CONTRACTL_END;
 
+    printf("SetIP [%p] to %p\n", (void*)GetThreadNULLOk(), (void*)rip);
+
     context->Rip = (DWORD64) rip;
 }
 

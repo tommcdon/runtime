@@ -938,7 +938,11 @@ Debugger::Debugger()
     m_willBlockOnGarbageCollectionEvent(FALSE),
     m_isGarbageCollectionEventsEnabled(FALSE),
     m_isGarbageCollectionEventsEnabledLatch(FALSE)
-{
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    ,
+    m_cPendingSetIP(0)
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
+    {
     CONTRACTL
     {
         WRAPPER(THROWS);
@@ -5447,10 +5451,18 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
     {
         return true;
     }
+    if (code == EXCEPTION_BREAKPOINT && exception->ExceptionAddress == SetThreadContextNeededFlare)
+    {
+        LOG((LF_CORDB, LL_INFO1000, "D::FCNE: [%p] SetThreadContextNeededFlare at IP=%p!\n", thread, (void*)GetIP(context)));
+        return true;
+    }
 
     bool retVal;
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     DebuggerSteppingInfo debuggerSteppingInfo;
+    bool fDidAllocateDebuggerPatchSkip = false;
+    printf("D::FCNE: [%p] ENTER RIP=%p, RSP=%p, code=%x\n", (void*)thread, (void*)GetIP(context), (void*)GetSP(context), code);
+    LOG((LF_CORDB, LL_INFO1000, "D::FCNE: [%p] ENTER RIP=%p, RSP=%p, code=%x\n", (void*)thread, (void*)GetIP(context), (void*)GetSP(context), code));
 #endif
 
     {
@@ -5463,6 +5475,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
                                                                code, thread
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
                                                                ,&debuggerSteppingInfo
+                                                               ,&fDidAllocateDebuggerPatchSkip
 #endif
                                                                );
         }
@@ -5475,9 +5488,26 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
 #if defined(OUT_OF_PROCESS_SETTHREADCONTEXT) && !defined(DACCESS_COMPILE)
     if (retVal && fIsVEH)
     {
+        bool isSS = DebuggerController::IsSingleStepEnabled(thread);
+        DebuggerPatchSkip *patchSkip = thread->GetActiveDebuggerPatchSkip();
+        bool isPatchSkipEnabled = patchSkip != nullptr;
+        if (isPatchSkipEnabled != fDidAllocateDebuggerPatchSkip)
+        {
+            // this is unexpected
+            printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!D::FCNE: [%p] patchSkip (%p) != fDidAllocateDebuggerPatchSkip (%d)!\n", (void*)thread, (void*)patchSkip, fDidAllocateDebuggerPatchSkip);
+            fflush(stdout);
+        }
+        printf("D::FCNE: [%p] EXIT  RIP=%p RSP=%p SS=%d isPatchSkipEnabled=%d fDidAllocateDebuggerPatchSkip=%d DebuggerAttached=%d\n", (void*)thread, (void*)GetIP(context), (void*)GetSP(context), isSS, isPatchSkipEnabled, fDidAllocateDebuggerPatchSkip, CORDebuggerAttached());
+        fflush(stdout);
+        LOG((LF_CORDB, LL_INFO1000, "D::FCNE: [%p] EXIT  RIP=%p RSP=%p SS=%d isPatchSkipEnabled=%d fDidAllocateDebuggerPatchSkip=%d DebuggerAttached=%d\n", (void*)thread, (void*)GetIP(context), (void*)GetSP(context), isSS, isPatchSkipEnabled, fDidAllocateDebuggerPatchSkip, CORDebuggerAttached()));
+
         // This does not return. Out-of-proc debugger will update the thread context
         // within this call.
-        SendSetThreadContextNeeded(context, &debuggerSteppingInfo);
+        SendSetThreadContextNeeded(context, &debuggerSteppingInfo, fDidAllocateDebuggerPatchSkip);
+
+        printf("***** [%p] SendSetThreadContextNeeded returned! Resetting PC=%p RSP=%p if isPatchSkipEnabled\n", thread, (void*)GetIP(context), (void*)GetSP(context));
+        fflush(stdout);
+        LOG((LF_CORDB, LL_INFO1000, "***** [%p] SendSetThreadContextNeeded returned PC=%p SP=%p\n", thread, (void*)GetIP(context), (void*)GetSP(context)));
     }
 #endif
     return retVal;
@@ -14582,6 +14612,9 @@ HRESULT Debugger::FuncEvalSetup(DebuggerIPCE_FuncEvalInfo *pEvalInfo,
     {
         _ASSERTE(filterContext != NULL);
 
+        printf("FuncEval [%p] Calling SetIP\n", pThread);
+        fflush(stdout);
+
         ::SetIP(filterContext, (UINT_PTR)GetEEFuncEntryPoint(::FuncEvalHijack));
 
         // Don't be fooled into thinking you can push things onto the thread's stack now. If the thread is stopped at a
@@ -16167,7 +16200,7 @@ void Debugger::StartCanaryThread()
 
 #ifndef DACCESS_COMPILE
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo *pDebuggerSteppingInfo)
+void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo *pDebuggerSteppingInfo, bool fDidAllocateDebuggerPatchSkip)
 {
     STATIC_CONTRACT_NOTHROW;
     STATIC_CONTRACT_GC_NOTRIGGER;
@@ -16220,12 +16253,23 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo
 
     bool fIsInPlaceSingleStep = pDebuggerSteppingInfo != NULL && pDebuggerSteppingInfo->IsInPlaceSingleStep();
     PRD_TYPE opcode = pDebuggerSteppingInfo != NULL ? pDebuggerSteppingInfo->GetOpcode() : CORDbg_BREAK_INSTRUCTION;
-
+    
     // send the context to the right side
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode));
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x fDidAllocateDebuggerPatchSkip=%d\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode, fDidAllocateDebuggerPatchSkip));
+
+    SetThreadContextNeededFlags setThreadContextNeededFlags = kSetThreadContextNeeded_None;
+    if (fIsInPlaceSingleStep)
+    {
+        setThreadContextNeededFlags = (SetThreadContextNeededFlags)(setThreadContextNeededFlags | kSetThreadContextNeeded_IsInPlaceSingleStep);
+    }
+    if (fDidAllocateDebuggerPatchSkip)
+    {
+        setThreadContextNeededFlags = (SetThreadContextNeededFlags)(setThreadContextNeededFlags | kSetThreadContextNeeded_IsDebuggerPatchSkip);
+    }
+
     EX_TRY
     {
-        SetThreadContextNeededFlare((TADDR)pContext, contextSize, fIsInPlaceSingleStep, opcode);
+        SetThreadContextNeededFlare((TADDR)pContext, contextSize, setThreadContextNeededFlags, opcode);
     }
     EX_CATCH
     {

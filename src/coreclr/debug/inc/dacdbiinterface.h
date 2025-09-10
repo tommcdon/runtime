@@ -2732,6 +2732,10 @@ public:
     virtual
     HRESULT GetDomainAssemblyFromModule(VMPTR_Module vmModule, OUT VMPTR_DomainAssembly *pVmDomainAssembly) = 0;
 
+    virtual bool ClearSetIP(VMPTR_Thread vmThread) = 0;
+    virtual bool HasPendingSetIP() = 0;
+    virtual bool HasActivePatchSkip(VMPTR_Thread vmThread) = 0;
+
     // The following tag tells the DD-marshalling tool to stop scanning.
     // END_MARSHAL
 

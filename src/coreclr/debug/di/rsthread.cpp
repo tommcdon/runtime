@@ -96,6 +96,13 @@ CordbThread::CordbThread(CordbProcess * pProcess, VMPTR_Thread vmThread) :
     // If we ever support fibers, then we need to use something more unique than that.
     m_dwUniqueID = pProcess->GetDAC()->GetUniqueThreadID(vmThread); // may throw
 
+    UnmanagedThreadTracker* pTracker = pProcess->GetUnmanagedThreadTracker(m_dwUniqueID);
+    _ASSERTE(pTracker != NULL);
+    if (pTracker != NULL)
+    {
+        pTracker->SetVMThread(vmThread);
+    }
+
     LOG((LF_CORDB, LL_INFO1000, "CT::CT new thread 0x%p vmptr=0x%p id=0x%x\n",
         this, m_vmThreadToken, m_dwUniqueID));
 

@@ -7341,6 +7341,114 @@ HRESULT DacDbiInterfaceImpl::GetDomainAssemblyFromModule(VMPTR_Module vmModule, 
     return S_OK;
 }   
 
+bool DacDbiInterfaceImpl::ClearSetIP(VMPTR_Thread vmThread)
+{
+    HRESULT hr = S_OK;
+    
+    if (vmThread.IsNull())
+        return false;
+
+    DAC_ENTER();
+
+    bool bClearedThreadState = false;
+    bool bHasDebuggerPatchSkip = false;
+
+    EX_TRY
+    {
+        Thread *pThread = vmThread.GetDacPtr();
+
+        // update cached copy of Thread::m_StateNC
+        TADDR taThreadState = PTR_HOST_MEMBER_TADDR(Thread, pThread, m_StateNC);
+        Thread::ThreadStateNoConcurrency tsStateNC;
+        SafeReadStructOrThrow<Thread::ThreadStateNoConcurrency>(taThreadState, &tsStateNC);
+
+        if (/*pThread != NULL && pThread->HasThreadStateNC(Thread::TSNC_DebuggerSetIP)*/(tsStateNC & Thread::TSNC_DebuggerSetIP))
+        {
+
+            //pThread->ResetThreadStateNC(Thread::TSNC_DebuggerSetIP);
+            tsStateNC = (Thread::ThreadStateNoConcurrency)((DWORD)tsStateNC & ~Thread::TSNC_DebuggerSetIP);
+
+            // update the field on the target copy
+            SafeWriteStructOrThrow<Thread::ThreadStateNoConcurrency>(taThreadState, &tsStateNC);
+
+            if (g_pDebugger != NULL)
+            {
+                TADDR addr = PTR_HOST_MEMBER_TADDR(Debugger, g_pDebugger, m_cPendingSetIP);
+
+                LONG cPendingSetIP = 0;
+                SafeReadStructOrThrow<LONG>(addr, &cPendingSetIP);
+                cPendingSetIP--;
+                _ASSERTE(cPendingSetIP >= 0);
+
+                SafeWriteStructOrThrow<LONG>(addr, &cPendingSetIP);
+
+                g_pDebugger->m_cPendingSetIP = cPendingSetIP;
+                bClearedThreadState = true;
+            }
+        }
+    }
+    EX_CATCH_HRESULT(hr);
+
+DAC_LEAVE();
+
+    return bClearedThreadState;
+}
+
+bool DacDbiInterfaceImpl::HasPendingSetIP()
+{
+    DAC_ENTER();
+
+    LONG cPendingSetIP = 0;
+    HRESULT hr = S_OK;
+    EX_TRY
+    {
+        if (g_pDebugger != NULL)
+        {
+            TADDR addr = PTR_HOST_MEMBER_TADDR(Debugger, g_pDebugger, m_cPendingSetIP);
+
+            SafeReadStructOrThrow<LONG>(addr, &cPendingSetIP);
+
+            //g_pDebugger->m_cPendingSetIP = cPendingSetIP;
+        }
+    }
+    EX_CATCH_HRESULT(hr);
+
+    DAC_LEAVE();
+
+    return cPendingSetIP > 0;
+}
+
+bool DacDbiInterfaceImpl::HasActivePatchSkip(VMPTR_Thread vmThread)
+{
+    HRESULT hr = S_OK;
+    
+    if (vmThread.IsNull())
+        return false;
+
+    DAC_ENTER();
+
+    bool bHasDebuggerPatchSkip = false;
+
+    EX_TRY
+    {
+        Thread *pThread = vmThread.GetDacPtr();
+
+        if (pThread != NULL)
+        {
+            DebuggerPatchSkip * pSkip = NULL;
+            SafeReadStructOrThrow<DebuggerPatchSkip*>(PTR_HOST_MEMBER_TADDR(Thread, pThread, m_debuggerActivePatchSkipper), &pSkip);
+            if (pSkip != NULL)
+            {
+                bHasDebuggerPatchSkip = true;
+            }
+        }
+    }
+    EX_CATCH_HRESULT(hr);
+
+DAC_LEAVE();
+
+    return bHasDebuggerPatchSkip;
+}
 DacRefWalker::DacRefWalker(ClrDataAccess *dac, BOOL walkStacks, BOOL walkFQ, UINT32 handleMask, BOOL resolvePointers)
     : mDac(dac), mWalkStacks(walkStacks), mWalkFQ(walkFQ), mHandleMask(handleMask), mStackWalker(NULL),
       mResolvePointers(resolvePointers), mHandleWalker(NULL), mFQStart(PTR_NULL), mFQEnd(PTR_NULL), mFQCurr(PTR_NULL)
