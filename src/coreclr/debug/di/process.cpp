@@ -963,7 +963,9 @@ CordbProcess::CordbProcess(ULONG64 clrInstanceId,
     m_writableMetadataUpdateMode(LegacyCompatPolicy)
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     ,
-    m_dwOutOfProcessStepping(0)
+    m_dwOutOfProcessStepping(0),
+    m_detachSetThreadContextNeededEvent(NULL),
+    m_DetachInProgress(DS_None)
 #endif
 {
     _ASSERTE((m_id == 0) == (pShim == NULL));
@@ -1338,6 +1340,7 @@ void CordbProcess::Neuter()
     }
     m_unmanagedThreadHashTable.RemoveAll();
     m_dwOutOfProcessStepping = 0;
+    m_DetachInProgress = DS_None;
 #endif
 
     NeuterChildren();
@@ -1458,6 +1461,14 @@ void CordbProcess::CloseIPCHandles()
         CloseHandle(m_stopWaitEvent);
         m_stopWaitEvent = NULL;
     }
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    if (m_detachSetThreadContextNeededEvent != NULL)
+    {
+        CloseHandle(m_detachSetThreadContextNeededEvent);
+        m_detachSetThreadContextNeededEvent = NULL;
+    }
+#endif
 }
 
 
@@ -1774,6 +1785,14 @@ HRESULT CordbProcess::Init()
         {
             ThrowLastError();
         }
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        m_detachSetThreadContextNeededEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+        if (m_detachSetThreadContextNeededEvent == NULL)
+        {
+            ThrowLastError();
+        }
+#endif
 
         if (m_pShim != NULL)
         {
@@ -3104,6 +3123,25 @@ void CordbProcess::DetachShim()
             this->NeuterChildren();
         }
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        class DetachInProgressGuard
+        {
+            CordbProcess * m_pProcess;
+        public:
+            DetachInProgressGuard(CordbProcess * pProcess) 
+            {
+                m_pProcess = pProcess;
+                pProcess->m_DetachInProgress = DS_DetachInProgress;
+                ResetEvent(pProcess->m_detachSetThreadContextNeededEvent);
+            }
+            ~DetachInProgressGuard() 
+            {
+                m_pProcess->m_DetachInProgress = DS_None;
+            }
+        };
+        DetachInProgressGuard detachInProgressGuard(this);
+#endif
+
         // Go ahead and detach from the entire process now. This is like sending a "Continue".
         DebuggerIPCEvent * pIPCEvent = (DebuggerIPCEvent *) _alloca(CorDBIPC_BUFFER_SIZE);
         InitIPCEvent(pIPCEvent, DB_IPCE_DETACH_FROM_PROCESS, true, VMPTR_AppDomain::NullPtr());
@@ -3112,10 +3150,6 @@ void CordbProcess::DetachShim()
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
         if (hr == CORDBG_E_PROCESS_TERMINATED)
         {
-            // The detach implementation in the left-side process is deferred until all breakpoints and single-step exceptions have been processed
-            // This increases the chances that the process has exited while we are still waiting for the detach to complete
-            // In the case where this occurs, CordbWin32EventThread should still get the exit process notification and so we will proceed from here
-            // as if detach had succeeded.
             m_detached = true;
             m_stopCount = 0;
             return;
@@ -3123,6 +3157,74 @@ void CordbProcess::DetachShim()
 #endif
         hr = WORST_HR(hr, pIPCEvent->hr);
         IfFailThrow(hr);
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        const HANDLE rghWaitSet[] = {
+            m_detachSetThreadContextNeededEvent, // Singled when when it is safe to detach
+            UnsafeGetProcessHandle()
+        };
+
+        // Send an async request to determine if we can detach
+        this->m_pShim->GetWin32EventThread()->FireTryDetach();
+
+        const DWORD DETACH_WAIT_TIMEOUT_MS = 60000; // 60 seconds
+        const DWORD DETACH_POLL_INTERVAL_MS = 100; // 100 ms
+        const DWORD DETACH_EVACUATION_COUNTER = 2; // 200 ms
+        DWORD timeOut = DETACH_WAIT_TIMEOUT_MS;
+        DWORD detachCounter = 0;
+        while (true)
+        {
+            DWORD dwResult = WaitForMultipleObjectsEx(_countof(rghWaitSet), rghWaitSet, FALSE, timeOut, FALSE);
+            if (dwResult == WAIT_OBJECT_0 || m_DetachInProgress != DS_DetachInProgress)
+            {
+                if (m_DetachInProgress == DS_DetachComplete)
+                {
+                    break;
+                }
+                // we have been signaled that it is safe to detach
+                // start incrementing detachCounter and re-issuing the CanDetach every 10ms
+                // after we have issued DETACH_EVACUATION_COUNTER CanDetach requests, we will
+                // assume all breakpoint and single-step notifications have been processed and 
+                // we can safely detach
+                _ASSERTE(m_DetachInProgress == DS_TryDetach);
+                HRESULT hr = this->m_pShim->GetWin32EventThread()->SendCanDetach();
+                if (FAILED(hr))
+                {
+                    CONSISTENCY_CHECK_MSGF(false, ("SendCanDetach failed: %d", hr));
+                    ThrowHR(CORDBG_E_UNRECOVERABLE_ERROR);
+                }
+                if (hr == S_OK)
+                {
+                    if (m_DetachInProgress == DS_TryDetach && detachCounter++ < DETACH_EVACUATION_COUNTER)
+                    {
+                        timeOut = DETACH_POLL_INTERVAL_MS; // poll until the evacuation counter is reached
+                        continue;
+                    }
+                    m_DetachInProgress = DS_DetachComplete;
+                    break;
+                }
+                else
+                {
+                    m_DetachInProgress = DS_DetachInProgress; // couldn't detach, reset back to in progress
+                    detachCounter = 0;
+                    timeOut = DETACH_WAIT_TIMEOUT_MS;
+                }
+            }
+            else if (dwResult == WAIT_OBJECT_0 + 1)
+            {
+                // Process has exited
+                m_detached = true;
+                m_stopCount = 0;
+                return;
+            }
+            else // if (dwResult == WAIT_TIMEOUT)
+            {
+                // timeout
+                CONSISTENCY_CHECK_MSGF(false, ("WaitForMultipleObjectsEx failed for m_detachSetThreadContextNeededEvent: %d", dwResult));
+                ThrowHR(CORDBG_E_TIMEOUT);
+            }
+        }
+#endif
     }
     else
     {
@@ -10845,10 +10947,19 @@ enum
     W32ETA_CREATE_PROCESS    = 1,
     W32ETA_ATTACH_PROCESS    = 2,
     W32ETA_CONTINUE          = 3,
-    W32ETA_DETACH            = 4
+    W32ETA_DETACH            = 4,
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    W32ETA_CAN_DETACH        = 5
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 };
 
-
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+enum
+{
+    W32ETAA_NONE             = 0,
+    W32ETAA_TRY_DETACH       = 1
+};
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
 //---------------------------------------------------------------------------------------
 // Constructor
@@ -10865,6 +10976,10 @@ CordbWin32EventThread::CordbWin32EventThread(
     m_thread(NULL), m_threadControlEvent(NULL),
     m_actionTakenEvent(NULL), m_run(TRUE),
     m_action(W32ETA_NONE)
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    ,m_threadControlAsyncEvent(NULL),
+    m_asyncAction(W32ETAA_NONE)
+#endif
 {
     m_cordb.Assign(pCordb);
     _ASSERTE(pCordb != NULL);
@@ -10890,6 +11005,11 @@ CordbWin32EventThread::~CordbWin32EventThread()
 
     if (m_actionTakenEvent != NULL)
         CloseHandle(m_actionTakenEvent);
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    if (m_threadControlAsyncEvent != NULL)
+        CloseHandle(m_threadControlAsyncEvent);
+#endif
 
     if (m_pNativePipeline != NULL)
     {
@@ -10918,6 +11038,12 @@ HRESULT CordbWin32EventThread::Init()
     m_actionTakenEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (m_actionTakenEvent == NULL)
         return HRESULT_FROM_GetLastError();
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    m_threadControlAsyncEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (m_threadControlAsyncEvent == NULL)
+        return HRESULT_FROM_GetLastError();
+#endif
 
     m_pNativePipeline = NewPipelineForThisPlatform();
     if (m_pNativePipeline == NULL)
@@ -11181,7 +11307,8 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
     TADDR lsContextAddr = (TADDR)context.Rcx;
     DWORD contextSize = (DWORD)context.Rdx;
 
-    bool fIsInPlaceSingleStep = (bool)(context.R8&0x1);
+    bool fIsInPlaceSingleStep = (context.R8&0x1)!=0;
+    bool fHasDebuggerPatchSkip = (context.R8&0x2)!=0;
     PRD_TYPE opcode = (PRD_TYPE)context.R9;
 
     if (contextSize == 0 || contextSize > sizeof(CONTEXT) + 25000)
@@ -11191,6 +11318,15 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
         LOG((LF_CORDB, LL_INFO10000, "RS HandleSetThreadContextNeeded - Corrupted HandleSetThreadContextNeeded message received\n"));
 
         ThrowHR(E_UNEXPECTED);
+    }
+
+    if (!IsInteropDebugging())
+    {
+        _ASSERTE(curThread->HasPendingSetIP());
+        if (!fIsInPlaceSingleStep && !fHasDebuggerPatchSkip)
+        {
+            curThread->ClearPendingSetIP();
+        }
     }
 
     PCONTEXT pContext = (PCONTEXT)_alloca(contextSize);
@@ -11348,6 +11484,11 @@ void CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
             pUnmanagedThread->Suspend();
         }
     }
+
+    if (!IsInteropDebugging() && m_DetachInProgress == DS_DetachInProgress)
+    {
+        this->m_pShim->GetWin32EventThread()->FireTryDetach();
+    }
 #else
     #error Platform not supported
 #endif
@@ -11414,10 +11555,50 @@ bool CordbProcess::HandleInPlaceSingleStep(DWORD dwThreadId, PVOID pExceptionAdd
             pUnmanagedThread->Resume();
         }
 
+        if (!IsInteropDebugging())
+        {
+            _ASSERTE(curThread->HasPendingSetIP());
+            curThread->ClearPendingSetIP();
+            
+            if (m_DetachInProgress == DS_DetachInProgress)
+            {
+                this->m_pShim->GetWin32EventThread()->FireTryDetach();
+            }
+        }
+
         return true;
     }
 
     return false;
+}
+
+bool CordbProcess::SetPendingSetIP(DWORD dwThreadId)
+{
+    HRESULT hr = S_OK;
+    UnmanagedThreadTracker * curThread = m_unmanagedThreadHashTable.Lookup(dwThreadId);
+
+    if (curThread == NULL || curThread->GetThreadId() != dwThreadId)
+    {
+        CONSISTENCY_CHECK_MSG(false, ("SetPendingSetIP - Thread not found"));
+        return false;
+    }
+
+    curThread->SetPendingSetIP();
+    return true;
+}
+
+UnmanagedThreadTracker * CordbProcess::GetUnmanagedTracker(DWORD dwThreadId)
+{
+    HRESULT hr = S_OK;
+    UnmanagedThreadTracker * curThread = m_unmanagedThreadHashTable.Lookup(dwThreadId);
+
+    if (curThread == NULL || curThread->GetThreadId() != dwThreadId)
+    {
+        CONSISTENCY_CHECK_MSG(false, ("SetPendingSetIP - Thread not found"));
+        return NULL;
+    }
+
+    return curThread;
 }
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
@@ -11668,22 +11849,51 @@ HRESULT CordbProcess::Filter(
             // holder will invoke DeleteIPCEventHelper(pManagedEvent).
         }
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
-        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT && pRecord->ExceptionAddress == m_runtimeOffsets.m_setThreadContextNeededAddr)
+        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_BREAKPOINT)
         {
-            // this is a request to set the thread context out of process
-
-            HandleSetThreadContextNeeded(dwThreadId);
-            *pContinueStatus = DBG_CONTINUE;
-        }
-        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_SINGLE_STEP && m_dwOutOfProcessStepping > 0)
-        {
-            // this may be an in-place step, and if so place the breakpoint instruction back to the patch location and resume the threads
-
-            if (HandleInPlaceSingleStep(dwThreadId, pRecord->ExceptionAddress))
+            if (m_DetachInProgress == DS_TryDetach)
             {
-                // let the normal left side debugger stepper logic execute for this single step
-                *pContinueStatus = DBG_EXCEPTION_NOT_HANDLED;
+                _ASSERTE(!"Should not be receiving breakpoint exceptions while trying to detach");
             }
+            if (pRecord->ExceptionAddress == m_runtimeOffsets.m_setThreadContextNeededAddr)
+            {
+                // this is a request to set the thread context out of process
+
+                HandleSetThreadContextNeeded(dwThreadId);
+                *pContinueStatus = DBG_CONTINUE;
+            }
+            else if (!IsInteropDebugging() && !SetPendingSetIP(dwThreadId))
+            {
+                _ASSERTE(!"SetPendingSetIP failed");
+            }
+        }
+        else if (dwFirstChance && pRecord->ExceptionCode == STATUS_SINGLE_STEP)
+        {
+            if (m_DetachInProgress == DS_TryDetach)
+            {
+                _ASSERTE(!"Should not be receiving single step exceptions while trying to detach");
+            }
+            if (m_dwOutOfProcessStepping > 0)
+            {
+                // this may be an in-place step, and if so place the breakpoint instruction back to the patch location and resume the threads
+
+                if (HandleInPlaceSingleStep(dwThreadId, pRecord->ExceptionAddress))
+                {
+                    // let the normal left side debugger stepper logic execute for this single step
+                    *pContinueStatus = DBG_EXCEPTION_NOT_HANDLED;
+                }
+            }
+#if _DEBUG
+            else if (!IsInteropDebugging())
+            {
+                UnmanagedThreadTracker * pTracker = GetUnmanagedTracker(dwThreadId);
+                _ASSERTE(pTracker != NULL);
+                if (pTracker != NULL && pTracker->IsDebuggerPatchSkip())
+                {
+                    _ASSERTE(pTracker->HasPendingSetIP());
+                }
+            }
+#endif
         }
 #endif
     }
@@ -11774,10 +11984,17 @@ void CordbWin32EventThread::Win32EventLoop()
 
         unsigned int cWaitCount = 1;
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        HANDLE rghWaitSet[3];
+#else
         HANDLE rghWaitSet[2];
+#endif
 
         rghWaitSet[0] = m_threadControlEvent;
-
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        rghWaitSet[cWaitCount++] = m_threadControlAsyncEvent;
+#endif
+        
         DWORD dwWaitTimeout = INFINITE;
         DEBUG_EVENT event = {};
         if (m_pProcess != NULL)
@@ -11839,8 +12056,7 @@ void CordbWin32EventThread::Win32EventLoop()
         // that will ensure that we only wait for an Exit event once.
         if ((m_pProcess != NULL) && fDidNotJustGetExitProcessEvent)
         {
-            rghWaitSet[1] = m_pProcess->UnsafeGetProcessHandle();
-            cWaitCount = 2;
+            rghWaitSet[cWaitCount++] = m_pProcess->UnsafeGetProcessHandle();
         }
 
         // See if any process that we aren't attached to as the Win32 debugger have exited. (Note: this is a
@@ -11862,41 +12078,61 @@ void CordbWin32EventThread::Win32EventLoop()
         // If we haven't timed out, or if it wasn't the thread control event
         // that was set, then a process has
         // exited...
-        if ((dwStatus != WAIT_TIMEOUT) && (dwStatus != WAIT_OBJECT_0))
+        if (dwStatus == WAIT_OBJECT_0 + cWaitCount - 1)
         {
             // Grab the process that exited.
-            _ASSERTE((dwStatus - WAIT_OBJECT_0) == 1);
             ExitProcess(false); // not detach
             fEventAvailable = false;
         }
-        // Should we create a process?
-        else if (m_action == W32ETA_CREATE_PROCESS)
+        else if (dwStatus == WAIT_OBJECT_0 || dwStatus == WAIT_TIMEOUT) // synchronous control event or timeout
         {
-            CreateProcess();
-        }
-        // Should we attach to a process?
-        else if (m_action == W32ETA_ATTACH_PROCESS)
-        {
-            AttachProcess();
-        }
-        // Should we detach from a process?
-        else if (m_action == W32ETA_DETACH)
-        {
-            ExitProcess(true); // detach case
+            // Should we create a process?
+            if (m_action == W32ETA_CREATE_PROCESS)
+            {
+                CreateProcess();
+            }
+            // Should we attach to a process?
+            else if (m_action == W32ETA_ATTACH_PROCESS)
+            {
+                AttachProcess();
+            }
+            // Should we detach from a process?
+            else if (m_action == W32ETA_DETACH)
+            {
+                ExitProcess(true); // detach case
 
-            // Once we detach, we don't need to continue any outstanding event.
-            // So act like we never got the event.
-            fEventAvailable = false;
-            _ASSERTE(m_pProcess == NULL); // W32 cleared process pointer
-        }
+                // Once we detach, we don't need to continue any outstanding event.
+                // So act like we never got the event.
+                fEventAvailable = false;
+                _ASSERTE(m_pProcess == NULL); // W32 cleared process pointer
+            }
 
 #ifdef FEATURE_INTEROP_DEBUGGING
-        // Should we continue the process?
-        else if (m_action == W32ETA_CONTINUE)
-        {
-            HandleUnmanagedContinue();
-        }
+            // Should we continue the process?
+            else if (m_action == W32ETA_CONTINUE)
+            {
+                HandleUnmanagedContinue();
+            }
 #endif // FEATURE_INTEROP_DEBUGGING
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+            else if (m_action == W32ETA_CAN_DETACH)
+            {
+                HandleCanDetach();
+            }
+#endif
+        }
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        else if (dwStatus == WAIT_OBJECT_0 + 1) // async control event
+        {
+            if (m_asyncAction == W32ETAA_TRY_DETACH)
+            {
+                if (!fEventAvailable)
+                {
+                    TryDetach();
+                }
+            }
+        }
+#endif
 
         // We don't need to sweep the FCH threads since we never hijack a thread in cooperative mode.
 
@@ -11927,6 +12163,15 @@ void CordbWin32EventThread::Win32EventLoop()
             PUBLIC_CALLBACK_IN_THIS_SCOPE0_NO_LOCK(NULL);
             hrShim = m_pShim->HandleWin32DebugEvent(&event);
         }
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+        if (dwStatus == WAIT_OBJECT_0 + 1) // async control event
+        {
+            if (m_asyncAction == W32ETAA_TRY_DETACH)
+            {
+                TryDetach();
+            }
+        }
+#endif
         // Any errors from the shim (eg. failure to load DAC) are unrecoverable
         SetUnrecoverableIfFailed(m_pProcess, hrShim);
 
@@ -14923,6 +15168,75 @@ void CordbWin32EventThread::ExitProcess(bool fDetach)
     m_pProcess.Clear();
 }
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+HRESULT CordbWin32EventThread::FireTryDetach()
+{
+    m_asyncAction = W32ETAA_TRY_DETACH;
+
+    BOOL succ = SetEvent(m_threadControlAsyncEvent);
+
+    return succ ? S_OK : HRESULT_FROM_GetLastError();
+}
+
+HRESULT CordbWin32EventThread::SendCanDetach()
+{
+    HRESULT hr = S_OK;
+
+    LockSendToWin32EventThreadMutex();
+
+    m_action = W32ETA_CAN_DETACH;
+
+    BOOL succ = SetEvent(m_threadControlEvent);
+
+    if (succ)
+    {
+        DWORD ret = WaitForSingleObject(m_actionTakenEvent, INFINITE);
+
+        if (ret == WAIT_OBJECT_0)
+            hr = m_actionResult;
+        else
+            hr = HRESULT_FROM_GetLastError();
+    }
+    else
+        hr = HRESULT_FROM_GetLastError();
+
+    UnlockSendToWin32EventThreadMutex();
+
+    return hr;
+}
+
+void CordbWin32EventThread::HandleCanDetach()
+{
+    _ASSERTE(IsWin32EventThread());
+    _ASSERTE(m_pProcess != NULL);
+
+    m_action = W32ETA_NONE;
+    HRESULT hr = S_OK;
+
+    bool canDetach = m_pProcess->CanDetach();
+
+    // Signal the hr to the caller.
+    m_actionResult = canDetach ? S_OK : S_FALSE;
+    SetEvent(m_actionTakenEvent);
+}
+
+bool CordbWin32EventThread::TryDetach()
+{
+    _ASSERTE(IsWin32EventThread());
+    _ASSERTE(m_pProcess != NULL);
+
+    m_asyncAction = W32ETAA_NONE;
+    if (m_pProcess != NULL)
+    {
+        if (m_pProcess->CanDetach())
+        {
+            m_pProcess->SetTryDetach();
+            return true;
+        }
+    }
+    return false;
+}
+#endif
 
 //
 // Start actually creates and starts the thread.
@@ -15532,5 +15846,48 @@ void CordbProcess::HandleDebugEventForInPlaceStepping(const DEBUG_EVENT * pEvent
             }
             break;
     }
+}
+
+bool CordbProcess::CanDetach() 
+{
+    HRESULT hr = S_OK;
+    _ASSERTE(!IsInteropDebugging()); // detach is not supported in interop debugging
+    _ASSERTE(m_DetachInProgress == DS_DetachInProgress || m_DetachInProgress == DS_TryDetach);
+
+    if (IsInteropDebugging() || m_DetachInProgress == DS_None || m_DetachInProgress == DS_DetachComplete)
+    {
+        return false;
+    }
+
+    CUnmanagedThreadHashTableIterator beginIter = m_unmanagedThreadHashTable.Begin();
+    CUnmanagedThreadHashTableIterator endIter = m_unmanagedThreadHashTable.End();
+    for (CUnmanagedThreadHashTableIterator curIter = beginIter; curIter != endIter; ++curIter)
+    {
+        UnmanagedThreadTracker * pUnmanagedThread = *curIter;
+        _ASSERTE(pUnmanagedThread != NULL);
+        if (pUnmanagedThread == NULL)
+        {
+            continue;
+        }
+        if (pUnmanagedThread->IsInPlaceStepping())
+        {
+            return false;
+        }
+        if (pUnmanagedThread->HasPendingSetIP())
+        {
+            return false;
+        }
+#ifdef _DEBUG
+        _ASSERTE(!pUnmanagedThread->IsDebuggerPatchSkip());
+#endif
+    }
+
+    return true;
+}
+
+void CordbProcess::SetTryDetach() 
+{
+    m_DetachInProgress = DS_TryDetach;
+    SetEvent(m_detachSetThreadContextNeededEvent);
 }
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT

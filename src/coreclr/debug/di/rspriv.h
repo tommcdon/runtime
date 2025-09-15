@@ -2920,10 +2920,14 @@ public:
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
 class UnmanagedThreadTracker
 {
-    DWORD m_dwThreadId = (DWORD)-1;
-    HANDLE m_hThread = INVALID_HANDLE_VALUE;
-    CORDB_ADDRESS_TYPE *m_pPatchSkipAddress = NULL;
-    DWORD m_dwSuspendCount = 0;
+    DWORD m_dwThreadId = (DWORD)-1; // The OS thread ID of the unmanaged thread we are tracking
+    HANDLE m_hThread = INVALID_HANDLE_VALUE; // Handle to the unmanaged thread, used for suspending and resuming the thread
+    CORDB_ADDRESS_TYPE *m_pPatchSkipAddress = NULL; // If non-NULL, this is the address to which we should set the IP when resuming the thread.
+    DWORD m_dwSuspendCount = 0; // The suspend count of the thread when we last checked it.
+    bool m_pendingSetIP = false; // Set to true if there is a breakpoint or single-step operation on target thread that doesn't have a vmTHread
+#ifdef _DEBUG
+    bool m_fIsDebuggerPatchSkip = false; // Set to true if the thread is currently in a debugger patch skip
+#endif
 
 public:
     UnmanagedThreadTracker(DWORD wThreadId, HANDLE hThread) : m_dwThreadId(wThreadId), m_hThread(hThread) {}
@@ -2937,6 +2941,15 @@ public:
     void Suspend();
     void Resume();
     void Close();
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    void SetPendingSetIP() { m_pendingSetIP = true; }
+    void ClearPendingSetIP() { m_pendingSetIP = false; }
+    bool HasPendingSetIP() const { return m_pendingSetIP; }
+#ifdef _DEBUG
+    void SetIsDebuggerPatchSkip(bool fIsDebuggerPatchSkip) { m_fIsDebuggerPatchSkip = fIsDebuggerPatchSkip; }
+    bool IsDebuggerPatchSkip() const { return m_fIsDebuggerPatchSkip; }
+#endif
+#endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 };
 
 class EMPTY_BASES_DECL CUnmanagedThreadSHashTraits : public DefaultSHashTraits<UnmanagedThreadTracker*>
@@ -3318,6 +3331,8 @@ public:
 #ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
     void HandleSetThreadContextNeeded(DWORD dwThreadId);
     bool HandleInPlaceSingleStep(DWORD dwThreadId, PVOID pExceptionAddress);
+    bool SetPendingSetIP(DWORD dwThreadId);
+    UnmanagedThreadTracker * GetUnmanagedTracker(DWORD dwThreadId);
 #endif
 
     //
@@ -4153,6 +4168,19 @@ private:
     DWORD m_dwOutOfProcessStepping;
 public:
     void HandleDebugEventForInPlaceStepping(const DEBUG_EVENT * pEvent);
+    bool CanDetach();           // Must only be called on the Win32ET, determines if it is safe to detach. Used by W32ETA_CAN_DETACH and W32ETAA_TRY_DETACH
+    void SetTryDetach();        // Sets detach state to TryDetach, starting the detach evacuation counter.  Only set inside of W32ETAA_TRY_DETACH.
+    enum DetachState
+    {
+        DS_None,                // Detach is not in progress
+        DS_DetachInProgress,    // Detach has been initiated
+        DS_TryDetach,           // CanDetach determined that it is safe to detach, initiate detach evacuation counter
+        DS_DetachComplete       // After detach evacuation counter has reached its target, detach is complete
+    };
+private:
+    HANDLE m_detachSetThreadContextNeededEvent;
+
+    Volatile<DetachState> m_DetachInProgress;
 #endif // OUT_OF_PROCESS_SETTHREADCONTEXT
 
 };
@@ -10160,6 +10188,11 @@ public:
 
     HRESULT SendDetachProcessEvent(CordbProcess *pProcess);
 
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    HRESULT FireTryDetach();
+    HRESULT SendCanDetach();
+#endif
+
 #ifdef FEATURE_INTEROP_DEBUGGING
     HRESULT SendUnmanagedContinue(CordbProcess *pProcess,
                                   EUMContinueType eContType);
@@ -10210,6 +10243,11 @@ private:
     void HandleUnmanagedContinue();
 
     void ExitProcess(bool fDetach);
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    bool TryDetach();
+    void HandleCanDetach();
+#endif
 
 private:
     RSSmartPtr<Cordb>    m_cordb;
@@ -10282,6 +10320,11 @@ private:
             EUMContinueType eContType;
         } continueData;
     }                    m_actionData;
+
+#ifdef OUT_OF_PROCESS_SETTHREADCONTEXT
+    HANDLE               m_threadControlAsyncEvent;
+    unsigned int         m_asyncAction;
+#endif
 };
 
 
