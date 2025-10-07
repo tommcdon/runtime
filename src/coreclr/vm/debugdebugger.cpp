@@ -177,6 +177,158 @@ extern "C" void QCALLTYPE DebugDebugger_Log(INT32 Level, PCWSTR pwzModule, PCWST
 #endif // DEBUGGING_SUPPORTED
 }
 
+bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArray<ResumeData>* pContinuationResumeList)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    // Look for thread static field t_nextContinuation: Type=NextContinuationData*
+    // Which is a nested struct containing the field NextContinuation: Type=System.Runtime.CompilerServices.Continuation
+    // Continuation has a field "Resume" which is a fnptr to the method to invoke to resume the async method.
+    ApproxFieldDescIterator fieldIter(pContinuationMT, ApproxFieldDescIterator::STATIC_FIELDS);
+    for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
+    {
+        if (field->IsEnCNew() || !field->IsThreadStatic() || field->GetFieldType() != ELEMENT_TYPE_PTR)
+            continue;
+
+        TypeHandle  typeHandle = field->GetFieldTypeHandleThrowing();
+        if (typeHandle == NULL)
+        {
+            continue;
+        }
+        MethodTable* pFieldMT = typeHandle.GetMethodTable();
+        if (pFieldMT == NULL)
+        {
+            continue;
+        }
+        pFieldMT->EnsureTlsIndexAllocated();
+        LPCUTF8 fieldName = field->GetName();
+
+        if (fieldName == nullptr || strcmp(fieldName, "t_nextContinuation"))
+        {
+            continue;
+        }
+
+        typedef struct
+        {
+            OBJECTREF* pNext;
+            OBJECTREF* pContinuation; // System.Runtime.CompilerServices.Continuation
+        } NextContinuationData;
+
+        Thread * pThread = GetThread();
+        if (pThread == NULL)
+        {
+            continue;
+        }
+        PTR_BYTE base = pContinuationMT->GetNonGCThreadStaticsBasePointer(pThread);
+        if (base == NULL)
+        {
+            continue;
+        }
+        SIZE_T offset = field->GetOffset();
+        NextContinuationData** ppNextContinuation = (NextContinuationData**)((PTR_BYTE)base + (DWORD)offset);
+        if (ppNextContinuation == NULL || *ppNextContinuation == NULL)
+        {
+            continue;
+        }
+
+        NextContinuationData* pNextContinuation = *ppNextContinuation;
+        while (pNextContinuation != NULL)
+        {
+            if (pNextContinuation->pContinuation == NULL || *(pNextContinuation->pContinuation) == NULL)
+            {
+                break;
+            }
+
+            OBJECTREF continuation = *(pNextContinuation->pContinuation);
+            while (continuation != NULL)
+            {
+                OBJECTREF pNext = nullptr;
+                PCODE pResume = 0;
+                UINT32 state = 0;
+                int numFound = 0;
+                GCPROTECT_BEGIN(continuation)
+                {
+                    ApproxFieldDescIterator continuationFieldIter(continuation->GetMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
+                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 3; continuationField = continuationFieldIter.Next())
+                    {
+                        LPCUTF8 fieldName = continuationField->GetName();
+                        if (!strcmp(fieldName, "Next"))
+                        {
+                            pNext = (OBJECTREF)(Object*)continuation->GetPtrOffset(continuationField->GetOffset());
+                            numFound++;
+                        }
+                        else if (!strcmp(fieldName, "Resume"))
+                        {
+                            pResume = (PCODE)continuation->GetPtrOffset(continuationField->GetOffset());
+                            numFound++;
+                        }
+                        else if (!strcmp(fieldName, "State"))
+                        {
+                            state = continuation->GetOffset32(continuationField->GetOffset());
+                            numFound++;
+                        }
+                    }
+                }
+                GCPROTECT_END();
+
+                if (pResume != 0)
+                {
+                    MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
+
+                    PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
+                    if (pILResolver != nullptr)
+                    {
+                        MethodDesc * targetMd = pILResolver->GetStubTargetMethodDesc();
+                        AsyncResumeILStubResolver * pAsyncResumeResolver = (AsyncResumeILStubResolver *)pILResolver;
+
+                        auto fpNew = [](void* data, size_t numBytes)
+                        {
+                            return new (nothrow) BYTE[numBytes];
+                        };
+                        EECodeInfo codeInfo(pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
+                        DebugInfoRequest diq;
+                        diq.InitFromStartingAddr(targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
+                        ICorDebugInfo::AsyncInfo asyncInfo = {};
+                        NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+                        NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+                        ULONG32 cAsyncVars = 0;
+
+                        if (codeInfo.GetJitManager()->GetAsyncDebugInfo(diq, fpNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars))
+                        {
+                            if (state >= asyncInfo.NumSuspensionPoints)
+                            {
+                                // invalid state
+                                continue;
+                            }
+                            pContinuationResumeList->Append({ targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress(), asyncSuspensionPoints[state].NativeOffset });
+                        }
+
+                    }
+                }
+
+                if (pNext == nullptr)
+                {
+                    break;
+                }
+                continuation = pNext;
+            }
+
+            // TODO: use NextContinuationData's "Next" field to continue the list
+            //pNextContinuation = pNext;
+            break;
+        } // while pNextContinuation != NULL
+
+    } // foreach static field
+
+    return true;
+}
+
 static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 {
     CONTRACTL
@@ -194,9 +346,26 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     MethodDesc* pFunc = pCf->GetFunction();
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
-    if (pData->cElements >= pData->cElementsAllocated)
+
+    if (pCf != NULL && pCf->GetFunction() != NULL && pCf->GetFunction()->IsAsyncMethod())
     {
-        DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*pData->cElementsAllocated];
+        pData->fAsyncFramesPresent = TRUE;
+    }
+    else if (pData->fAsyncFramesPresent)
+    {
+        DefineFullyQualifiedNameForClass();
+        if (!strcmp(GetFullyQualifiedNameForClassNestedAware(pFunc->GetMethodTable()), "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTaskCore") &&
+            !strcmp(pFunc->GetName(), "DispatchContinuations"))
+        {
+            // capture async v2 continuations
+            DebugStackTrace::ExtractContinuationData(pFunc->GetMethodTable(), &pData->continuationResumeList);
+        }
+    }
+
+    int cNumAlloc = pData->cElements + pData->continuationResumeList.GetCount();
+    if (cNumAlloc >= pData->cElementsAllocated)
+    {
+        DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*cNumAlloc];
         if (pTemp == NULL)
         {
             return SWA_ABORT;
@@ -207,36 +376,62 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         delete [] pData->pElements;
 
         pData->pElements = pTemp;
-        pData->cElementsAllocated *= 2;
+        pData->cElementsAllocated = 2*cNumAlloc;
     }
 
     PCODE ip;
     DWORD dwNativeOffset;
 
-    if (pCf->IsFrameless())
+    if (pData->continuationResumeList.GetCount() == 0)
     {
-        // Real method with jitted code.
-        dwNativeOffset = pCf->GetRelOffset();
-        ip = GetControlPC(pCf->GetRegisterSet());
+        if (pCf->IsFrameless())
+        {
+            // Real method with jitted code.
+            dwNativeOffset = pCf->GetRelOffset();
+            ip = GetControlPC(pCf->GetRegisterSet());
+        }
+        else
+        {
+            ip = (PCODE)NULL;
+            dwNativeOffset = 0;
+        }
+
+        // Pass on to InitPass2 that the IP has already been adjusted (decremented by 1)
+        INT flags = pCf->IsIPadjusted() ? STEF_IP_ADJUSTED : 0;
+
+        pData->pElements[pData->cElements].InitPass1(
+                dwNativeOffset,
+                pFunc,
+                ip,
+                flags);
+
+        // We'll init the IL offsets outside the TSL lock.
+
+        ++pData->cElements;
     }
     else
     {
-        ip = (PCODE)NULL;
-        dwNativeOffset = 0;
+        // inject async v2 continuations if any
+        for (UINT32 i = 0; i < pData->continuationResumeList.GetCount() && (pData->NumFramesRequested == 0 || pData->cElements < pData->NumFramesRequested); i++)
+        {
+            DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
+            MethodDesc* pResumeMd = resumeData.pResumeMd;
+            PCODE pResumeIp = resumeData.pResumeIp;
+            DWORD dwNativeOffset = resumeData.dwNativeOffset;
+
+            pData->pElements[pData->cElements].InitPass1(
+                dwNativeOffset,
+                pResumeMd,
+                pResumeIp,
+                STEF_CONTINUATION);
+
+            ++pData->cElements;
+        }
+        pData->continuationResumeList.Clear();
+
+        // TODO: Re-evaluate if we should continue the stack walk after injecting continuations
+        return SWA_ABORT;
     }
-
-    // Pass on to InitPass2 that the IP has already been adjusted (decremented by 1)
-    INT flags = pCf->IsIPadjusted() ? STEF_IP_ADJUSTED : 0;
-
-    pData->pElements[pData->cElements].InitPass1(
-            dwNativeOffset,
-            pFunc,
-            ip,
-            flags);
-
-    // We'll init the IL offsets outside the TSL lock.
-
-    ++pData->cElements;
 
     // check if we already have the number of frames that the user had asked for
     if ((pData->NumFramesRequested != 0) && (pData->NumFramesRequested <= pData->cElements))
