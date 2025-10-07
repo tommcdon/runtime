@@ -192,6 +192,73 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     //        NOT AT ALL!!!, but we can assume it's a function
     //                       because we asked the stackwalker for it!
     MethodDesc* pFunc = pCf->GetFunction();
+    if (pFunc->IsAsyncMethod())
+    {
+        EECodeInfo* pCodeInfo = pCf->GetCodeInfo();
+        DebugInfoRequest diq;
+        diq.InitFromStartingAddr(pFunc, pCodeInfo->GetStartAddress());
+        ULONG32 cVars = 0;
+        NewArrayHolder<ICorDebugInfo::NativeVarInfo> vars(NULL);
+        auto fpNew = [](void* data, size_t numBytes)
+        {
+            return new (nothrow) BYTE[numBytes];
+        };
+
+        if (pCf->GetJitManager()->GetBoundariesAndVars(diq, fpNew, nullptr, BoundsType::Instrumented, nullptr, nullptr, &cVars, &vars))
+        {
+            // for (ULONG32 i = 0; i < cVars; ++i)
+            // {
+            //     map[i].ilOffset = vars[i].ilOffset;
+            //     map[i].nativeStartOffset = vars[i].nativeOffset;
+            // }
+
+        }
+        /*
+                GetAsyncDebugInfo(
+            const DebugInfoRequest & request,
+            IN FP_IDS_NEW fpNew, IN void * pNewData,
+            OUT ICorDebugInfo::AsyncInfo* pAsyncInfo,
+            OUT ICorDebugInfo::AsyncSuspensionPoint** ppSuspensionPoints,
+            OUT ICorDebugInfo::AsyncContinuationVarInfo** ppAsyncVars,
+            OUT ULONG32* pcAsyncVars)
+
+                    *pAsyncInfo = {};
+        *ppSuspensionPoints = NULL;
+        *ppAsyncVars = NULL;
+        *pNumAsyncVars = 0;
+
+        */
+        ICorDebugInfo::AsyncInfo asyncInfo = {};
+        NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+        NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+        ULONG32 cAsyncVars = 0;
+
+        if (pCf->GetJitManager()->GetAsyncDebugInfo(diq, fpNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars))
+        {
+            printf("Async method: NumSuspensionPoints=%u, num vars=%u\n",
+                asyncInfo.NumSuspensionPoints,
+                cAsyncVars);
+            fflush(stdout);
+            for (ULONG32 i = 0; i < asyncInfo.NumSuspensionPoints; ++i)
+            {
+                printf("  suspension point %u: RootILOffset=%u, Inlinee=%u, ILOffset=%u, NumContinuationVars=%u\n",
+                    i,
+                    asyncSuspensionPoints[i].RootILOffset,
+                    asyncSuspensionPoints[i].Inlinee,
+                    asyncSuspensionPoints[i].ILOffset,
+                    asyncSuspensionPoints[i].NumContinuationVars);
+                fflush(stdout);
+            }
+            for (ULONG32 i = 0; i < cAsyncVars; ++i)
+            {
+                printf("  var %u: VarNumber=%u, Offset=%u\n",
+                    i,
+                    asyncVars[i].VarNumber,
+                    asyncVars[i].Offset);
+                fflush(stdout);
+            }
+        }
+    }
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
     if (pData->cElements >= pData->cElementsAllocated)
