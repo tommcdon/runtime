@@ -100,6 +100,12 @@ public:
 
 public:
 
+    struct ResumeData
+    {
+        MethodDesc *pResumeMd; // method desc of the resume method
+        PCODE pResumeIp; // method IP
+        UINT32 dwNativeOffset; // native offset within the async method where the await completed
+    };
     struct GetStackFramesData
     {
         INT32   NumFramesRequested;
@@ -109,6 +115,8 @@ public:
         THREADBASEREF   TargetThread;
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
+        BOOL fAsyncFramesPresent; // True if async frames were present in the stack
+        SArray<ResumeData> continuationResumeList; // Used to capture async v2 continuation resume point
 
         GetStackFramesData()
             : NumFramesRequested (0)
@@ -117,6 +125,7 @@ public:
             , pElements(NULL)
             , TargetThread((THREADBASEREF)(TADDR)NULL)
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
+            , fAsyncFramesPresent(FALSE)
         {
             LIMITED_METHOD_CONTRACT;
         }
@@ -128,6 +137,7 @@ public:
     };
 
     static void GetStackFramesFromException(OBJECTREF * e, GetStackFramesData *pData, PTRARRAYREF * pDynamicMethodArray = NULL);
+    static bool ExtractContinuationData(MethodTable* pContinuationMT, SArray<ResumeData>* pContinuationResumeList);
 };
 
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
