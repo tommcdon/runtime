@@ -11,6 +11,7 @@ using System.Runtime.Serialization;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 
 namespace System.Runtime.CompilerServices
 {
@@ -141,6 +142,12 @@ namespace System.Runtime.CompilerServices
 
         [ThreadStatic]
         private static RuntimeAsyncAwaitState t_runtimeAsyncAwaitState;
+
+        [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "AsyncHelpers_AddContinuationToExInternal")]
+        private static unsafe partial void AddContinuationToExInternal(void* resume, uint state, ObjectHandleOnStack ex);
+
+        internal static unsafe void AddContinuationToExInternal(Continuation continuation, Exception e)
+            => AddContinuationToExInternal(continuation.Resume, continuation.State, ObjectHandleOnStack.Create(ref e));
 
         private static unsafe Continuation AllocContinuation(Continuation prevContinuation, MethodTable* contMT)
         {
@@ -373,7 +380,7 @@ namespace System.Runtime.CompilerServices
                     }
                     catch (Exception ex)
                     {
-                        Continuation? handlerContinuation = UnwindToPossibleHandler(continuation);
+                        Continuation? handlerContinuation = UnwindToPossibleHandler(continuation, ex);
                         if (handlerContinuation == null)
                         {
                             // Tail of AsyncTaskMethodBuilderT.SetException
@@ -422,12 +429,14 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            private static Continuation? UnwindToPossibleHandler(Continuation? continuation)
+            private static Continuation? UnwindToPossibleHandler(Continuation? continuation, Exception ex)
             {
                 while (true)
                 {
                     if (continuation == null || (continuation.Flags & ContinuationFlags.HasException) != 0)
                         return continuation;
+
+                    AddContinuationToExInternal(continuation, ex);
 
                     continuation = continuation.Next;
                 }
