@@ -11,6 +11,7 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 
 namespace System.Runtime.CompilerServices
 {
@@ -476,7 +477,7 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            private static unsafe Continuation UnwindToPossibleHandler(Continuation continuation, Exception ex)
+            private static Continuation UnwindToPossibleHandler(Continuation continuation, Exception ex)
             {
                 while (true)
                 {
@@ -485,6 +486,7 @@ namespace System.Runtime.CompilerServices
                     if ((continuation.Flags & CorInfoContinuationFlags.CORINFO_CONTINUATION_NEEDS_EXCEPTION) != 0)
                         return continuation;
 
+                    AddContinuationToExInternal(continuation, ex);
                     Debug.Assert(continuation.Next != null);
                     continuation = continuation.Next;
 
