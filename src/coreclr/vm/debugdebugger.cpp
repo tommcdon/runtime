@@ -192,6 +192,65 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     //        NOT AT ALL!!!, but we can assume it's a function
     //                       because we asked the stackwalker for it!
     MethodDesc* pFunc = pCf->GetFunction();
+    {
+        MethodTable* pMT = pFunc->GetMethodTable();
+        ApproxFieldDescIterator fieldIter(pMT, ApproxFieldDescIterator::STATIC_FIELDS);
+        for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
+        {
+            // Don't want thread local
+            _ASSERTE(field->IsStatic());
+            if (/*field->IsSpecialStatic() || */field->IsEnCNew())
+                continue;
+
+            if (!field->IsThreadStatic())
+            {
+                continue;
+            }
+
+            // Static valuetype values are boxed.
+            CorElementType fieldType = field->GetFieldType();
+            if (fieldType != ELEMENT_TYPE_PTR/*fieldType != ELEMENT_TYPE_CLASS && fieldType != ELEMENT_TYPE_VALUETYPE*/)
+                continue;
+
+            // pMT->GetThreadStaticsInfo
+            TypeHandle  typeHandle = field->GetFieldTypeHandleThrowing();
+            if (typeHandle == NULL)
+            {
+                continue;
+            }
+            MethodTable* pFieldMT = typeHandle.GetMethodTable();
+            if (pFieldMT == NULL)
+            {
+                continue;
+            }
+            pFieldMT->EnsureTlsIndexAllocated();
+
+            SString fieldNameTH;
+            typeHandle.GetName(fieldNameTH);
+            LPCUTF8 fieldName = field->GetName();
+            printf("  static field %s: Type=%s\n",
+                fieldName,
+                fieldNameTH.GetUTF8());
+            if (strcmp(fieldName, "t_nextContinuation"))
+            {
+                continue;
+            }
+
+            // BYTE *base = field->GetBase();
+            // if (base == NULL)
+            //     continue;
+
+            // Object **address = (Object**)field->GetStaticAddressHandle(base);
+            // Object *obj = NULL;
+            // if (address == NULL || ((obj = *address) == NULL))
+            //     continue;
+
+            // TypeHandle typeHandle = obj->GetGCSafeTypeHandleIfPossible();
+
+
+            //WriteEntry(domain, address, *address, field);
+        } // foreach static field
+    }
     if (pFunc->IsAsyncMethod())
     {
         EECodeInfo* pCodeInfo = pCf->GetCodeInfo();
