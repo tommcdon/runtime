@@ -438,6 +438,7 @@ namespace System.Runtime.CompilerServices
 
                     AddContinuationToExInternal(continuation, ex);
 
+                    Debug.Assert(continuation.Next != null);
                     continuation = continuation.Next;
                 }
             }
