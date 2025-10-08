@@ -197,6 +197,8 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         EECodeInfo* pCodeInfo = pCf->GetCodeInfo();
         DebugInfoRequest diq;
         diq.InitFromStartingAddr(pFunc, pCodeInfo->GetStartAddress());
+        ULONG32 cMap = 0;
+        NewArrayHolder<ICorDebugInfo::OffsetMapping> map(NULL);
         ULONG32 cVars = 0;
         NewArrayHolder<ICorDebugInfo::NativeVarInfo> vars(NULL);
         auto fpNew = [](void* data, size_t numBytes)
@@ -204,13 +206,22 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             return new (nothrow) BYTE[numBytes];
         };
 
-        if (pCf->GetJitManager()->GetBoundariesAndVars(diq, fpNew, nullptr, BoundsType::Instrumented, nullptr, nullptr, &cVars, &vars))
+        if (pCf->GetJitManager()->GetBoundariesAndVars(diq, fpNew, nullptr, BoundsType::Instrumented, &cMap, &map, &cVars, &vars))
         {
             // for (ULONG32 i = 0; i < cVars; ++i)
             // {
             //     map[i].ilOffset = vars[i].ilOffset;
             //     map[i].nativeStartOffset = vars[i].nativeOffset;
             // }
+            for (ULONG32 i = 0; i < cMap; ++i)
+            {
+                printf("  offset map %x: IL=%x, Native=%x, Source=%x\n",
+                    i,
+                    map[i].ilOffset,
+                    map[i].nativeOffset,
+                    map[i].source);
+                fflush(stdout);
+            }
 
         }
         /*
@@ -241,7 +252,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             fflush(stdout);
             for (ULONG32 i = 0; i < asyncInfo.NumSuspensionPoints; ++i)
             {
-                printf("  suspension point %u: RootILOffset=%u, Inlinee=%u, ILOffset=%u, NumContinuationVars=%u\n",
+                printf("  suspension point %x: RootILOffset=%x, Inlinee=%x, ILOffset=%x, NumContinuationVars=%x\n",
                     i,
                     asyncSuspensionPoints[i].RootILOffset,
                     asyncSuspensionPoints[i].Inlinee,
@@ -251,7 +262,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             }
             for (ULONG32 i = 0; i < cAsyncVars; ++i)
             {
-                printf("  var %u: VarNumber=%u, Offset=%u\n",
+                printf("  var %x: VarNumber=%x, Offset=%x\n",
                     i,
                     asyncVars[i].VarNumber,
                     asyncVars[i].Offset);
