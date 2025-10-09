@@ -197,9 +197,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         ApproxFieldDescIterator fieldIter(pMT, ApproxFieldDescIterator::STATIC_FIELDS);
         for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
         {
-            // Don't want thread local
-            _ASSERTE(field->IsStatic());
-            if (/*field->IsSpecialStatic() || */field->IsEnCNew())
+            if (field->IsEnCNew())
                 continue;
 
             if (!field->IsThreadStatic())
@@ -236,19 +234,133 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
                 continue;
             }
 
-            // BYTE *base = field->GetBase();
-            // if (base == NULL)
-            //     continue;
+            enum CorInfoContinuationFlags
+            {
+                // Whether or not the continuation expects the result to be boxed and
+                // placed in the GCData array at index 0. Not set if the callee is void.
+                CORINFO_CONTINUATION_RESULT_IN_GCDATA = 1,
+                // If this bit is set the continuation resumes inside a try block and thus
+                // if an exception is being propagated, needs to be resumed. The exception
+                // should be placed at index 0 or 1 depending on whether the continuation
+                // also expects a result.
+                CORINFO_CONTINUATION_NEEDS_EXCEPTION = 2,
+                // If this bit is set the continuation has the IL offset that inspired the
+                // OSR method saved in the beginning of 'Data', or -1 if the continuation
+                // belongs to a tier 0 method.
+                CORINFO_CONTINUATION_OSR_IL_OFFSET_IN_DATA = 4,
+                // If this bit is set the continuation should continue on the thread
+                // pool.
+                CORINFO_CONTINUATION_CONTINUE_ON_THREAD_POOL = 8,
+                // If this bit is set the continuation has a SynchronizationContext
+                // that we should continue on.
+                CORINFO_CONTINUATION_CONTINUE_ON_CAPTURED_SYNCHRONIZATION_CONTEXT = 16,
+                // If this bit is set the continuation has a TaskScheduler
+                // that we should continue on.
+                CORINFO_CONTINUATION_CONTINUE_ON_CAPTURED_TASK_SCHEDULER = 32,
+            };
 
-            // Object **address = (Object**)field->GetStaticAddressHandle(base);
-            // Object *obj = NULL;
-            // if (address == NULL || ((obj = *address) == NULL))
-            //     continue;
+            typedef struct ContinuationStruct
+            {
+                void* Next;
+                void* Resume;
+                uint State;
+                CorInfoContinuationFlags Flags;
+            } Continuation;
+            typedef struct NextContinuationDataStruct
+            {
+                NextContinuationDataStruct* pNext;
+                OBJECTREF* pContinuation;
+            } NextContinuationData;
 
-            // TypeHandle typeHandle = obj->GetGCSafeTypeHandleIfPossible();
+            Thread * pThread = GetThread();
+            if (pThread == NULL)
+            {
+                continue;
+            }
+            PTR_BYTE base = pMT->GetNonGCThreadStaticsBasePointer(pThread);
+            if (base == NULL)
+            {
+                continue;
+            }
+            SIZE_T offset = field->GetOffset();
+            NextContinuationData** ppNextContinuation = (NextContinuationData**)((PTR_BYTE)base + (DWORD)offset);
+            if (ppNextContinuation == NULL || *ppNextContinuation == NULL)
+            {
+                continue;
+            }
+            NextContinuationData* pNextContinuation = *ppNextContinuation;
+            OBJECTREF continuation = *(OBJECTREF*)pNextContinuation->pContinuation;
+            if (continuation == NULL)
+            {
+                continue;
+            }
+            /*
+            0:009> !do poi(0x0000001e79bfe880)
+            Name:        System.Runtime.CompilerServices.Continuation
+            MethodTable: 00007ff899aec580
+            Canonical MethodTable: 00007ff899aec580
+            Tracked Type: false
+            Size:        56(0x38) bytes
+            File:        D:\Projects\AsyncTest\bin\Debug\net10.0\win-x64\System.Private.CoreLib.dll
+            Fields:
+                        MT    Field   Offset                 Type VT     Attr            Value Name
+            00007ff899aec580  4001626        8 ...ices.Continuation  0 instance 00000139c94c9968 Next
+            00007ff899033ac0  4001627       20                FNPTR  0 instance 00007ff899bd9380 Resume
+            00007ff898f86620  4001628       28        System.UInt32  1 instance                7 State
+            00007ff899aec460  4001629       2c         System.Int32  1 instance                9 Flags
+            00007ff899493240  400162a       10        System.Byte[]  0 instance 00000139c94cb740 Data
+            00007ff898ecf108  400162b       18      System.Object[]  0 instance 00000139c94cb760 GCData
+            */
+            GCPROTECT_BEGIN(continuation)
+            {
+                TypeHandle typeHandle = continuation->GetTypeHandle();//GetGCSafeTypeHandleIfPossible();
+                ApproxFieldDescIterator fieldIter(continuation->GetMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
+                for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
+                {
+                    LPCUTF8 fieldName = field->GetName();
+                    if (strcmp(fieldName, "Resume") == 0)
+                    {
+                        DWORD offset = field->GetOffset();
+
+                        void* pResume = (void*)continuation->GetPtrOffset(offset);
+                        printf("Resume %p\n", pResume);
+
+                        // TypeHandle  typeHandle = field->GetFieldTypeHandleThrowing();
+                        // if (typeHandle == NULL)
+                        // {
+                        //     continue;
+                        // }
+
+                        // FnPtrTypeDesc * fptd = typeHandle.AsFnPtrType();
+
+                        MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
+
+                        printf("  Resume method: %s\n",
+                            pMD->GetName());
+
+                        fflush(stdout);
+
+                        MethodDesc * targetMd = pMD->AsDynamicMethodDesc()->GetILStubResolver()->GetStubTargetMethodDesc();
+
+                        printf("  Target method: %s\n",
+                            targetMd->GetName());
+                        break;
+                    }
+                }
+                // void* pResume = continuation->GetPtrOffset(sizeof(void*));
+                // printf("Resume %p\n", pResume);
 
 
-            //WriteEntry(domain, address, *address, field);
+                // FnPtrTypeDesc * fptd = typeHandle.AsFnPtrType();
+                // EECodeInfo codeInfo((PCODE)pResume);
+                // if (codeInfo.IsValid())
+                // {
+                //     MethodDesc * pMD = codeInfo.GetMethodDesc();
+                // }
+
+                //AsDynamicMethodDesc()->GetILStubResolver()->GetStubTargetMethodDesc()
+            }
+            GCPROTECT_END();
         } // foreach static field
     }
     if (pFunc->IsAsyncMethod())
