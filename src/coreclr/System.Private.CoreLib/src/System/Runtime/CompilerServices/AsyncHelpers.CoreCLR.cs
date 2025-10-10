@@ -476,10 +476,11 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            private static Continuation UnwindToPossibleHandler(Continuation continuation, Exception ex)
+            private static unsafe Continuation UnwindToPossibleHandler(Continuation continuation, Exception ex)
             {
                 while (true)
                 {
+                    if (continuation.Resume != null) AddContinuationToExInternal(continuation, ex);
                     if ((continuation.Flags & CorInfoContinuationFlags.CORINFO_CONTINUATION_NEEDS_EXCEPTION) != 0)
                         return continuation;
 
