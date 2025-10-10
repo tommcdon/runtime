@@ -11,6 +11,7 @@
 
 #include "eexcp.h"
 #include "exstatecommon.h"
+#include "exkind.h"
 
 // This address lies in the NULL pointer partition of the process memory.
 // Accessing it will result in AV.
