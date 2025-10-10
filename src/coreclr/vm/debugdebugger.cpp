@@ -1618,6 +1618,28 @@ void DebugStackTrace::Element::InitPass2()
 
     bool bRes = false;
 
+    if (this->flags & STEF_CONTINUATION)
+    {
+        PCODE addr = this->pFunc->GetNativeCode();
+        if (addr != (PCODE)NULL)
+        {
+            EECodeInfo codeInfo(addr);
+            if (codeInfo.IsValid())
+            {
+                DebugInfoRequest request;
+                request.InitFromStartingAddr(this->pFunc, addr);
+                ICorDebugInfo::AsyncInfo asyncInfo = {};
+                NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+                NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+                ULONG32 cAsyncVars = 0;
+                DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars);
+                this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
+                // leave native offset TBD, Noah
+            }
+        }
+        return;
+    }
+
     bool fAdjustOffset = (this->flags & STEF_IP_ADJUSTED) == 0 && this->dwOffset > 0;
 
     // Check the cache!
