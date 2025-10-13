@@ -1815,14 +1815,33 @@ void DebugStackTrace::Element::InitPass2()
             EECodeInfo codeInfo(addr);
             if (codeInfo.IsValid())
             {
-                DebugInfoRequest request;
-                request.InitFromStartingAddr(this->pFunc, addr);
-                ICorDebugInfo::AsyncInfo asyncInfo = {};
-                NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
-                NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
-                ULONG32 cAsyncVars = 0;
-                DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars);
-                this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
+                // DebugInfoRequest request;
+                // request.InitFromStartingAddr(this->pFunc, addr);
+                // ICorDebugInfo::AsyncInfo asyncInfo = {};
+                // NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+                // // NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+                // // ULONG32 cAsyncVars = 0;
+                // if (DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew, nullptr, &asyncInfo, &asyncSuspensionPoints, nullptr, nullptr))
+                // {
+
+                //     ULONG32 cMap = 0;
+                //     NewArrayHolder<ICorDebugInfo::OffsetMapping> map(NULL);
+                //     // ULONG32 cVars = 0;
+                //     // NewArrayHolder<ICorDebugInfo::NativeVarInfo> vars(NULL);
+                //     if (DebugInfoManager::GetBoundariesAndVars(request, DebugInfoStoreNew, nullptr, BoundsType::Instrumented, &cMap, &map, nullptr, nullptr))
+                //     {
+                //         for (ULONG32 i = 0; i < cMap; i++)
+                //         {
+                //             if (map[i].ilOffset == this->dwILOffset)
+                //             {
+                //                 this->dwOffset = map[i].nativeOffset;
+                //                 break;
+                //             }
+                //         }
+                //     }
+                // }
+                //this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
+
                 // leave native offset TBD, Noah
             }
         }
