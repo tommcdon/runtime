@@ -508,9 +508,10 @@ extern "C" void QCALLTYPE AsyncHelpers_AddContinuationToExInternal(
     MethodDesc* methodDesc = NonVirtualEntry2MethodDesc((PCODE)resume);
     ILStubResolver *pResolver = methodDesc->AsDynamicMethodDesc()->GetILStubResolver();
     MethodDesc* pTargetMethodDesc = pResolver->GetStubTargetMethodDesc();
+    AsyncResumeILStubResolver* pAsyncResumeResolver = (AsyncResumeILStubResolver*)pResolver;
     StackTraceInfo::AppendElement(
         handle,
-        (UINT_PTR)resume,
+        (UINT_PTR)pAsyncResumeResolver->GetFinalResumeMethodStartAddress(),
         state,
         pTargetMethodDesc,
         NULL);
@@ -1790,11 +1791,6 @@ void ValidateILOffsets(MethodDesc *pFunc, uint8_t* ipColdStart, size_t coldLen, 
 // Initialization done outside the TSL.
 // This may need to call locking operations that aren't safe under the TSL.
 
-BYTE* DebugInfoStoreNew(void * pData, size_t cBytes)
-{
-    return new BYTE[cBytes];
-}
-
 void DebugStackTrace::Element::InitPass2()
 {
     CONTRACTL
@@ -1808,69 +1804,6 @@ void DebugStackTrace::Element::InitPass2()
     _ASSERTE(!ThreadStore::HoldingThreadStore());
 
     bool bRes = false;
-
-    if (this->flags & STEF_CONTINUATION)
-    {
-        PCODE addr = this->pFunc->GetNativeCode();
-        if (addr != (PCODE)NULL)
-        {
-            EECodeInfo codeInfo(addr);
-            if (codeInfo.IsValid())
-            {
-                // DebugInfoRequest request;
-                // request.InitFromStartingAddr(this->pFunc, addr);
-                // ICorDebugInfo::AsyncInfo asyncInfo = {};
-                // NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
-                // // NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
-                // // ULONG32 cAsyncVars = 0;
-                // if (DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew, nullptr, &asyncInfo, &asyncSuspensionPoints, nullptr, nullptr))
-                // {
-
-                //     ULONG32 cMap = 0;
-                //     NewArrayHolder<ICorDebugInfo::OffsetMapping> map(NULL);
-                //     // ULONG32 cVars = 0;
-                //     // NewArrayHolder<ICorDebugInfo::NativeVarInfo> vars(NULL);
-                //     if (DebugInfoManager::GetBoundariesAndVars(request, DebugInfoStoreNew, nullptr, BoundsType::Instrumented, &cMap, &map, nullptr, nullptr))
-                //     {
-                //         for (ULONG32 i = 0; i < cMap; i++)
-                //         {
-                //             if (map[i].ilOffset == this->dwILOffset)
-                //             {
-                //                 this->dwOffset = map[i].nativeOffset;
-                //                 break;
-                //             }
-                //         }
-                //     }
-                // }
-                //this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
-
-                // leave native offset TBD, Noah
-            }
-        }
-        return;
-    }
-
-    if (this->flags & STEF_CONTINUATION)
-    {
-        PCODE addr = this->pFunc->GetNativeCode();
-        if (addr != (PCODE)NULL)
-        {
-            EECodeInfo codeInfo(addr);
-            if (codeInfo.IsValid())
-            {
-                DebugInfoRequest request;
-                request.InitFromStartingAddr(this->pFunc, addr);
-                ICorDebugInfo::AsyncInfo asyncInfo = {};
-                NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
-                NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
-                ULONG32 cAsyncVars = 0;
-                DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars);
-                //this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
-                // leave native offset TBD, Noah
-            }
-        }
-        return;
-    }
 
     bool fAdjustOffset = (this->flags & STEF_IP_ADJUSTED) == 0 && this->dwOffset > 0 && !(this->flags & STEF_CONTINUATION);
 

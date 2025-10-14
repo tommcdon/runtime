@@ -485,7 +485,6 @@ namespace System.Runtime.CompilerServices
                     if ((continuation.Flags & CorInfoContinuationFlags.CORINFO_CONTINUATION_NEEDS_EXCEPTION) != 0)
                         return continuation;
 
-                    AddContinuationToExInternal(continuation, ex);
                     Debug.Assert(continuation.Next != null);
                     continuation = continuation.Next;
 
