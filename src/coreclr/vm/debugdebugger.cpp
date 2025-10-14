@@ -370,7 +370,6 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         {
             return SWA_ABORT;
         }
-        memset(pTemp, 0, 2*cNumAlloc*sizeof(DebugStackTrace::Element));
 
         memcpy(pTemp, pData->pElements, pData->cElementsAllocated * sizeof(DebugStackTrace::Element));
 
@@ -1192,13 +1191,22 @@ void DebugStackTrace::GetStackFramesFromException(OBJECTREF * e,
                 // push frames and the method body is therefore non-contiguous.
                 // Currently such methods always return an IP of 0, so they're easy
                 // to spot.
-                DWORD dwNativeOffset;
+                DWORD dwNativeOffset = 0;
                 UINT_PTR ip = cur.ip;
                 if (cur.flags & STEF_CONTINUATION)
                 {
-                    // Continuation frames don't have a meaningful native offset.
-                    // here we populate it with the continuation index which was stored in SP :(
-                    dwNativeOffset = (DWORD)cur.sp;
+                    if (ip != (PCODE)NULL)
+                    {
+                        DebugInfoRequest request;
+                        request.InitFromStartingAddr(pMD, ip);
+                        ICorDebugInfo::AsyncInfo asyncInfo = {};
+                        NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+                        NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+                        ULONG32 cAsyncVars = 0;
+                        DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew2, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars);
+                        dwNativeOffset = asyncSuspensionPoints[cur.sp].NativeOffset;
+                        ip += dwNativeOffset;
+                    }
                 }
 
                 else
