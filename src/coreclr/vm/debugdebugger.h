@@ -112,8 +112,9 @@ public:
 
     struct ResumeData
     {
-        PCODE pResumeFnPtr;  // resume fnptr
-        PCODE pResumeIp; // resume ip
+        MethodDesc *pResumeMd; // method desc of the resume method
+        PCODE pResumeIp; // method IP
+        UINT32 dwNativeOffset; // native offset within the async method where the await completed
     };
     struct GetStackFramesData
     {

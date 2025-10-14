@@ -11,7 +11,6 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
-using System.Runtime.CompilerServices;
 
 namespace System.Runtime.CompilerServices
 {
@@ -477,7 +476,7 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            private static Continuation UnwindToPossibleHandler(Continuation continuation, Exception ex)
+            private static unsafe Continuation UnwindToPossibleHandler(Continuation continuation, Exception ex)
             {
                 while (true)
                 {

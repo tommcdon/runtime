@@ -250,11 +250,12 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
             {
                 OBJECTREF pNext = nullptr;
                 PCODE pResume = 0;
+                UINT32 state = 0;
                 int numFound = 0;
                 GCPROTECT_BEGIN(continuation)
                 {
                     ApproxFieldDescIterator continuationFieldIter(continuation->GetMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
-                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 2; continuationField = continuationFieldIter.Next())
+                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 3; continuationField = continuationFieldIter.Next())
                     {
                         LPCUTF8 fieldName = continuationField->GetName();
                         if (!strcmp(fieldName, "Next"))
@@ -265,6 +266,11 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                         else if (!strcmp(fieldName, "Resume"))
                         {
                             pResume = (PCODE)continuation->GetPtrOffset(continuationField->GetOffset());
+                            numFound++;
+                        }
+                        else if (!strcmp(fieldName, "State"))
+                        {
+                            state = continuation->GetOffset32(continuationField->GetOffset());
                             numFound++;
                         }
                     }
@@ -285,7 +291,28 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                         printf("  Target method: %s resume addr=%p\n",
                             targetMd->GetName(), (void*)pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
 
-                        pContinuationResumeList->Append({ pResume, pAsyncResumeResolver->GetFinalResumeMethodStartAddress() });
+                        auto fpNew = [](void* data, size_t numBytes)
+                        {
+                            return new (nothrow) BYTE[numBytes];
+                        };
+                        EECodeInfo codeInfo(pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
+                        DebugInfoRequest diq;
+                        diq.InitFromStartingAddr(targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
+                        ICorDebugInfo::AsyncInfo asyncInfo = {};
+                        NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+                        NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+                        ULONG32 cAsyncVars = 0;
+
+                        if (codeInfo.GetJitManager()->GetAsyncDebugInfo(diq, fpNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars))
+                        {
+                            if (state >= asyncInfo.NumSuspensionPoints)
+                            {
+                                printf("    Invalid state %d, only %d suspension points\n", state, asyncInfo.NumSuspensionPoints);
+                                continue;
+                            }
+                            pContinuationResumeList->Append({ targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress(), asyncSuspensionPoints[state].NativeOffset });
+                        }
+
                     }
                 }
 
@@ -296,6 +323,7 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                 continuation = pNext;
             }
 
+            // TODO: use NextContinuationData's "Next" field to continue the list
             //pNextContinuation = pNext;
             break;
         } // while pNextContinuation != NULL
@@ -348,20 +376,22 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         }
     }
 
-    if (pData->cElements >= pData->cElementsAllocated)
+    int cNumAlloc = pData->cElements + pData->continuationResumeList.GetCount();
+    if (cNumAlloc >= pData->cElementsAllocated)
     {
-        DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*pData->cElementsAllocated];
+        DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*cNumAlloc];
         if (pTemp == NULL)
         {
             return SWA_ABORT;
         }
+        memset(pTemp, 0, 2*cNumAlloc*sizeof(DebugStackTrace::Element));
 
         memcpy(pTemp, pData->pElements, pData->cElementsAllocated * sizeof(DebugStackTrace::Element));
 
         delete [] pData->pElements;
 
         pData->pElements = pTemp;
-        pData->cElementsAllocated *= 2;
+        pData->cElementsAllocated = 2*cNumAlloc;
     }
 
     PCODE ip;
@@ -1823,7 +1853,7 @@ void DebugStackTrace::Element::InitPass2()
                 NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
                 ULONG32 cAsyncVars = 0;
                 DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars);
-                this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
+                //this->dwILOffset = asyncSuspensionPoints[this->dwOffset].RootILOffset;
                 // leave native offset TBD, Noah
             }
         }
