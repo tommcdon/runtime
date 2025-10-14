@@ -422,6 +422,23 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     ++pData->cElements;
 
+    // inject async v2 continuations if any
+    for (UINT32 i = 0; i < pData->continuationResumeList.GetCount(); i++)
+    {
+        DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
+        MethodDesc* pResumeMd = resumeData.pResumeMd;
+        PCODE pResumeIp = resumeData.pResumeIp;
+        DWORD dwNativeOffset = resumeData.dwNativeOffset;
+
+        pData->pElements[pData->cElements].InitPass1(
+            dwNativeOffset,
+            pResumeMd,
+            pResumeIp,
+            STEF_CONTINUATION);
+
+        ++pData->cElements;
+    }
+
     // check if we already have the number of frames that the user had asked for
     if ((pData->NumFramesRequested != 0) && (pData->NumFramesRequested <= pData->cElements))
     {
