@@ -480,7 +480,8 @@ namespace System.Runtime.CompilerServices
             {
                 while (true)
                 {
-                    if (continuation.Resume != null) AddContinuationToExInternal(continuation, ex);
+                    if (continuation.Resume != null)
+                        AddContinuationToExInternal(continuation, ex);
                     if ((continuation.Flags & CorInfoContinuationFlags.CORINFO_CONTINUATION_NEEDS_EXCEPTION) != 0)
                         return continuation;
 
