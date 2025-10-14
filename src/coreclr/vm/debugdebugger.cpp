@@ -177,6 +177,128 @@ extern "C" void QCALLTYPE DebugDebugger_Log(INT32 Level, PCWSTR pwzModule, PCWST
 #endif // DEBUGGING_SUPPORTED
 }
 
+bool ExtractContinuationData(MethodTable* pContinuationMT, SArray<PCODE>* pContinuationResumeList)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    // Look for thread static field t_nextContinuation: Type=NextContinuationData*
+    // Which is a nested struct containing the field NextContinuation: Type=System.Runtime.CompilerServices.Continuation
+    // Continuation has a field "Resume" which is a fnptr to the method to invoke to resume the async method.
+    ApproxFieldDescIterator fieldIter(pContinuationMT, ApproxFieldDescIterator::STATIC_FIELDS);
+    for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
+    {
+        if (field->IsEnCNew() || !field->IsThreadStatic() || field->GetFieldType() != ELEMENT_TYPE_PTR)
+            continue;
+
+        TypeHandle  typeHandle = field->GetFieldTypeHandleThrowing();
+        if (typeHandle == NULL)
+        {
+            continue;
+        }
+        MethodTable* pFieldMT = typeHandle.GetMethodTable();
+        if (pFieldMT == NULL)
+        {
+            continue;
+        }
+        pFieldMT->EnsureTlsIndexAllocated();
+        LPCUTF8 fieldName = field->GetName();
+
+        if (fieldName == nullptr || strcmp(fieldName, "t_nextContinuation"))
+        {
+            continue;
+        }
+
+        typedef struct
+        {
+            OBJECTREF* pNext;
+            OBJECTREF* pContinuation; // System.Runtime.CompilerServices.Continuation
+        } NextContinuationData;
+
+        Thread * pThread = GetThread();
+        if (pThread == NULL)
+        {
+            continue;
+        }
+        PTR_BYTE base = pContinuationMT->GetNonGCThreadStaticsBasePointer(pThread);
+        if (base == NULL)
+        {
+            continue;
+        }
+        SIZE_T offset = field->GetOffset();
+        NextContinuationData** ppNextContinuation = (NextContinuationData**)((PTR_BYTE)base + (DWORD)offset);
+        if (ppNextContinuation == NULL || *ppNextContinuation == NULL)
+        {
+            continue;
+        }
+
+        NextContinuationData* pNextContinuation = *ppNextContinuation;
+        while (pNextContinuation != NULL)
+        {
+            if (pNextContinuation->pContinuation == NULL || *(pNextContinuation->pContinuation) == NULL)
+            {
+                break;
+            }
+
+            OBJECTREF continuation = *(pNextContinuation->pContinuation);
+            while (continuation != NULL)
+            {
+                OBJECTREF pNext = nullptr;
+                PCODE pResume = 0;
+                int numFound = 0;
+                GCPROTECT_BEGIN(continuation)
+                {
+                    ApproxFieldDescIterator continuationFieldIter(continuation->GetMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
+                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 2; continuationField = continuationFieldIter.Next())
+                    {
+                        LPCUTF8 fieldName = continuationField->GetName();
+                        if (!strcmp(fieldName, "Next"))
+                        {
+                            pNext = (OBJECTREF)(Object*)continuation->GetPtrOffset(continuationField->GetOffset());
+                            numFound++;
+                        }
+                        else if (!strcmp(fieldName, "Resume"))
+                        {
+                            pResume = (PCODE)continuation->GetPtrOffset(continuationField->GetOffset());
+                            numFound++;
+                        }
+                    }
+                }
+                GCPROTECT_END();
+
+                if (pResume != 0)
+                {
+                    pContinuationResumeList->Append(pResume);
+
+                    MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
+
+                    MethodDesc * targetMd = pMD->AsDynamicMethodDesc()->GetILStubResolver()->GetStubTargetMethodDesc();
+
+                    printf("  Target method: %s\n",
+                        targetMd->GetName());
+                }
+
+                if (pNext == nullptr)
+                {
+                    break;
+                }
+                continuation = pNext;
+            }
+
+            //pNextContinuation = pNext;
+            break;
+        } // while pNextContinuation != NULL
+
+    } // foreach static field
+
+    return true;
+}
+
 static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 {
     CONTRACTL
@@ -192,202 +314,34 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     //        NOT AT ALL!!!, but we can assume it's a function
     //                       because we asked the stackwalker for it!
     MethodDesc* pFunc = pCf->GetFunction();
-    LPCUTF8 funcName = pFunc->GetName();
-    printf("Function: %s\n", funcName);
+
+    DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
+
+    if (pCf != NULL && pCf->GetFunction() != NULL && pCf->GetFunction()->IsAsyncMethod())
+    {
+        pData->fAsyncFramesPresent = TRUE;
+    }
+    else if (pData->fAsyncFramesPresent)
     {
         MethodTable* pMT = pFunc->GetMethodTable();
         DefineFullyQualifiedNameForClass();
-        LPCUTF8 clsName = GetFullyQualifiedNameForClassNestedAware(pMT);
-        printf("Class: %s\n", clsName);
-        if (!strcmp(clsName, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTaskCore") && !strcmp(funcName, "DispatchContinuations"))
+        if (!strcmp(GetFullyQualifiedNameForClassNestedAware(pMT), "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTaskCore") && 
+            !strcmp(pFunc->GetName(), "DispatchContinuations"))
         {
-            // Look for thread static field t_nextContinuation: Type=NextContinuationData*
-            // Which is a nested struct containing the field NextContinuation: Type=System.Runtime.CompilerServices.Continuation
-            // Continuation has a field "Resume" which is a fnptr to the method to invoke to resume the async method.
-            ApproxFieldDescIterator fieldIter(pMT, ApproxFieldDescIterator::STATIC_FIELDS);
-            for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
+            // capture async v2 continuations
+            if (ExtractContinuationData(pMT, &pData->continuationResumeList))
             {
-                if (field->IsEnCNew())
-                    continue;
-
-                if (!field->IsThreadStatic())
-                {
-                    continue;
-                }
-
-                // Static valuetype values are boxed.
-                CorElementType fieldType = field->GetFieldType();
-                if (fieldType != ELEMENT_TYPE_PTR/*fieldType != ELEMENT_TYPE_CLASS && fieldType != ELEMENT_TYPE_VALUETYPE*/)
-                    continue;
-
-                // pMT->GetThreadStaticsInfo
-                TypeHandle  typeHandle = field->GetFieldTypeHandleThrowing();
-                if (typeHandle == NULL)
-                {
-                    continue;
-                }
-                MethodTable* pFieldMT = typeHandle.GetMethodTable();
-                if (pFieldMT == NULL)
-                {
-                    continue;
-                }
-                pFieldMT->EnsureTlsIndexAllocated();
-
-                SString fieldNameTH;
-                typeHandle.GetName(fieldNameTH);
-                LPCUTF8 fieldName = field->GetName();
-                printf("  static field %s: Type=%s\n",
-                    fieldName,
-                    fieldNameTH.GetUTF8());
-                if (strcmp(fieldName, "t_nextContinuation"))
-                {
-                    continue;
-                }
-
-                typedef struct NextContinuationDataStruct
-                {
-                    NextContinuationDataStruct* pNext;
-                    OBJECTREF* pContinuation; // System.Runtime.CompilerServices.Continuation
-                } NextContinuationData;
-
-                Thread * pThread = GetThread();
-                if (pThread == NULL)
-                {
-                    continue;
-                }
-                PTR_BYTE base = pMT->GetNonGCThreadStaticsBasePointer(pThread);
-                if (base == NULL)
-                {
-                    continue;
-                }
-                SIZE_T offset = field->GetOffset();
-                NextContinuationData** ppNextContinuation = (NextContinuationData**)((PTR_BYTE)base + (DWORD)offset);
-                if (ppNextContinuation == NULL || *ppNextContinuation == NULL)
-                {
-                    continue;
-                }
-                NextContinuationData* pNextContinuation = *ppNextContinuation;
-                OBJECTREF continuation = *(OBJECTREF*)pNextContinuation->pContinuation;
-                if (continuation == NULL)
-                {
-                    continue;
-                }
-
-                GCPROTECT_BEGIN(continuation)
-                {
-                    TypeHandle typeHandle = continuation->GetTypeHandle();//GetGCSafeTypeHandleIfPossible();
-                    ApproxFieldDescIterator fieldIter(continuation->GetMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
-                    for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
-                    {
-                        LPCUTF8 fieldName = field->GetName();
-                        if (strcmp(fieldName, "Resume") == 0)
-                        {
-                            DWORD offset = field->GetOffset();
-
-                            void* pResume = (void*)continuation->GetPtrOffset(offset);
-                            printf("Resume %p\n", pResume);
-
-                            MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
-
-                            printf("  Resume method: %s\n",
-                                pMD->GetName());
-
-                            fflush(stdout);
-
-                            MethodDesc * targetMd = pMD->AsDynamicMethodDesc()->GetILStubResolver()->GetStubTargetMethodDesc();
-
-                            printf("  Target method: %s\n",
-                                targetMd->GetName());
-                            break;
-                        }
-                    }
-                }
-                GCPROTECT_END();
-            } // foreach static field
-        }
-    }
-#if 0
-    if (pFunc->IsAsyncMethod())
-    {
-        EECodeInfo* pCodeInfo = pCf->GetCodeInfo();
-        DebugInfoRequest diq;
-        diq.InitFromStartingAddr(pFunc, pCodeInfo->GetStartAddress());
-        ULONG32 cMap = 0;
-        NewArrayHolder<ICorDebugInfo::OffsetMapping> map(NULL);
-        ULONG32 cVars = 0;
-        NewArrayHolder<ICorDebugInfo::NativeVarInfo> vars(NULL);
-        auto fpNew = [](void* data, size_t numBytes)
-        {
-            return new (nothrow) BYTE[numBytes];
-        };
-
-        if (pCf->GetJitManager()->GetBoundariesAndVars(diq, fpNew, nullptr, BoundsType::Instrumented, &cMap, &map, &cVars, &vars))
-        {
-            // for (ULONG32 i = 0; i < cVars; ++i)
-            // {
-            //     map[i].ilOffset = vars[i].ilOffset;
-            //     map[i].nativeStartOffset = vars[i].nativeOffset;
-            // }
-            for (ULONG32 i = 0; i < cMap; ++i)
-            {
-                printf("  offset map %x: IL=%x, Native=%x, Source=%x\n",
-                    i,
-                    map[i].ilOffset,
-                    map[i].nativeOffset,
-                    map[i].source);
+                printf("Found async v2 continuation resumes: %d\n", pData->continuationResumeList.GetCount());
                 fflush(stdout);
             }
-
-        }
-        /*
-                GetAsyncDebugInfo(
-            const DebugInfoRequest & request,
-            IN FP_IDS_NEW fpNew, IN void * pNewData,
-            OUT ICorDebugInfo::AsyncInfo* pAsyncInfo,
-            OUT ICorDebugInfo::AsyncSuspensionPoint** ppSuspensionPoints,
-            OUT ICorDebugInfo::AsyncContinuationVarInfo** ppAsyncVars,
-            OUT ULONG32* pcAsyncVars)
-
-                    *pAsyncInfo = {};
-        *ppSuspensionPoints = NULL;
-        *ppAsyncVars = NULL;
-        *pNumAsyncVars = 0;
-
-        */
-        ICorDebugInfo::AsyncInfo asyncInfo = {};
-        NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
-        NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
-        ULONG32 cAsyncVars = 0;
-
-        if (pCf->GetJitManager()->GetAsyncDebugInfo(diq, fpNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars))
-        {
-            printf("Async method: NumSuspensionPoints=%u, num vars=%u\n",
-                asyncInfo.NumSuspensionPoints,
-                cAsyncVars);
-            fflush(stdout);
-            for (ULONG32 i = 0; i < asyncInfo.NumSuspensionPoints; ++i)
+            else
             {
-                printf("  suspension point %x: RootILOffset=%x, Inlinee=%x, ILOffset=%x, NumContinuationVars=%x\n",
-                    i,
-                    asyncSuspensionPoints[i].RootILOffset,
-                    asyncSuspensionPoints[i].Inlinee,
-                    asyncSuspensionPoints[i].ILOffset,
-                    asyncSuspensionPoints[i].NumContinuationVars);
-                fflush(stdout);
-            }
-            for (ULONG32 i = 0; i < cAsyncVars; ++i)
-            {
-                printf("  var %x: VarNumber=%x, Offset=%x\n",
-                    i,
-                    asyncVars[i].VarNumber,
-                    asyncVars[i].Offset);
+                printf("Failed to extract async v2 continuation resume\n");
                 fflush(stdout);
             }
         }
     }
-#endif
 
-    DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
     if (pData->cElements >= pData->cElementsAllocated)
     {
         DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*pData->cElementsAllocated];

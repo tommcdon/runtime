@@ -119,6 +119,8 @@ public:
         THREADBASEREF   TargetThread;
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
+        BOOL fAsyncFramesPresent; // True if async frames were present in the stack
+        SArray<PCODE> continuationResumeList; // Used to capture async v2 continuation resume point
 
         GetStackFramesData()
             : NumFramesRequested (0)
@@ -127,6 +129,7 @@ public:
             , pElements(NULL)
             , TargetThread((THREADBASEREF)(TADDR)NULL)
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
+            , fAsyncFramesPresent(FALSE)
         {
             LIMITED_METHOD_CONTRACT;
         }
