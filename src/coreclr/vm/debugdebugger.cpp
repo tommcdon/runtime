@@ -1618,7 +1618,7 @@ void DebugStackTrace::Element::InitPass2()
 
     bool bRes = false;
 
-    bool fAdjustOffset = (this->flags & STEF_IP_ADJUSTED) == 0 && this->dwOffset > 0;
+    bool fAdjustOffset = (this->flags & STEF_IP_ADJUSTED) == 0 && this->dwOffset > 0 && !(this->flags & STEF_CONTINUATION);
 
     // Check the cache!
     uint32_t dwILOffsetFromCache;
