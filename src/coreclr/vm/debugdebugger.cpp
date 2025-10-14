@@ -177,7 +177,7 @@ extern "C" void QCALLTYPE DebugDebugger_Log(INT32 Level, PCWSTR pwzModule, PCWST
 #endif // DEBUGGING_SUPPORTED
 }
 
-bool ExtractContinuationData(MethodTable* pContinuationMT, SArray<PCODE>* pContinuationResumeList)
+bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArray<ResumeData>* pContinuationResumeList)
 {
     CONTRACTL
     {
@@ -273,14 +273,20 @@ bool ExtractContinuationData(MethodTable* pContinuationMT, SArray<PCODE>* pConti
 
                 if (pResume != 0)
                 {
-                    pContinuationResumeList->Append(pResume);
-
+                    
                     MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
 
-                    MethodDesc * targetMd = pMD->AsDynamicMethodDesc()->GetILStubResolver()->GetStubTargetMethodDesc();
+                    PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
+                    if (pILResolver != nullptr)
+                    {
+                        MethodDesc * targetMd = pILResolver->GetStubTargetMethodDesc();
+                        AsyncResumeILStubResolver * pAsyncResumeResolver = (AsyncResumeILStubResolver *)pILResolver;
+                        
+                        printf("  Target method: %s resume addr=%p\n",
+                            targetMd->GetName(), (void*)pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
 
-                    printf("  Target method: %s\n",
-                        targetMd->GetName());
+                        pContinuationResumeList->Append({ pResume, pAsyncResumeResolver->GetFinalResumeMethodStartAddress() });
+                    }
                 }
 
                 if (pNext == nullptr)
@@ -329,7 +335,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             !strcmp(pFunc->GetName(), "DispatchContinuations"))
         {
             // capture async v2 continuations
-            if (ExtractContinuationData(pMT, &pData->continuationResumeList))
+            if (DebugStackTrace::ExtractContinuationData(pMT, &pData->continuationResumeList))
             {
                 printf("Found async v2 continuation resumes: %d\n", pData->continuationResumeList.GetCount());
                 fflush(stdout);
