@@ -279,7 +279,6 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
 
                 if (pResume != 0)
                 {
-                    
                     MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
 
                     PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
@@ -287,9 +286,6 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                     {
                         MethodDesc * targetMd = pILResolver->GetStubTargetMethodDesc();
                         AsyncResumeILStubResolver * pAsyncResumeResolver = (AsyncResumeILStubResolver *)pILResolver;
-                        
-                        printf("  Target method: %s resume addr=%p\n",
-                            targetMd->GetName(), (void*)pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
 
                         auto fpNew = [](void* data, size_t numBytes)
                         {
@@ -307,7 +303,7 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                         {
                             if (state >= asyncInfo.NumSuspensionPoints)
                             {
-                                printf("    Invalid state %d, only %d suspension points\n", state, asyncInfo.NumSuspensionPoints);
+                                // invalid state
                                 continue;
                             }
                             pContinuationResumeList->Append({ targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress(), asyncSuspensionPoints[state].NativeOffset });
@@ -357,22 +353,12 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     }
     else if (pData->fAsyncFramesPresent)
     {
-        MethodTable* pMT = pFunc->GetMethodTable();
         DefineFullyQualifiedNameForClass();
-        if (!strcmp(GetFullyQualifiedNameForClassNestedAware(pMT), "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTaskCore") && 
+        if (!strcmp(GetFullyQualifiedNameForClassNestedAware(pFunc->GetMethodTable()), "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTaskCore") &&
             !strcmp(pFunc->GetName(), "DispatchContinuations"))
         {
             // capture async v2 continuations
-            if (DebugStackTrace::ExtractContinuationData(pMT, &pData->continuationResumeList))
-            {
-                printf("Found async v2 continuation resumes: %d\n", pData->continuationResumeList.GetCount());
-                fflush(stdout);
-            }
-            else
-            {
-                printf("Failed to extract async v2 continuation resume\n");
-                fflush(stdout);
-            }
+            DebugStackTrace::ExtractContinuationData(pFunc->GetMethodTable(), &pData->continuationResumeList);
         }
     }
 
@@ -397,46 +383,55 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     PCODE ip;
     DWORD dwNativeOffset;
 
-    if (pCf->IsFrameless())
+    if (pData->continuationResumeList.GetCount() == 0)
     {
-        // Real method with jitted code.
-        dwNativeOffset = pCf->GetRelOffset();
-        ip = GetControlPC(pCf->GetRegisterSet());
+        if (pCf->IsFrameless())
+        {
+            // Real method with jitted code.
+            dwNativeOffset = pCf->GetRelOffset();
+            ip = GetControlPC(pCf->GetRegisterSet());
+        }
+        else
+        {
+            ip = (PCODE)NULL;
+            dwNativeOffset = 0;
+        }
+
+        // Pass on to InitPass2 that the IP has already been adjusted (decremented by 1)
+        INT flags = pCf->IsIPadjusted() ? STEF_IP_ADJUSTED : 0;
+
+        pData->pElements[pData->cElements].InitPass1(
+                dwNativeOffset,
+                pFunc,
+                ip,
+                flags);
+
+        // We'll init the IL offsets outside the TSL lock.
+
+        ++pData->cElements;
     }
     else
     {
-        ip = (PCODE)NULL;
-        dwNativeOffset = 0;
-    }
+        // inject async v2 continuations if any
+        for (UINT32 i = 0; i < pData->continuationResumeList.GetCount() && (pData->NumFramesRequested == 0 || pData->cElements < pData->NumFramesRequested); i++)
+        {
+            DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
+            MethodDesc* pResumeMd = resumeData.pResumeMd;
+            PCODE pResumeIp = resumeData.pResumeIp;
+            DWORD dwNativeOffset = resumeData.dwNativeOffset;
 
-    // Pass on to InitPass2 that the IP has already been adjusted (decremented by 1)
-    INT flags = pCf->IsIPadjusted() ? STEF_IP_ADJUSTED : 0;
+            pData->pElements[pData->cElements].InitPass1(
+                dwNativeOffset,
+                pResumeMd,
+                pResumeIp,
+                STEF_CONTINUATION);
 
-    pData->pElements[pData->cElements].InitPass1(
-            dwNativeOffset,
-            pFunc,
-            ip,
-            flags);
+            ++pData->cElements;
+        }
+        pData->continuationResumeList.Clear();
 
-    // We'll init the IL offsets outside the TSL lock.
-
-    ++pData->cElements;
-
-    // inject async v2 continuations if any
-    for (UINT32 i = 0; i < pData->continuationResumeList.GetCount(); i++)
-    {
-        DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
-        MethodDesc* pResumeMd = resumeData.pResumeMd;
-        PCODE pResumeIp = resumeData.pResumeIp;
-        DWORD dwNativeOffset = resumeData.dwNativeOffset;
-
-        pData->pElements[pData->cElements].InitPass1(
-            dwNativeOffset,
-            pResumeMd,
-            pResumeIp,
-            STEF_CONTINUATION);
-
-        ++pData->cElements;
+        // TODO: Re-evaluate if we should continue the stack walk after injecting continuations
+        return SWA_ABORT;
     }
 
     // check if we already have the number of frames that the user had asked for
