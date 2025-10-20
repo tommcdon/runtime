@@ -46,6 +46,7 @@ internal sealed class CachingContractRegistry : ContractRegistry
             [typeof(IGC)] = new GCFactory(),
             [typeof(INotifications)] = new NotificationsFactory(),
             [typeof(ISignatureDecoder)] = new SignatureDecoderFactory(),
+            [typeof(IAsync)] = new AsyncFactory(),
         };
         configureFactories?.Invoke(_factories);
     }
@@ -70,6 +71,7 @@ internal sealed class CachingContractRegistry : ContractRegistry
     public override IGC GC => GetContract<IGC>();
     public override INotifications Notifications => GetContract<INotifications>();
     public override ISignatureDecoder SignatureDecoder => GetContract<ISignatureDecoder>();
+    public override IAsync Async => GetContract<IAsync>();
 
     private TContract GetContract<TContract>() where TContract : IContract
     {

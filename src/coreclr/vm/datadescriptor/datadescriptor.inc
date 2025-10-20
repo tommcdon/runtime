@@ -1067,6 +1067,7 @@ CDAC_GLOBAL_POINTER(GCHighestAddress, &g_highest_address)
 
 CDAC_GLOBAL_SUB_DESCRIPTOR(GC, &(g_gc_dac_vars.gc_descriptor))
 
+CDAC_GLOBAL_CONTRACT(Async, 1)
 CDAC_GLOBAL_CONTRACT(CodeVersions, 1)
 #ifdef FEATURE_COMWRAPPERS
 CDAC_GLOBAL_CONTRACT(ComWrappers, 1)
