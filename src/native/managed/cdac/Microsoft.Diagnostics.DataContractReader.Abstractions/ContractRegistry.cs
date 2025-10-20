@@ -90,4 +90,8 @@ public abstract class ContractRegistry
     /// Gets an instance of the SignatureDecoder contract for the target.
     /// </summary>
     public abstract ISignatureDecoder SignatureDecoder { get; }
+    /// <summary>
+    /// Gets an instance of the Async contract for the target.
+    /// </summary>
+    public abstract IAsync Async { get; }
 }
