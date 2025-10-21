@@ -75,9 +75,8 @@ internal partial class ExecutionManagerCore<T> : IExecutionManager
             return _runtimeFunctions.GetRuntimeFunctionAddress(realCodeHeader.UnwindInfos, index);
         }
 
-        public override TargetPointer GetDebugInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress, out bool hasFlagByte)
+        public override TargetPointer GetDebugInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress)
         {
-            hasFlagByte = false;
             if (rangeSection.IsRangeList)
                 return TargetPointer.Null;
             if (rangeSection.Data == null)
@@ -90,11 +89,6 @@ internal partial class ExecutionManagerCore<T> : IExecutionManager
 
             if (!GetRealCodeHeader(rangeSection, codeStart, out Data.RealCodeHeader? realCodeHeader))
                 return TargetPointer.Null;
-
-            bool featureOnStackReplacement = Target.ReadGlobal<byte>(Constants.Globals.FeatureOnStackReplacement) != 0;
-            Data.EEJitManager eeJitManager = Target.ProcessedData.GetOrAdd<Data.EEJitManager>(rangeSection.Data.JitManager);
-            if (featureOnStackReplacement || eeJitManager.StoreRichDebugInfo)
-                hasFlagByte = true;
 
             return realCodeHeader.DebugInfo;
         }
