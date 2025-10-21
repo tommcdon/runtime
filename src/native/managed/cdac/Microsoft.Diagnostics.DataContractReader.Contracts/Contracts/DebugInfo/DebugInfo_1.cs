@@ -11,8 +11,8 @@ namespace Microsoft.Diagnostics.DataContractReader.Contracts;
 
 internal sealed class DebugInfo_1(Target target) : IDebugInfo
 {
-    private const uint DEBUG_INFO_BOUNDS_HAS_INSTRUMENTED_BOUNDS = 0xFFFFFFFF;
     private const uint IL_OFFSET_BIAS = unchecked((uint)-3);
+    private const uint DEBUG_INFO_FAT = 0;
 
     [Flags]
     internal enum ExtraDebugInfoFlags_1 : byte
@@ -23,6 +23,23 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
         EXTRA_DEBUG_INFO_RICH = 0x02,
     }
 
+    private record struct DebugInfoChunks
+    {
+        public TargetPointer BoundsStart;
+        public uint BoundsSize;
+        public TargetPointer VarsStart;
+        public uint VarsSize;
+        public TargetPointer UninstrumentedBoundsStart;
+        public uint UninstrumentedBoundsSize;
+        public TargetPointer PatchpointInfoStart;
+        public uint PatchpointInfoSize;
+        public TargetPointer RichDebugInfoStart;
+        public uint RichDebugInfoSize;
+        public TargetPointer AsyncInfoStart;
+        public uint AsyncInfoSize;
+        public TargetPointer DebugInfoEnd;
+    }
+
     private readonly Target _target = target;
     private readonly IExecutionManager _eman = target.Contracts.ExecutionManager;
 
@@ -31,64 +48,65 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
         // Get the method's DebugInfo
         if (_eman.GetCodeBlockHandle(pCode) is not CodeBlockHandle cbh)
             throw new InvalidOperationException($"No CodeBlockHandle found for native code {pCode}.");
-        TargetPointer debugInfo = _eman.GetDebugInfo(cbh, out bool hasFlagByte);
+        TargetPointer debugInfo = _eman.GetDebugInfo(cbh);
 
         TargetCodePointer nativeCodeStart = _eman.GetStartAddress(cbh);
         codeOffset = (uint)(CodePointerUtils.AddressFromCodePointer(pCode, _target) - CodePointerUtils.AddressFromCodePointer(nativeCodeStart, _target));
 
-        return RestoreBoundaries(debugInfo, hasFlagByte, preferUninstrumented);
+        return RestoreBoundaries(debugInfo, preferUninstrumented);
     }
 
-    private IEnumerable<OffsetMapping> RestoreBoundaries(TargetPointer debugInfo, bool hasFlagByte, bool preferUninstrumented)
+    private DebugInfoChunks DecodeChunks(TargetPointer debugInfo)
     {
-        if (hasFlagByte)
-        {
-            // Check flag byte and skip over any patchpoint info
-            ExtraDebugInfoFlags_1 flagByte = (ExtraDebugInfoFlags_1)_target.Read<byte>(debugInfo++);
-
-            if (flagByte.HasFlag(ExtraDebugInfoFlags_1.EXTRA_DEBUG_INFO_PATCHPOINT))
-            {
-                Data.PatchpointInfo patchpointInfo = _target.ProcessedData.GetOrAdd<Data.PatchpointInfo>(debugInfo);
-
-                if (_target.GetTypeInfo(DataType.PatchpointInfo).Size is not uint patchpointSize)
-                    throw new InvalidOperationException("PatchpointInfo type size is not defined.");
-                debugInfo += patchpointSize + (patchpointInfo.LocalCount * sizeof(uint));
-
-                flagByte &= ~ExtraDebugInfoFlags_1.EXTRA_DEBUG_INFO_PATCHPOINT;
-            }
-
-            if (flagByte.HasFlag(ExtraDebugInfoFlags_1.EXTRA_DEBUG_INFO_RICH))
-            {
-                uint richDebugInfoSize = _target.Read<uint>(debugInfo);
-                debugInfo += 4;
-                debugInfo += richDebugInfoSize;
-                flagByte &= ~ExtraDebugInfoFlags_1.EXTRA_DEBUG_INFO_RICH;
-            }
-
-            Debug.Assert(flagByte == 0);
-        }
-
-        NativeReader nibbleNativeReader = new(new TargetStream(_target, debugInfo, 24 /*maximum size of 4 32bit ints compressed*/), _target.IsLittleEndian);
+        NativeReader nibbleNativeReader = new(new TargetStream(_target, debugInfo, 42 /*maximum size of 7 32bit ints compressed*/), _target.IsLittleEndian);
         NibbleReader nibbleReader = new(nibbleNativeReader, 0);
 
-        uint cbBounds = nibbleReader.ReadUInt();
-        uint cbUninstrumentedBounds = 0;
-        if (cbBounds == DEBUG_INFO_BOUNDS_HAS_INSTRUMENTED_BOUNDS)
+        uint countBoundsOrFatMarker = nibbleReader.ReadUInt();
+
+        DebugInfoChunks chunks = default;
+
+        if (countBoundsOrFatMarker == DEBUG_INFO_FAT)
         {
-            // This means we have instrumented bounds.
-            cbBounds = nibbleReader.ReadUInt();
-            cbUninstrumentedBounds = nibbleReader.ReadUInt();
+            // Fat header
+            chunks.BoundsSize = nibbleReader.ReadUInt();
+            chunks.VarsSize = nibbleReader.ReadUInt();
+            chunks.UninstrumentedBoundsSize = nibbleReader.ReadUInt();
+            chunks.PatchpointInfoSize = nibbleReader.ReadUInt();
+            chunks.RichDebugInfoSize = nibbleReader.ReadUInt();
+            chunks.AsyncInfoSize = nibbleReader.ReadUInt();
         }
-        uint _ /*cbVars*/ = nibbleReader.ReadUInt();
+        else
+        {
+            chunks.BoundsSize = countBoundsOrFatMarker;
+            chunks.VarsSize = nibbleReader.ReadUInt();
+            chunks.UninstrumentedBoundsSize = 0;
+            chunks.PatchpointInfoSize = 0;
+            chunks.RichDebugInfoSize = 0;
+            chunks.AsyncInfoSize = 0;
+        }
 
-        TargetPointer addrBounds = debugInfo + (uint)nibbleReader.GetNextByteOffset();
-        // TargetPointer addrVars = addrBounds + cbBounds + cbUninstrumentedBounds;
+        chunks.BoundsStart = debugInfo + (uint)nibbleReader.GetNextByteOffset();
+        chunks.VarsStart = chunks.BoundsStart + chunks.BoundsSize;
+        chunks.UninstrumentedBoundsStart = chunks.VarsStart + chunks.VarsSize;
+        chunks.PatchpointInfoStart = chunks.UninstrumentedBoundsStart + chunks.UninstrumentedBoundsSize;
+        chunks.RichDebugInfoStart = chunks.PatchpointInfoStart + chunks.PatchpointInfoSize;
+        chunks.AsyncInfoStart = chunks.RichDebugInfoStart + chunks.RichDebugInfoSize;
+        chunks.DebugInfoEnd = chunks.AsyncInfoStart + chunks.AsyncInfoSize;
+        return chunks;
+    }
 
-        if (preferUninstrumented && cbUninstrumentedBounds != 0)
+    private IEnumerable<OffsetMapping> RestoreBoundaries(TargetPointer debugInfo, bool preferUninstrumented)
+    {
+        DebugInfoChunks chunks = DecodeChunks(debugInfo);
+
+        TargetPointer addrBounds = chunks.BoundsStart;
+        uint cbBounds = chunks.BoundsSize;
+
+        if (preferUninstrumented && chunks.UninstrumentedBoundsSize != 0)
         {
             // If we have uninstrumented bounds, we will use them instead of the regular bounds.
-            addrBounds += cbBounds;
-            cbBounds = cbUninstrumentedBounds;
+            addrBounds = chunks.UninstrumentedBoundsStart;
+            cbBounds = chunks.UninstrumentedBoundsSize;
         }
 
         if (cbBounds > 0)

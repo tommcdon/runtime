@@ -70,11 +70,8 @@ internal partial class ExecutionManagerCore<T> : IExecutionManager
             return _runtimeFunctions.GetRuntimeFunctionAddress(r2rInfo.RuntimeFunctions, index);
         }
 
-        public override TargetPointer GetDebugInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress, out bool hasFlagByte)
+        public override TargetPointer GetDebugInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress)
         {
-            // ReadyToRun does not contain PatchpointInfo
-            hasFlagByte = false;
-
             // ReadyToRunJitManager::GetDebugInfo
             Data.ReadyToRunInfo r2rInfo = GetReadyToRunInfo(rangeSection);
             if (!GetRuntimeFunction(rangeSection, r2rInfo, jittedCodeAddress, out TargetPointer imageBase, out uint index))

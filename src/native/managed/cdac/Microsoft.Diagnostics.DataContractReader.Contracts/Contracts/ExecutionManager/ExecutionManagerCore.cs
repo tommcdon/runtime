@@ -66,7 +66,7 @@ internal sealed partial class ExecutionManagerCore<T> : IExecutionManager
 
         public abstract bool GetMethodInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress, [NotNullWhen(true)] out CodeBlock? info);
         public abstract TargetPointer GetUnwindInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress);
-        public abstract TargetPointer GetDebugInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress, out bool hasFlagByte);
+        public abstract TargetPointer GetDebugInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress);
         public abstract void GetGCInfo(RangeSection rangeSection, TargetCodePointer jittedCodeAddress, out TargetPointer gcInfo, out uint gcVersion);
     }
 
@@ -231,7 +231,7 @@ internal sealed partial class ExecutionManagerCore<T> : IExecutionManager
         return range.Data.RangeBegin;
     }
 
-    TargetPointer IExecutionManager.GetDebugInfo(CodeBlockHandle codeInfoHandle, out bool hasFlagByte)
+    TargetPointer IExecutionManager.GetDebugInfo(CodeBlockHandle codeInfoHandle)
     {
         hasFlagByte = false;
         if (!_codeInfos.TryGetValue(codeInfoHandle.Address, out CodeBlock? info))
@@ -242,7 +242,7 @@ internal sealed partial class ExecutionManagerCore<T> : IExecutionManager
             return TargetPointer.Null;
 
         JitManager jitManager = GetJitManager(range.Data);
-        return jitManager.GetDebugInfo(range, codeInfoHandle.Address.Value, out hasFlagByte);
+        return jitManager.GetDebugInfo(range, codeInfoHandle.Address.Value,);
     }
 
     void IExecutionManager.GetGCInfo(CodeBlockHandle codeInfoHandle, out TargetPointer gcInfo, out uint gcVersion)
