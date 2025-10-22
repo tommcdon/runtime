@@ -2,13 +2,14 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
-using System.Collections.Generic;
 
 namespace Microsoft.Diagnostics.DataContractReader.Contracts;
 
 public interface IAsync : IContract
 {
     static string IContract.Name { get; } = nameof(Async);
+
+    string TestFunction() => throw new NotImplementedException();
 }
 
 public readonly struct Async : IAsync
