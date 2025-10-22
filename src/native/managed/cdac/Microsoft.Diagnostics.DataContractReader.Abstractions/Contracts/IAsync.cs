@@ -9,7 +9,8 @@ namespace Microsoft.Diagnostics.DataContractReader.Contracts;
 public readonly record struct ResumeData(
     MethodDescHandle MethodDesc,
     TargetCodePointer ResumeAddress,
-    uint NativeOffset);
+    uint NativeOffset,
+    uint NumArgs);
 
 public interface IAsync : IContract
 {

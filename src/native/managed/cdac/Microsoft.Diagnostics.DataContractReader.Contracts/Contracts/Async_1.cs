@@ -20,6 +20,7 @@ internal readonly partial struct Async_1 : IAsync
     private readonly IThread _thread;
     private readonly IEcmaMetadata _ecmaMetadata;
     private readonly IPrecodeStubs _precodeStubs;
+    private readonly IDebugInfo _debugInfo;
 
     public Async_1(Target target)
     {
@@ -29,6 +30,7 @@ internal readonly partial struct Async_1 : IAsync
         _thread = target.Contracts.Thread;
         _ecmaMetadata = target.Contracts.EcmaMetadata;
         _precodeStubs = target.Contracts.PrecodeStubs;
+        _debugInfo = target.Contracts.DebugInfo;
     }
 
     private bool TryGetTypeByName(string typeName, string typeNamespace, out TypeHandle typeHandle, out ModuleHandle moduleHandle)
@@ -114,10 +116,16 @@ internal readonly partial struct Async_1 : IAsync
                 MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
                 TargetPointer resolvedMD = _rts.GetILStubTargetMethodDesc(ilStubHandle);
                 MethodDescHandle methodDescHandle = _rts.GetMethodDescHandle(resolvedMD);
+                TargetCodePointer finalResumeIP = GetFinalResumeIP(continuation).Value;
+                AsyncSuspensionPoint[] suspensionPoints = _debugInfo.GetAsyncSuspensionPoints(finalResumeIP).ToArray();
+                if (suspensionPoints.Length <= continuation.State)
+                    throw new InvalidOperationException("Invalid continuation state index.");
+
                 yield return new ResumeData(
                     methodDescHandle,
-                    GetFinalResumeIP(continuation).Value,
-                    0);
+                    finalResumeIP,
+                    suspensionPoints[continuation.State].NativeOffset,
+                    suspensionPoints[continuation.State].NumContinuationVars);
             }
 
             continuationPtr = continuation.Next;

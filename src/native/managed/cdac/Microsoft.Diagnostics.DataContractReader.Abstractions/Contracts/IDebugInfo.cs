@@ -30,10 +30,17 @@ public readonly struct OffsetMapping
     public SourceTypes SourceType { get; init; }
 }
 
+public readonly struct AsyncSuspensionPoint
+{
+    public uint NativeOffset { get; init; }
+    public uint NumContinuationVars { get; init; }
+}
+
 public interface IDebugInfo : IContract
 {
     static string IContract.Name { get; } = nameof(DebugInfo);
     IEnumerable<OffsetMapping> GetMethodNativeMap(TargetCodePointer pCode, bool preferUninstrumented, out uint codeOffset) => throw new NotImplementedException();
+    IEnumerable<AsyncSuspensionPoint> GetAsyncSuspensionPoints(TargetCodePointer pCode) => throw new NotImplementedException();
 }
 
 public readonly struct DebugInfo : IDebugInfo
