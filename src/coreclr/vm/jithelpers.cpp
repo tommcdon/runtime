@@ -891,6 +891,7 @@ HCIMPL1(void, IL_ThrowExact, Object* obj)
     ResetCurrentContext();
 
     OBJECTREF oref = ObjectToOBJECTREF(obj);
+    GetThread()->GetExceptionState()->SetRaisingForeignException();
 
     Thread *pThread = GetThread();
 

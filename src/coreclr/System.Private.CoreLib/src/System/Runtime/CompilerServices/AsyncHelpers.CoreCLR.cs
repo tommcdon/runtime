@@ -433,7 +433,6 @@ namespace System.Runtime.CompilerServices
             {
                 while (true)
                 {
-                    if (continuation.Resume != null) AddContinuationToExInternal(continuation, ex);
                     if (continuation == null || (continuation.Flags & ContinuationFlags.HasException) != 0)
                         return continuation;
 
