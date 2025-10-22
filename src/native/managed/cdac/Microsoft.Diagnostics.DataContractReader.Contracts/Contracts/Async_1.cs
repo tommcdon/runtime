@@ -19,6 +19,7 @@ internal readonly partial struct Async_1 : IAsync
     private readonly IRuntimeTypeSystem _rts;
     private readonly IThread _thread;
     private readonly IEcmaMetadata _ecmaMetadata;
+    private readonly IPrecodeStubs _precodeStubs;
 
     public Async_1(Target target)
     {
@@ -27,6 +28,7 @@ internal readonly partial struct Async_1 : IAsync
         _rts = target.Contracts.RuntimeTypeSystem;
         _thread = target.Contracts.Thread;
         _ecmaMetadata = target.Contracts.EcmaMetadata;
+        _precodeStubs = target.Contracts.PrecodeStubs;
     }
 
     private bool TryGetTypeByName(string typeName, string typeNamespace, out TypeHandle typeHandle, out ModuleHandle moduleHandle)
@@ -88,70 +90,56 @@ internal readonly partial struct Async_1 : IAsync
         return TargetPointer.Null;
     }
 
-    private string ReadAsyncStack(Data.Continuation continuation)
+    private TargetPointer GetFinalResumeIP(Data.Continuation continuation)
     {
-        StringBuilder sb = new StringBuilder();
+        if (continuation.Resume == TargetPointer.Null)
+            return TargetPointer.Null;
 
-        TargetPointer ilStubMD = TargetPointer.Null;
-        TargetPointer resolvedMD = TargetPointer.Null;
-        if (continuation.Resume != TargetPointer.Null)
-        {
-            ilStubMD = _target.Contracts.PrecodeStubs.GetMethodDescFromStubAddress(continuation.Resume.Value);
-            MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
-            resolvedMD = _rts.GetILStubTargetMethodDesc(ilStubHandle);
-        }
-
-        sb.AppendLine($"  Continuation IP: {continuation.Resume}, State: {continuation.State}, Flags: {continuation.Flags}, ILStubMD: {ilStubMD}, ResolvedMD: {resolvedMD}");
-
-        if (continuation.Next != TargetPointer.Null)
-        {
-            Continuation parent = _target.ProcessedData.GetOrAdd<Continuation>(continuation.Next);
-            ReadAsyncStack(parent);
-        }
-
-        string message = sb.ToString();
-        return message;
+        TargetPointer ilStubMD = _precodeStubs.GetMethodDescFromStubAddress(continuation.Resume.Value);
+        MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
+        TargetPointer resolverPtr = _rts.GetResolver(ilStubHandle);
+        AsyncResumeILStubResolver resolver = _target.ProcessedData.GetOrAdd<AsyncResumeILStubResolver>(resolverPtr);
+        return resolver.FinalResumeIP;
     }
 
-    private string ReadAllAsyncStacks(TargetPointer nextContinuationDataPtr)
+    private IEnumerable<ResumeData> ReadAsyncStack(TargetPointer continuationPtr)
     {
-        StringBuilder sb = new StringBuilder();
-
-        while (nextContinuationDataPtr != TargetPointer.Null)
+        while (continuationPtr != TargetPointer.Null)
         {
-            NextContinuationData nextContinuationData = _target.ProcessedData.GetOrAdd<NextContinuationData>(nextContinuationDataPtr);
+            Continuation continuation = _target.ProcessedData.GetOrAdd<Continuation>(continuationPtr);
 
+            if (continuation.Resume != TargetPointer.Null)
+            {
+                TargetPointer ilStubMD = _precodeStubs.GetMethodDescFromStubAddress(continuation.Resume.Value);
+                MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
+                TargetPointer resolvedMD = _rts.GetILStubTargetMethodDesc(ilStubHandle);
+                MethodDescHandle methodDescHandle = _rts.GetMethodDescHandle(resolvedMD);
+                yield return new ResumeData(
+                    methodDescHandle,
+                    GetFinalResumeIP(continuation).Value,
+                    0);
+            }
+
+            continuationPtr = continuation.Next;
+        }
+    }
+
+    IEnumerable<IEnumerable<ResumeData>> IAsync.GetAsyncData(TargetPointer thread)
+    {
+        TargetPointer tlsNextContinuationAddr = GetTLSNextContinuationDataAddr(thread);
+
+        while (tlsNextContinuationAddr != TargetPointer.Null)
+        {
+            NextContinuationData nextContinuationData = _target.ProcessedData.GetOrAdd<NextContinuationData>(tlsNextContinuationAddr);
             if (nextContinuationData.NextContinuation != TargetPointer.Null)
             {
+                // nextContinuationData.NextContinuation is a pointer to a pointer to a Continuation object
+                // so we need to dereference it again to get the Continuation pointer
                 TargetPointer continuationPtr = _target.ReadPointer(nextContinuationData.NextContinuation);
-                Continuation continuation = _target.ProcessedData.GetOrAdd<Continuation>(continuationPtr);
-                sb.Append(ReadAsyncStack(continuation));
+                yield return ReadAsyncStack(continuationPtr);
             }
 
-            nextContinuationDataPtr = nextContinuationData.Next;
+            tlsNextContinuationAddr = nextContinuationData.Next;
         }
-
-        string message = sb.ToString();
-        return message;
-    }
-
-    string IAsync.TestFunction()
-    {
-        ThreadStoreData threadStoreData = _thread.GetThreadStoreData();
-        TargetPointer threadPtr = threadStoreData.FirstThread;
-        while (threadPtr != TargetPointer.Null)
-        {
-            ThreadData threadData = _thread.GetThreadData(threadPtr);
-            Console.WriteLine($"Thread Id {threadData.Id} (OS Id {threadData.OSId}):");
-            TargetPointer result = GetTLSNextContinuationDataAddr(threadPtr);
-            if (result != TargetPointer.Null)
-            {
-                string asyncStacks = ReadAllAsyncStacks(result);
-                Console.WriteLine(asyncStacks);
-            }
-            threadPtr = threadData.NextThread;
-        }
-
-        return "type not found";
     }
 }
