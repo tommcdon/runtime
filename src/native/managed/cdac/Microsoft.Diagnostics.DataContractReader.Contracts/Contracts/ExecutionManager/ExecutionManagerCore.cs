@@ -233,7 +233,6 @@ internal sealed partial class ExecutionManagerCore<T> : IExecutionManager
 
     TargetPointer IExecutionManager.GetDebugInfo(CodeBlockHandle codeInfoHandle)
     {
-        hasFlagByte = false;
         if (!_codeInfos.TryGetValue(codeInfoHandle.Address, out CodeBlock? info))
             throw new InvalidOperationException($"{nameof(CodeBlock)} not found for {codeInfoHandle.Address}");
 
@@ -242,7 +241,7 @@ internal sealed partial class ExecutionManagerCore<T> : IExecutionManager
             return TargetPointer.Null;
 
         JitManager jitManager = GetJitManager(range.Data);
-        return jitManager.GetDebugInfo(range, codeInfoHandle.Address.Value,);
+        return jitManager.GetDebugInfo(range, codeInfoHandle.Address.Value);
     }
 
     void IExecutionManager.GetGCInfo(CodeBlockHandle codeInfoHandle, out TargetPointer gcInfo, out uint gcVersion)
