@@ -56,6 +56,27 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
         return RestoreBoundaries(debugInfo, preferUninstrumented);
     }
 
+    IEnumerable<AsyncSuspensionPoint> IDebugInfo.GetAsyncSuspensionPoints(TargetCodePointer pCode)
+    {
+        // Get the method's DebugInfo
+        if (_eman.GetCodeBlockHandle(pCode) is not CodeBlockHandle cbh)
+            throw new InvalidOperationException($"No CodeBlockHandle found for native code {pCode}.");
+        TargetPointer debugInfo = _eman.GetDebugInfo(cbh);
+
+        DebugInfoChunks chunks = DecodeChunks(debugInfo);
+
+        TargetPointer addrAsyncInfo = chunks.AsyncInfoStart;
+        uint cbAsyncInfo = chunks.AsyncInfoSize;
+
+        if (cbAsyncInfo > 0)
+        {
+            NativeReader asyncDebugInfoReader = new(new TargetStream(_target, addrAsyncInfo, cbAsyncInfo), _target.IsLittleEndian);
+            return DoAsyncSuspensionPoints(asyncDebugInfoReader);
+        }
+
+        return [];
+    }
+
     private DebugInfoChunks DecodeChunks(TargetPointer debugInfo)
     {
         NativeReader nibbleNativeReader = new(new TargetStream(_target, debugInfo, 42 /*maximum size of 7 32bit ints compressed*/), _target.IsLittleEndian);
@@ -174,6 +195,27 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
                 curBoundsProcessed++;
             }
         }
+    }
 
+    private static IEnumerable<AsyncSuspensionPoint> DoAsyncSuspensionPoints(NativeReader nativeReader)
+    {
+        NibbleReader reader = new(nativeReader, 0);
+
+        uint asyncEntryCount = reader.ReadUInt();
+        uint _ /* numAsyncVars */ = reader.ReadUInt();
+        uint nativeOffset = 0;
+        for (uint i = 0; i < asyncEntryCount; i++)
+        {
+            int nativeOffsetDelta = reader.ReadInt();
+            uint numContinuationVars = reader.ReadUInt();
+
+            nativeOffset = (uint)((int)nativeOffset + nativeOffsetDelta);
+
+            yield return new AsyncSuspensionPoint()
+            {
+                NativeOffset = nativeOffset,
+                NumContinuationVars = numContinuationVars
+            };
+        }
     }
 }
