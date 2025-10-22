@@ -92,7 +92,16 @@ internal readonly partial struct Async_1 : IAsync
     {
         StringBuilder sb = new StringBuilder();
 
-        sb.AppendLine($"  Continuation IP: {continuation.Resume}, State: {continuation.State}, Flags: {continuation.Flags}");
+        TargetPointer ilStubMD = TargetPointer.Null;
+        TargetPointer resolvedMD = TargetPointer.Null;
+        if (continuation.Resume != TargetPointer.Null)
+        {
+            ilStubMD = _target.Contracts.PrecodeStubs.GetMethodDescFromStubAddress(continuation.Resume.Value);
+            MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
+            resolvedMD = _rts.GetILStubTargetMethodDesc(ilStubHandle);
+        }
+
+        sb.AppendLine($"  Continuation IP: {continuation.Resume}, State: {continuation.State}, Flags: {continuation.Flags}, ILStubMD: {ilStubMD}, ResolvedMD: {resolvedMD}");
 
         if (continuation.Next != TargetPointer.Null)
         {
