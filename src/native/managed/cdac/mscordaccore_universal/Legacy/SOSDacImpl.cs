@@ -2135,7 +2135,10 @@ internal sealed unsafe partial class SOSDacImpl
         sb.AppendLine("    Resume Data:");
         sb.AppendLine($"      Method Name: {GetMethodDescName(rd.MethodDesc)}");
         sb.AppendLine($"      Method Desc: {rd.MethodDesc.Address}");
-        sb.AppendLine($"      IP: {rd.ResumeAddress}");
+        sb.AppendLine($"      Resume Address: 0x{rd.ResumeAddress:x}");
+        sb.AppendLine($"      Offset in Method: 0x{rd.NativeOffset:x}");
+        sb.AppendLine($"      IP: 0x{rd.ResumeAddress + rd.NativeOffset:x}");
+        sb.AppendLine($"      NumContinuationArgs: {rd.NumArgs}");
     }
 
     private void PrintAsyncStack(StringBuilder sb, IEnumerable<ResumeData> resumeDatas)
