@@ -470,6 +470,7 @@ CDAC_TYPE_END(StoredSigMethodDesc)
 CDAC_TYPE_BEGIN(DynamicMethodDesc)
 CDAC_TYPE_SIZE(sizeof(DynamicMethodDesc))
 CDAC_TYPE_FIELD(DynamicMethodDesc, /*pointer*/, MethodName, cdac_data<DynamicMethodDesc>::MethodName)
+CDAC_TYPE_FIELD(DynamicMethodDesc, /*pointer*/, Resolver, cdac_data<DynamicMethodDesc>::Resolver)
 CDAC_TYPE_END(DynamicMethodDesc)
 
 CDAC_TYPE_BEGIN(ArrayMethodDesc)
@@ -493,6 +494,16 @@ CDAC_TYPE_BEGIN(CLRToCOMCallMethodDesc)
 CDAC_TYPE_SIZE(sizeof(CLRToCOMCallMethodDesc))
 CDAC_TYPE_END(CLRToCOMCallMethodDesc)
 #endif // FEATURE_COMINTEROP
+
+CDAC_TYPE_BEGIN(ILStubResolver)
+CDAC_TYPE_INDETERMINATE(ILStubResolver)
+CDAC_TYPE_FIELD(ILStubResolver, /*pointer*/, StubTargetMD, cdac_data<ILStubResolver>::StubTargetMD)
+CDAC_TYPE_END(ILStubResolver)
+
+CDAC_TYPE_BEGIN(AsyncResumeILStubResolver)
+CDAC_TYPE_INDETERMINATE(AsyncResumeILStubResolver)
+CDAC_TYPE_FIELD(AsyncResumeILStubResolver, /*pointer*/, FinalResumeIP, cdac_data<AsyncResumeILStubResolver>::FinalResumeIP)
+CDAC_TYPE_END(AsyncResumeILStubResolver)
 
 CDAC_TYPE_BEGIN(CodePointer)
 CDAC_TYPE_SIZE(sizeof(PCODE))
