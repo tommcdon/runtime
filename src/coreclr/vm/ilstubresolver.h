@@ -106,6 +106,14 @@ protected:
     PTR_MethodDesc          m_pStubTargetMD;
     CORJIT_FLAGS            m_jitFlags;
     PTR_LoaderHeap          m_loaderHeap;
+
+    friend struct ::cdac_data<ILStubResolver>;
+};
+
+template<>
+struct cdac_data<ILStubResolver>
+{
+    static constexpr size_t StubTargetMD = offsetof(ILStubResolver, m_pStubTargetMD);
 };
 
 typedef Holder<ILStubResolver*, DoNothing<ILStubResolver*>, ILStubResolver::StubGenFailed, 0> ILStubGenHolder;

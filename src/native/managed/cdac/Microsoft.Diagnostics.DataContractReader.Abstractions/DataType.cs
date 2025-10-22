@@ -90,6 +90,8 @@ public enum DataType
     PInvokeMethodDesc,
     EEImplMethodDesc,
     CLRToCOMCallMethodDesc,
+    ILStubResolver,
+    AsyncResumeILStubResolver,
     RangeSectionMap,
     RangeSectionFragment,
     RangeSection,

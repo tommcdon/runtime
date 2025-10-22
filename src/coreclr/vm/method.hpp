@@ -2994,6 +2994,7 @@ template<>
 struct cdac_data<DynamicMethodDesc>
 {
     static constexpr size_t MethodName = offsetof(DynamicMethodDesc, m_pszMethodName);
+    static constexpr size_t Resolver = offsetof(DynamicMethodDesc, m_pResolver);
 };
 
 class ArrayMethodDesc : public StoredSigMethodDesc

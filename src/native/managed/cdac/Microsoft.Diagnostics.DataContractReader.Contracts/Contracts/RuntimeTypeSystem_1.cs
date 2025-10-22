@@ -321,6 +321,7 @@ internal partial struct RuntimeTypeSystem_1 : IRuntimeTypeSystem
         }
 
         public string MethodName { get; }
+        public TargetPointer Resolver => _desc.Resolver;
         public DynamicMethodDescExtendedFlags ExtendedFlags => (DynamicMethodDescExtendedFlags)_storedSigDesc.ExtendedFlags;
 
         public bool IsDynamicMethod => ExtendedFlags.HasFlag(DynamicMethodDescExtendedFlags.IsLCGMethod);
@@ -1201,6 +1202,32 @@ internal partial struct RuntimeTypeSystem_1 : IRuntimeTypeSystem
         }
 
         return AsDynamicMethodDesc(methodDesc).IsILStub;
+    }
+
+    public TargetPointer GetResolver(MethodDescHandle methodDescHandle)
+    {
+        MethodDesc methodDesc = _methodDescs[methodDescHandle.Address];
+
+        if (methodDesc.Classification != MethodClassification.Dynamic)
+        {
+            return TargetPointer.Null;
+        }
+
+        return AsDynamicMethodDesc(methodDesc).Resolver;
+    }
+
+    public TargetPointer GetILStubTargetMethodDesc(MethodDescHandle methodDescHandle)
+    {
+
+        if (!IsILStub(methodDescHandle))
+            return TargetPointer.Null;
+
+        TargetPointer resolver = GetResolver(methodDescHandle);
+        if (resolver == TargetPointer.Null)
+            return TargetPointer.Null;
+
+        Data.ILStubResolver ilStubResolver = _target.ProcessedData.GetOrAdd<Data.ILStubResolver>(resolver);
+        return ilStubResolver.StubTargetMD;
     }
 
     public bool HasMDContextArg(MethodDescHandle methodDescHandle)
