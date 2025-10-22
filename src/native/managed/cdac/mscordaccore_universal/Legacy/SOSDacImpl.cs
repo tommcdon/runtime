@@ -15,6 +15,7 @@ using Microsoft.Diagnostics.DataContractReader.Contracts.Extensions;
 using Microsoft.Diagnostics.DataContractReader.Contracts.StackWalkHelpers;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
+using System.IO;
 
 namespace Microsoft.Diagnostics.DataContractReader.Legacy;
 
@@ -2078,6 +2079,125 @@ internal sealed unsafe partial class SOSDacImpl
 #endif
         return hr;
     }
+
+    private string GetMethodDescName(MethodDescHandle methodDescHandle)
+    {
+        Contracts.IRuntimeTypeSystem rts = _target.Contracts.RuntimeTypeSystem;
+
+        TargetPointer methodDesc = methodDescHandle.Address;
+        StringBuilder stringBuilder = new StringBuilder();
+        try
+        {
+            TypeNameBuilder.AppendMethodInternal(_target, stringBuilder, methodDescHandle, TypeNameFormat.FormatSignature | TypeNameFormat.FormatNamespace | TypeNameFormat.FormatFullInst);
+        }
+        catch
+        {
+            if (rts.IsNoMetadataMethod(methodDescHandle, out _))
+            {
+                // In heap dumps, trying to format the signature can fail
+                // in certain cases.
+                stringBuilder.Clear();
+                TypeNameBuilder.AppendMethodInternal(_target, stringBuilder, methodDescHandle, TypeNameFormat.FormatNamespace | TypeNameFormat.FormatFullInst);
+            }
+            else
+            {
+                string? fallbackNameString = _target.Contracts.DacStreams.StringFromEEAddress(methodDesc);
+                if (!string.IsNullOrEmpty(fallbackNameString))
+                {
+                    stringBuilder.Clear();
+                    stringBuilder.Append(fallbackNameString);
+                }
+                else
+                {
+                    TargetPointer modulePtr = rts.GetModule(rts.GetTypeHandle(rts.GetMethodTable(methodDescHandle)));
+                    Contracts.ModuleHandle module = _target.Contracts.Loader.GetModuleHandleFromModulePtr(modulePtr);
+                    string modulePath = _target.Contracts.Loader.GetPath(module);
+                    ReadOnlySpan<char> moduleSpan = modulePath.AsSpan();
+                    char directorySeparator = (char)_target.ReadGlobal<byte>(Constants.Globals.DirectorySeparator);
+
+                    int pathNameSpanIndex = moduleSpan.LastIndexOf(directorySeparator);
+                    if (pathNameSpanIndex != -1)
+                    {
+                        moduleSpan = moduleSpan.Slice(pathNameSpanIndex + 1);
+                    }
+                    stringBuilder.Clear();
+                    stringBuilder.Append(moduleSpan);
+                    stringBuilder.Append("!Unknown");
+                }
+            }
+        }
+
+        return stringBuilder.ToString();
+    }
+
+    private void PrintResumeData(StringBuilder sb, ResumeData rd)
+    {
+        sb.AppendLine("    Resume Data:");
+        sb.AppendLine($"      Method Name: {GetMethodDescName(rd.MethodDesc)}");
+        sb.AppendLine($"      Method Desc: {rd.MethodDesc.Address}");
+        sb.AppendLine($"      IP: {rd.ResumeAddress}");
+    }
+
+    private void PrintAsyncStack(StringBuilder sb, IEnumerable<ResumeData> resumeDatas)
+    {
+        sb.AppendLine("  Async Stack:");
+        foreach (ResumeData rd in resumeDatas)
+        {
+            PrintResumeData(sb, rd);
+        }
+    }
+
+    private void PrintAsyncStacksForThread(StringBuilder sb, TargetPointer threadPtr)
+    {
+        IAsync async = _target.Contracts.Async;
+        IEnumerable<IEnumerable<ResumeData>> threadResumeDatas = async.GetAsyncData(threadPtr);
+        if (!threadResumeDatas.Any())
+        {
+            sb.AppendLine("  (no async stacks)");
+            return;
+        }
+
+        foreach (IEnumerable<ResumeData> resumeDatas in threadResumeDatas)
+        {
+            PrintAsyncStack(sb, resumeDatas);
+        }
+    }
+
+    private void AsyncTestFunction(StringBuilder sb)
+    {
+        IThread thread = _target.Contracts.Thread;
+
+        ThreadStoreData threadStore = thread.GetThreadStoreData();
+        TargetPointer threadPtr = threadStore.FirstThread;
+        while (threadPtr != TargetPointer.Null)
+        {
+            ThreadData threadData = thread.GetThreadData(threadPtr);
+
+            sb.AppendLine($"Thread {threadData.Id:x} {threadData.OSId.Value:x} Async Stacks:");
+            PrintAsyncStacksForThread(sb, threadPtr);
+
+            threadPtr = threadData.NextThread;
+        }
+    }
+
+    private void PrintHelper()
+    {
+        StringBuilder sb = new StringBuilder();
+        try
+        {
+            AsyncTestFunction(sb);
+        }
+        catch (System.Exception ex)
+        {
+            sb.AppendLine($"Exception: {ex}");
+        }
+        finally
+        {
+            string filePath = "C:\\Users\\maxcharlamb\\temp\\output.txt";
+            File.WriteAllText(filePath, sb.ToString());
+        }
+    }
+
     int ISOSDacInterface.GetMethodDescPtrFromIP(ClrDataAddress ip, ClrDataAddress* ppMD)
     {
         if (ip == 0 || ppMD == null)
@@ -2092,7 +2212,7 @@ internal sealed unsafe partial class SOSDacImpl
 
             if (ip < 100)
             {
-                _target.Contracts.Async.TestFunction();
+                PrintHelper();
             }
 
             CodeBlockHandle? handle = executionManager.GetCodeBlockHandle(ip.ToTargetCodePointer(_target));
