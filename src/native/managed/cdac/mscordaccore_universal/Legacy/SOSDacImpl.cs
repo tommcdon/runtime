@@ -2486,8 +2486,14 @@ internal sealed unsafe partial class SOSDacImpl
             Debug.Assert(hrLocal == hr, $"cDAC: {hr:x}, DAC: {hrLocal:x}");
             if (hr == HResults.S_OK)
             {
-                Debug.Assert(pNeeded == null || *pNeeded == neededLocal);
-                Debug.Assert(mtName == null || new ReadOnlySpan<char>(mtNameLocal, 0, (int)neededLocal - 1).SequenceEqual(new string(mtName)));
+                string nameLocal = new string(mtNameLocal, 0, (int)neededLocal - 1);
+
+                // Fix the TypeNameBuilder to support dynamic continuation class names
+                if (!(new string(mtName) == "(dynamicClass)" && nameLocal.StartsWith("Continuation_")))
+                {
+                    Debug.Assert(pNeeded == null || *pNeeded == neededLocal);
+                    Debug.Assert(mtName == null || nameLocal.SequenceEqual(new string(mtName)));
+                }
             }
         }
 #endif
