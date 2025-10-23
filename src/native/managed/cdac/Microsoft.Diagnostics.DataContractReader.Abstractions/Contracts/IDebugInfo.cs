@@ -32,7 +32,8 @@ public readonly struct OffsetMapping
 
 public readonly struct AsyncSuspensionPoint
 {
-    public uint NativeOffset { get; init; }
+    public uint NativeResumeOffset { get; init; }
+    public uint NativeJoinOffset { get; init; }
     public uint NumContinuationVars { get; init; }
 }
 

@@ -16,6 +16,7 @@ internal readonly partial struct Async_1 : IAsync
 {
     private readonly Target _target;
     private readonly ILoader _loader;
+    private readonly IExecutionManager _eman;
     private readonly IRuntimeTypeSystem _rts;
     private readonly IThread _thread;
     private readonly IEcmaMetadata _ecmaMetadata;
@@ -26,6 +27,7 @@ internal readonly partial struct Async_1 : IAsync
     {
         _target = target;
         _loader = target.Contracts.Loader;
+        _eman = target.Contracts.ExecutionManager;
         _rts = target.Contracts.RuntimeTypeSystem;
         _thread = target.Contracts.Thread;
         _ecmaMetadata = target.Contracts.EcmaMetadata;
@@ -92,16 +94,17 @@ internal readonly partial struct Async_1 : IAsync
         return TargetPointer.Null;
     }
 
-    private TargetPointer GetFinalResumeIP(Data.Continuation continuation)
+    private void GetMethodLocals(MethodDescHandle mdh)
     {
-        if (continuation.Resume == TargetPointer.Null)
-            return TargetPointer.Null;
+        uint token = _rts.GetMethodToken(mdh);
+        TypeHandle type = _rts.GetTypeHandle(_rts.GetMethodTable(mdh));
+        TargetPointer modulePtr = _rts.GetModule(type);
+        ModuleHandle moduleHandle = _loader.GetModuleHandleFromModulePtr(modulePtr);
 
-        TargetPointer ilStubMD = _precodeStubs.GetMethodDescFromStubAddress(continuation.Resume.Value);
-        MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
-        TargetPointer resolverPtr = _rts.GetResolver(ilStubHandle);
-        AsyncResumeILStubResolver resolver = _target.ProcessedData.GetOrAdd<AsyncResumeILStubResolver>(resolverPtr);
-        return resolver.FinalResumeIP;
+        MethodDefinitionHandle methodHandle = (MethodDefinitionHandle)MetadataTokens.Handle((int)token);
+        MetadataReader mdReader = _ecmaMetadata.GetMetadata(moduleHandle)!;
+        MethodDefinition _ = mdReader.GetMethodDefinition(methodHandle);
+        throw new NotImplementedException();
     }
 
     private IEnumerable<ResumeData> ReadAsyncStack(TargetPointer continuationPtr)
@@ -112,19 +115,21 @@ internal readonly partial struct Async_1 : IAsync
 
             if (continuation.Resume != TargetPointer.Null)
             {
-                TargetPointer ilStubMD = _precodeStubs.GetMethodDescFromStubAddress(continuation.Resume.Value);
-                MethodDescHandle ilStubHandle = _rts.GetMethodDescHandle(ilStubMD);
-                TargetPointer resolvedMD = _rts.GetILStubTargetMethodDesc(ilStubHandle);
-                MethodDescHandle methodDescHandle = _rts.GetMethodDescHandle(resolvedMD);
-                TargetCodePointer finalResumeIP = GetFinalResumeIP(continuation).Value;
-                AsyncSuspensionPoint[] suspensionPoints = _debugInfo.GetAsyncSuspensionPoints(finalResumeIP).ToArray();
+                CodeBlockHandle? cbh = _eman.GetCodeBlockHandle(continuation.Resume.Value);
+                if (!cbh.HasValue)
+                    continue;
+                TargetPointer pMethodDesc = _eman.GetMethodDesc(cbh.Value);
+                MethodDescHandle mdh = _rts.GetMethodDescHandle(pMethodDesc);
+                TargetCodePointer codeStart = _rts.GetNativeCode(mdh);
+                AsyncSuspensionPoint[] suspensionPoints = _debugInfo.GetAsyncSuspensionPoints(codeStart).ToArray();
                 if (suspensionPoints.Length <= continuation.State)
                     throw new InvalidOperationException("Invalid continuation state index.");
 
                 yield return new ResumeData(
-                    methodDescHandle,
-                    finalResumeIP,
-                    suspensionPoints[continuation.State].NativeOffset,
+                    mdh,
+                    codeStart,
+                    suspensionPoints[continuation.State].NativeResumeOffset,
+                    suspensionPoints[continuation.State].NativeJoinOffset,
                     suspensionPoints[continuation.State].NumContinuationVars);
             }
 

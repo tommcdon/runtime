@@ -500,11 +500,6 @@ CDAC_TYPE_INDETERMINATE(ILStubResolver)
 CDAC_TYPE_FIELD(ILStubResolver, /*pointer*/, StubTargetMD, cdac_data<ILStubResolver>::StubTargetMD)
 CDAC_TYPE_END(ILStubResolver)
 
-CDAC_TYPE_BEGIN(AsyncResumeILStubResolver)
-CDAC_TYPE_INDETERMINATE(AsyncResumeILStubResolver)
-CDAC_TYPE_FIELD(AsyncResumeILStubResolver, /*pointer*/, FinalResumeIP, cdac_data<AsyncResumeILStubResolver>::FinalResumeIP)
-CDAC_TYPE_END(AsyncResumeILStubResolver)
-
 CDAC_TYPE_BEGIN(CodePointer)
 CDAC_TYPE_SIZE(sizeof(PCODE))
 CDAC_TYPE_END(CodePointer)

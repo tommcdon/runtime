@@ -1204,25 +1204,14 @@ internal partial struct RuntimeTypeSystem_1 : IRuntimeTypeSystem
         return AsDynamicMethodDesc(methodDesc).IsILStub;
     }
 
-    public TargetPointer GetResolver(MethodDescHandle methodDescHandle)
-    {
-        MethodDesc methodDesc = _methodDescs[methodDescHandle.Address];
-
-        if (methodDesc.Classification != MethodClassification.Dynamic)
-        {
-            return TargetPointer.Null;
-        }
-
-        return AsDynamicMethodDesc(methodDesc).Resolver;
-    }
-
     public TargetPointer GetILStubTargetMethodDesc(MethodDescHandle methodDescHandle)
     {
+        MethodDesc methodDesc = _methodDescs[methodDescHandle.Address];
 
         if (!IsILStub(methodDescHandle))
             return TargetPointer.Null;
 
-        TargetPointer resolver = GetResolver(methodDescHandle);
+        TargetPointer resolver = AsDynamicMethodDesc(methodDesc).Resolver;
         if (resolver == TargetPointer.Null)
             return TargetPointer.Null;
 

@@ -91,7 +91,6 @@ public enum DataType
     EEImplMethodDesc,
     CLRToCOMCallMethodDesc,
     ILStubResolver,
-    AsyncResumeILStubResolver,
     RangeSectionMap,
     RangeSectionFragment,
     RangeSection,
