@@ -24,6 +24,7 @@ internal sealed class TypeValidation
         internal TargetPointer Address { get; init; }
 
         private MethodTableFlags_1? _methodTableFlags;
+        private TargetPointer? _parentMethodTable;
 
         internal NonValidatedMethodTable(Target target, TargetPointer methodTablePointer)
         {
@@ -31,6 +32,7 @@ internal sealed class TypeValidation
             _type = target.GetTypeInfo(DataType.MethodTable);
             Address = methodTablePointer;
             _methodTableFlags = null;
+            _parentMethodTable = null;
         }
 
         private MethodTableFlags_1 GetOrCreateFlags()
@@ -49,7 +51,26 @@ internal sealed class TypeValidation
             return _methodTableFlags.Value;
         }
 
+        private TargetPointer GetOrCreateParentMethodTable()
+        {
+            if (_parentMethodTable == null)
+            {
+                // note: may throw if the method table Address is corrupted
+                _parentMethodTable = _target.ReadPointer(Address + (ulong)_type.Fields[nameof(MethodTable.ParentMethodTable)].Offset);
+            }
+            return _parentMethodTable.Value;
+        }
+
+        private bool IsContinuationCheck()
+        {
+            // only set if continuation class subtypes have been created
+            TargetPointer continuationClass = _target.ReadPointer(_target.ReadGlobalPointer(Constants.Globals.ContinuationMethodTable));
+            return continuationClass != TargetPointer.Null && ParentMethodTable == continuationClass;
+        }
+
         internal MethodTableFlags_1 Flags => GetOrCreateFlags();
+        internal TargetPointer ParentMethodTable => GetOrCreateParentMethodTable();
+        internal bool IsContinuation => IsContinuationCheck();
 
         internal TargetPointer EEClassOrCanonMT => _target.ReadPointer(Address + (ulong)_type.Fields[nameof(EEClassOrCanonMT)].Offset);
         internal TargetPointer EEClass => MethodTableFlags_1.GetEEClassOrCanonMTBits(EEClassOrCanonMT) == MethodTableFlags_1.EEClassOrCanonMTBits.EEClass ? EEClassOrCanonMT : throw new InvalidOperationException("not an EEClass");
@@ -151,7 +172,7 @@ internal sealed class TypeValidation
             {
                 return true;
             }
-            if (methodTable.Flags.HasInstantiation || methodTable.Flags.IsArray)
+            if (methodTable.Flags.HasInstantiation || methodTable.Flags.IsArray || methodTable.IsContinuation)
             {
                 NonValidatedMethodTable methodTableFromClass = GetMethodTableData(_target, methodTablePtrFromClass);
                 TargetPointer classFromMethodTable = GetClassThrowing(methodTableFromClass);

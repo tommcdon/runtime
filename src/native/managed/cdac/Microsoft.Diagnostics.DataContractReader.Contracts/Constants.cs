@@ -74,6 +74,8 @@ public static class Constants
         public const string HashMapSlotsPerBucket = nameof(HashMapSlotsPerBucket);
         public const string HashMapValueMask = nameof(HashMapValueMask);
 
+        public const string ContinuationMethodTable = nameof(ContinuationMethodTable);
+
         public const string Architecture = nameof(Architecture);
         public const string OperatingSystem = nameof(OperatingSystem);
 
