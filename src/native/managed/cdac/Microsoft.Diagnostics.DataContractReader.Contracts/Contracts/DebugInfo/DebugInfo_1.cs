@@ -70,8 +70,13 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
 
         if (cbAsyncInfo > 0)
         {
-            NativeReader asyncDebugInfoReader = new(new TargetStream(_target, addrAsyncInfo, cbAsyncInfo), _target.IsLittleEndian);
-            return DoAsyncSuspensionPoints(asyncDebugInfoReader);
+            NativeReader asyncNativeReader = new(new TargetStream(_target, addrAsyncInfo, cbAsyncInfo), _target.IsLittleEndian);
+            NibbleReader asyncNibbleReader = new(asyncNativeReader, 0);
+
+            uint numSuspensionPoints = asyncNibbleReader.ReadUInt();
+            uint _ /* numAsyncVars */ = asyncNibbleReader.ReadUInt();
+
+            return DoAsyncSuspensionPoints(asyncNibbleReader, numSuspensionPoints);
         }
 
         return [];
@@ -197,24 +202,24 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
         }
     }
 
-    private static IEnumerable<AsyncSuspensionPoint> DoAsyncSuspensionPoints(NativeReader nativeReader)
+    private static IEnumerable<AsyncSuspensionPoint> DoAsyncSuspensionPoints(NibbleReader reader, uint numSuspensionPoints)
     {
-        NibbleReader reader = new(nativeReader, 0);
-
-        uint asyncEntryCount = reader.ReadUInt();
-        uint _ /* numAsyncVars */ = reader.ReadUInt();
-        uint nativeOffset = 0;
-        for (uint i = 0; i < asyncEntryCount; i++)
+        uint nativeResumeOffset = 0;
+        uint nativeJoinOffset = 0;
+        for (uint i = 0; i < numSuspensionPoints; i++)
         {
-            int nativeOffsetDelta = reader.ReadInt();
+            uint nativeResumeOffsetDelta = reader.ReadUInt();
+            int nativeJoinOffsetDelta = reader.ReadInt();
             uint numContinuationVars = reader.ReadUInt();
 
-            nativeOffset = (uint)((int)nativeOffset + nativeOffsetDelta);
+            nativeResumeOffset += nativeResumeOffsetDelta;
+            nativeJoinOffset = (uint)((int)nativeJoinOffset + nativeJoinOffsetDelta);
 
             yield return new AsyncSuspensionPoint()
             {
-                NativeOffset = nativeOffset,
-                NumContinuationVars = numContinuationVars
+                NativeResumeOffset = nativeResumeOffset,
+                NativeJoinOffset = nativeJoinOffset,
+                NumContinuationVars = numContinuationVars,
             };
         }
     }
