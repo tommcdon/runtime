@@ -237,25 +237,37 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
             continue;
         }
 
-        NextContinuationData* pNextContinuation = *ppNextContinuation;
-        while (pNextContinuation != NULL)
+        struct
         {
-            if (pNextContinuation->pContinuation == NULL || *(pNextContinuation->pContinuation) == NULL)
+            OBJECTREF continuation;
+        } gc{};
+        gc.continuation = NULL;
+        GCPROTECT_BEGIN(gc)
+        {
+            NextContinuationData* pNextContinuation = *ppNextContinuation;
+            while (pNextContinuation != NULL)
             {
-                break;
-            }
-
-            OBJECTREF continuation = *(pNextContinuation->pContinuation);
-            while (continuation != NULL)
-            {
-                OBJECTREF pNext = nullptr;
-                PCODE pResume = 0;
-                UINT32 state = 0;
-                int numFound = 0;
-                GCPROTECT_BEGIN(continuation)
+                if (pNextContinuation->pContinuation == NULL || *(pNextContinuation->pContinuation) == NULL)
                 {
-                    ApproxFieldDescIterator continuationFieldIter(continuation->GetMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
-                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 3; continuationField = continuationFieldIter.Next())
+                    break;
+                }
+
+                OBJECTREF continuation = *(pNextContinuation->pContinuation);
+                while (continuation != NULL)
+                {
+                    typedef struct
+                    {
+                        PCODE Resume;
+                        PCODE FinalResumeIP;
+                    } ResumeInfo;
+                    
+                    gc.continuation = continuation;
+                    OBJECTREF pNext = nullptr;
+                    ResumeInfo * pResumeNext = nullptr;
+                    int numFound = 0;
+
+                    ApproxFieldDescIterator continuationFieldIter(continuation->GetMethodTable()->GetParentMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
+                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 2; continuationField = continuationFieldIter.Next())
                     {
                         LPCUTF8 fieldName = continuationField->GetName();
                         if (!strcmp(fieldName, "Next"))
@@ -263,66 +275,38 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                             pNext = (OBJECTREF)(Object*)continuation->GetPtrOffset(continuationField->GetOffset());
                             numFound++;
                         }
-                        else if (!strcmp(fieldName, "Resume"))
+                        else if (!strcmp(fieldName, "ResumeInfo"))
                         {
-                            pResume = (PCODE)continuation->GetPtrOffset(continuationField->GetOffset());
-                            numFound++;
-                        }
-                        else if (!strcmp(fieldName, "State"))
-                        {
-                            state = continuation->GetOffset32(continuationField->GetOffset());
+                            pResumeNext = (ResumeInfo*)continuation->GetPtrOffset(continuationField->GetOffset());
                             numFound++;
                         }
                     }
-                }
-                GCPROTECT_END();
 
-                if (pResume != 0)
-                {
-                    MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResume);
-
-                    PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
-                    if (pILResolver != nullptr)
+                    if (pResumeNext != NULL && pResumeNext->Resume != NULL)
                     {
-                        MethodDesc * targetMd = pILResolver->GetStubTargetMethodDesc();
-                        AsyncResumeILStubResolver * pAsyncResumeResolver = (AsyncResumeILStubResolver *)pILResolver;
+                        MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResumeNext->Resume);
 
-                        auto fpNew = [](void* data, size_t numBytes)
+                        PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
+                        if (pILResolver != nullptr)
                         {
-                            return new (nothrow) BYTE[numBytes];
-                        };
-                        EECodeInfo codeInfo(pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
-                        DebugInfoRequest diq;
-                        diq.InitFromStartingAddr(targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress());
-                        ICorDebugInfo::AsyncInfo asyncInfo = {};
-                        NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
-                        NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
-                        ULONG32 cAsyncVars = 0;
-
-                        if (codeInfo.GetJitManager()->GetAsyncDebugInfo(diq, fpNew, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars))
-                        {
-                            if (state >= asyncInfo.NumSuspensionPoints)
-                            {
-                                // invalid state
-                                continue;
-                            }
-                            pContinuationResumeList->Append({ targetMd, pAsyncResumeResolver->GetFinalResumeMethodStartAddress(), asyncSuspensionPoints[state].NativeOffset });
+                            pContinuationResumeList->Append({ pILResolver->GetStubTargetMethodDesc(), pResumeNext->FinalResumeIP });
                         }
-
                     }
+                    if (pNext == nullptr)
+                    {
+                        break;
+                    }
+                    continuation = pNext;
                 }
 
-                if (pNext == nullptr)
-                {
-                    break;
-                }
-                continuation = pNext;
-            }
+                // TODO: use NextContinuationData's "Next" field to continue the list
+                //pNextContinuation = pNext;
+                break;
+            } // while pNextContinuation != NULL
+        }
+        GCPROTECT_END();
 
-            // TODO: use NextContinuationData's "Next" field to continue the list
-            //pNextContinuation = pNext;
-            break;
-        } // while pNextContinuation != NULL
+        break;
 
     } // foreach static field
 
@@ -417,8 +401,13 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
             MethodDesc* pResumeMd = resumeData.pResumeMd;
             PCODE pResumeIp = resumeData.pResumeIp;
-            DWORD dwNativeOffset = resumeData.dwNativeOffset;
-
+            
+            DWORD dwNativeOffset = 0;
+            EECodeInfo codeInfo(pResumeIp);
+            if (codeInfo.IsValid())
+            {
+                dwNativeOffset = codeInfo.GetRelOffset();
+            }
             pData->pElements[pData->cElements].InitPass1(
                 dwNativeOffset,
                 pResumeMd,
