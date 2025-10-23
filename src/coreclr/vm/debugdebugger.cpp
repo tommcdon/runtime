@@ -284,6 +284,51 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
     }
 }
 
+extern "C" void QCALLTYPE AsyncHelpers_AddContinuationToExInternal(
+    void* resume,
+    uint32_t state,
+    QCall::ObjectHandleOnStack exception)
+{
+    QCALL_CONTRACT;
+
+    BEGIN_QCALL;
+
+    GCX_COOP();
+
+    struct
+    {
+        OBJECTREF pException;
+    } gc{};
+    gc.pException = NULL;
+    GCPROTECT_BEGIN(gc);
+    gc.pException = (OBJECTREF)exception.Get();
+
+    _ASSERTE(gc.pException != NULL);
+
+    struct ResumeInfo
+    {
+        void* Resume;
+        void* FinalResumeIP;
+    } * pResumeInfo = (ResumeInfo *)resume;
+
+    // extract the information from the continuation object
+    // and populate the exception object
+    // get the state
+    OBJECTHANDLE handle = AppDomain::GetCurrentDomain()->CreateHandle(gc.pException);
+    MethodDesc* methodDesc = NonVirtualEntry2MethodDesc((PCODE)pResumeInfo->Resume);
+    ILStubResolver *pResolver = methodDesc->AsDynamicMethodDesc()->GetILStubResolver();
+    MethodDesc* pTargetMethodDesc = pResolver->GetStubTargetMethodDesc();
+    StackTraceInfo::AppendElement(
+        handle,
+        (UINT_PTR)pResumeInfo->FinalResumeIP,
+        state,
+        pTargetMethodDesc,
+        NULL);
+
+    GCPROTECT_END();
+    END_QCALL;
+}
+
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     QCall::ObjectHandleOnStack stackFrameHelper,
     BOOL fNeedFileInfo,
@@ -879,6 +924,11 @@ extern "C" BOOL QCALLTYPE DebugDebugger_IsManagedDebuggerAttached()
 }
 #endif // !DACCESS_COMPILE
 
+BYTE* DebugInfoStoreNew2(void * pData, size_t cBytes)
+{
+    return new BYTE[cBytes];
+}
+
 void DebugStackTrace::GetStackFramesFromException(OBJECTREF * e,
                                                   GetStackFramesData *pData,
                                                   PTRARRAYREF * pDynamicMethodArray /*= NULL*/
@@ -951,25 +1001,43 @@ void DebugStackTrace::GetStackFramesFromException(OBJECTREF * e,
                 // push frames and the method body is therefore non-contiguous.
                 // Currently such methods always return an IP of 0, so they're easy
                 // to spot.
-                DWORD dwNativeOffset;
-
+                DWORD dwNativeOffset = 0;
                 UINT_PTR ip = cur.ip;
+                // if (cur.flags & STEF_CONTINUATION)
+                // {
+                //     if (ip != (PCODE)NULL)
+                //     {
+                //         DebugInfoRequest request;
+                //         request.InitFromStartingAddr(pMD, ip);
+                //         ICorDebugInfo::AsyncInfo asyncInfo = {};
+                //         NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+                //         NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+                //         ULONG32 cAsyncVars = 0;
+                //         DebugInfoManager::GetAsyncDebugInfo(request, DebugInfoStoreNew2, nullptr, &asyncInfo, &asyncSuspensionPoints, &asyncVars, &cAsyncVars);
+                //         dwNativeOffset = asyncSuspensionPoints[cur.sp].NativeOffset;
+                //         ip += dwNativeOffset;
+                //     }
+                // }
+
+                // else
+                {
 #if defined(DACCESS_COMPILE) && defined(TARGET_AMD64)
-                // Compensate for a bug in the old EH that for a frame that faulted
-                // has the ip pointing to an address before the faulting instruction
-                if ((i == 0) && ((cur.flags & STEF_IP_ADJUSTED) == 0))
-                {
-                    ip -= 1;
-                }
+                    // Compensate for a bug in the old EH that for a frame that faulted
+                    // has the ip pointing to an address before the faulting instruction
+                    if ((i == 0) && ((cur.flags & STEF_IP_ADJUSTED) == 0))
+                    {
+                        ip -= 1;
+                    }
 #endif // DACCESS_COMPILE && TARGET_AMD64
-                if (ip)
-                {
-                    EECodeInfo codeInfo(ip);
-                    dwNativeOffset = codeInfo.GetRelOffset();
-                }
-                else
-                {
-                    dwNativeOffset = 0;
+                    if (ip)
+                    {
+                        EECodeInfo codeInfo(ip);
+                        dwNativeOffset = codeInfo.GetRelOffset();
+                    }
+                    else
+                    {
+                        dwNativeOffset = 0;
+                    }
                 }
 
                 pData->pElements[i].InitPass1(
@@ -1540,6 +1608,7 @@ void ValidateILOffsets(MethodDesc *pFunc, uint8_t* ipColdStart, size_t coldLen, 
 
 // Initialization done outside the TSL.
 // This may need to call locking operations that aren't safe under the TSL.
+
 void DebugStackTrace::Element::InitPass2()
 {
     CONTRACTL
@@ -1554,7 +1623,7 @@ void DebugStackTrace::Element::InitPass2()
 
     bool bRes = false;
 
-    bool fAdjustOffset = (this->flags & STEF_IP_ADJUSTED) == 0 && this->dwOffset > 0;
+    bool fAdjustOffset = (this->flags & STEF_IP_ADJUSTED) == 0 && this->dwOffset > 0 && !(this->flags & STEF_CONTINUATION);
 
     // Check the cache!
     uint32_t dwILOffsetFromCache;
