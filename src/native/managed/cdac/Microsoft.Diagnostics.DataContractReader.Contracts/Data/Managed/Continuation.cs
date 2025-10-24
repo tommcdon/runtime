@@ -23,11 +23,14 @@ public sealed class Continuation : IData<Continuation>
             _parsed = true;
         }
 
+        Address = address;
         Next = target.ReadPointer(address + _fieldOffsets[nameof(Next)] + (uint)target.PointerSize);
         Resume = target.ReadPointer(address + _fieldOffsets[nameof(Resume)] + (uint)target.PointerSize);
         State = target.Read<uint>(address + _fieldOffsets[nameof(State)] + (uint)target.PointerSize);
         Flags = target.Read<uint>(address + _fieldOffsets[nameof(Flags)] + (uint)target.PointerSize);
     }
+
+    public TargetPointer Address { get; }
 
     public TargetPointer Next { get; }
     public TargetPointer Resume { get; }

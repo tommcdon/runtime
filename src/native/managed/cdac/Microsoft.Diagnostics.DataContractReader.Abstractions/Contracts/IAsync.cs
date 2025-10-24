@@ -3,21 +3,27 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 
 namespace Microsoft.Diagnostics.DataContractReader.Contracts;
+
+public readonly record struct AsyncLocal(
+    uint ILVarNum,
+    TargetPointer Address);
 
 public readonly record struct ResumeData(
     MethodDescHandle MethodDesc,
     TargetCodePointer CodeStart,
     uint ResumeOffset,
     uint JoinOffset,
-    uint NumArgs);
+    IEnumerable<AsyncLocal> Locals);
 
 public interface IAsync : IContract
 {
     static string IContract.Name { get; } = nameof(Async);
 
     IEnumerable<IEnumerable<ResumeData>> GetAsyncData(TargetPointer thread) => throw new NotImplementedException();
+    ImmutableArray<TypeHandle> ParseLocal(ResumeData rd) => throw new NotImplementedException();
 }
 
 public readonly struct Async : IAsync

@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection.Metadata;
@@ -18,10 +19,9 @@ internal readonly partial struct Async_1 : IAsync
     private readonly ILoader _loader;
     private readonly IExecutionManager _eman;
     private readonly IRuntimeTypeSystem _rts;
-    private readonly IThread _thread;
     private readonly IEcmaMetadata _ecmaMetadata;
-    private readonly IPrecodeStubs _precodeStubs;
     private readonly IDebugInfo _debugInfo;
+    private readonly ISignatureDecoder _signatureDecoder;
 
     public Async_1(Target target)
     {
@@ -29,10 +29,9 @@ internal readonly partial struct Async_1 : IAsync
         _loader = target.Contracts.Loader;
         _eman = target.Contracts.ExecutionManager;
         _rts = target.Contracts.RuntimeTypeSystem;
-        _thread = target.Contracts.Thread;
         _ecmaMetadata = target.Contracts.EcmaMetadata;
-        _precodeStubs = target.Contracts.PrecodeStubs;
         _debugInfo = target.Contracts.DebugInfo;
+        _signatureDecoder = target.Contracts.SignatureDecoder;
     }
 
     private bool TryGetTypeByName(string typeName, string typeNamespace, out TypeHandle typeHandle, out ModuleHandle moduleHandle)
@@ -107,6 +106,27 @@ internal readonly partial struct Async_1 : IAsync
         throw new NotImplementedException();
     }
 
+    private static IEnumerable<AsyncLocal> GetLocals(
+        AsyncSuspensionPoint[] asyncSuspensionPoints,
+        AsyncVarInfo[] asyncVars,
+        Continuation continuation)
+    {
+        uint varBeginIndex = 0;
+        for (int i = 0; i < continuation.State; i++)
+        {
+            varBeginIndex += asyncSuspensionPoints[i].NumContinuationVars;
+        }
+
+        AsyncSuspensionPoint asp = asyncSuspensionPoints[continuation.State];
+        uint numVars = asp.NumContinuationVars;
+
+        for (int i = 0; i < numVars; i++)
+        {
+            AsyncVarInfo avi = asyncVars[varBeginIndex + i];
+            yield return new AsyncLocal(avi.VarNumber, continuation.Address + avi.Offset);
+        }
+    }
+
     private IEnumerable<ResumeData> ReadAsyncStack(TargetPointer continuationPtr)
     {
         while (continuationPtr != TargetPointer.Null)
@@ -122,6 +142,7 @@ internal readonly partial struct Async_1 : IAsync
                 MethodDescHandle mdh = _rts.GetMethodDescHandle(pMethodDesc);
                 TargetCodePointer codeStart = _rts.GetNativeCode(mdh);
                 AsyncSuspensionPoint[] suspensionPoints = _debugInfo.GetAsyncSuspensionPoints(codeStart).ToArray();
+                AsyncVarInfo[] asyncVars = _debugInfo.GetAsyncVarInfo(codeStart).ToArray();
                 if (suspensionPoints.Length <= continuation.State)
                     throw new InvalidOperationException("Invalid continuation state index.");
 
@@ -130,7 +151,7 @@ internal readonly partial struct Async_1 : IAsync
                     codeStart,
                     suspensionPoints[continuation.State].NativeResumeOffset,
                     suspensionPoints[continuation.State].NativeJoinOffset,
-                    suspensionPoints[continuation.State].NumContinuationVars);
+                    GetLocals(suspensionPoints, asyncVars, continuation));
             }
 
             continuationPtr = continuation.Next;
@@ -154,5 +175,30 @@ internal readonly partial struct Async_1 : IAsync
 
             tlsNextContinuationAddr = nextContinuationData.Next;
         }
+    }
+
+    public ImmutableArray<TypeHandle> ParseLocal(ResumeData rd)
+    {
+        TargetPointer mtAddr = _rts.GetMethodTable(rd.MethodDesc);
+        TypeHandle typeHandle = _rts.GetTypeHandle(mtAddr);
+        TargetPointer modulePtr = _rts.GetModule(typeHandle);
+        ModuleHandle moduleHandle = _loader.GetModuleHandleFromModulePtr(modulePtr);
+
+        uint token = _rts.GetMethodToken(rd.MethodDesc);
+        TargetPointer ilHeader = _loader.GetILHeader(moduleHandle, token);
+        if (ilHeader == TargetPointer.Null)
+            throw new InvalidOperationException("IL Header not found.");
+
+        if (!HeaderReaderHelpers.TryGetLocalVarSigToken(_target, ilHeader, out int localVarSigToken))
+            throw new InvalidOperationException("No local var sig token found.");
+
+        if (_ecmaMetadata.GetMetadata(moduleHandle) is not MetadataReader mdReader)
+            throw new InvalidOperationException("Metadata not found.");
+
+        StandaloneSignatureHandle localSignatureHandle = (StandaloneSignatureHandle)MetadataTokens.Handle(localVarSigToken);
+        StandaloneSignature sig = mdReader.GetStandaloneSignature(localSignatureHandle);
+
+        ImmutableArray<TypeHandle> types = sig.DecodeLocalSignature(_signatureDecoder.GetTypeHandleProvider(moduleHandle), typeHandle);
+        return types;
     }
 }

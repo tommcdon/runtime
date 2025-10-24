@@ -9,6 +9,10 @@ namespace Microsoft.Diagnostics.DataContractReader.Contracts;
 public interface ISignatureDecoder : IContract
 {
     static string IContract.Name { get; } = nameof(SignatureDecoder);
+
+    ISignatureTypeProvider<TypeHandle, TypeHandle> GetTypeHandleProvider(ModuleHandle moduleHandle) => throw new NotImplementedException();
+    ISignatureTypeProvider<TypeHandle, MethodDescHandle> GetMethodDescHandleProvider(ModuleHandle moduleHandle) => throw new NotImplementedException();
+
     TypeHandle DecodeFieldSignature(BlobHandle blobHandle, ModuleHandle moduleHandle, TypeHandle ctx) => throw new NotImplementedException();
 }
 

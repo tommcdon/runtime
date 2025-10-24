@@ -37,11 +37,18 @@ public readonly struct AsyncSuspensionPoint
     public uint NumContinuationVars { get; init; }
 }
 
+public readonly struct AsyncVarInfo
+{
+    public uint VarNumber { get; init; }
+    public uint Offset { get; init; }
+}
+
 public interface IDebugInfo : IContract
 {
     static string IContract.Name { get; } = nameof(DebugInfo);
     IEnumerable<OffsetMapping> GetMethodNativeMap(TargetCodePointer pCode, bool preferUninstrumented, out uint codeOffset) => throw new NotImplementedException();
     IEnumerable<AsyncSuspensionPoint> GetAsyncSuspensionPoints(TargetCodePointer pCode) => throw new NotImplementedException();
+    IEnumerable<AsyncVarInfo> GetAsyncVarInfo(TargetCodePointer pCode) => throw new NotImplementedException();
 }
 
 public readonly struct DebugInfo : IDebugInfo

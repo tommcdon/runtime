@@ -13,6 +13,7 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
 {
     private const uint IL_OFFSET_BIAS = unchecked((uint)-3);
     private const uint DEBUG_INFO_FAT = 0;
+    private const uint MAX_ILNUM = unchecked((uint)-4);
 
     [Flags]
     internal enum ExtraDebugInfoFlags_1 : byte
@@ -77,6 +78,34 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
             uint _ /* numAsyncVars */ = asyncNibbleReader.ReadUInt();
 
             return DoAsyncSuspensionPoints(asyncNibbleReader, numSuspensionPoints);
+        }
+
+        return [];
+    }
+
+    IEnumerable<AsyncVarInfo> IDebugInfo.GetAsyncVarInfo(TargetCodePointer pCode)
+    {
+        // Get the method's DebugInfo
+        if (_eman.GetCodeBlockHandle(pCode) is not CodeBlockHandle cbh)
+            throw new InvalidOperationException($"No CodeBlockHandle found for native code {pCode}.");
+        TargetPointer debugInfo = _eman.GetDebugInfo(cbh);
+
+        DebugInfoChunks chunks = DecodeChunks(debugInfo);
+
+        TargetPointer addrAsyncInfo = chunks.AsyncInfoStart;
+        uint cbAsyncInfo = chunks.AsyncInfoSize;
+
+        if (cbAsyncInfo > 0)
+        {
+            NativeReader asyncNativeReader = new(new TargetStream(_target, addrAsyncInfo, cbAsyncInfo), _target.IsLittleEndian);
+            NibbleReader asyncNibbleReader = new(asyncNativeReader, 0);
+
+            uint numSuspensionPoints = asyncNibbleReader.ReadUInt();
+            uint numAsyncVars = asyncNibbleReader.ReadUInt();
+
+            // skip past suspension points
+            _ = DoAsyncSuspensionPoints(asyncNibbleReader, numSuspensionPoints).ToList();
+            return DoAsyncVarInfo(asyncNibbleReader, numAsyncVars);
         }
 
         return [];
@@ -220,6 +249,21 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
                 NativeResumeOffset = nativeResumeOffset,
                 NativeJoinOffset = nativeJoinOffset,
                 NumContinuationVars = numContinuationVars,
+            };
+        }
+    }
+
+    private static IEnumerable<AsyncVarInfo> DoAsyncVarInfo(NibbleReader reader, uint numAsyncVars)
+    {
+        for (uint i = 0; i < numAsyncVars; i++)
+        {
+            uint varNumber = reader.ReadUInt() + MAX_ILNUM;
+            uint offset = reader.ReadUInt();
+
+            yield return new AsyncVarInfo()
+            {
+                VarNumber = varNumber,
+                Offset = offset,
             };
         }
     }
