@@ -16,6 +16,7 @@ using Microsoft.Diagnostics.DataContractReader.Contracts.StackWalkHelpers;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 using System.IO;
+using System.Collections.Immutable;
 
 namespace Microsoft.Diagnostics.DataContractReader.Legacy;
 
@@ -2130,6 +2131,45 @@ internal sealed unsafe partial class SOSDacImpl
         return stringBuilder.ToString();
     }
 
+    private string GetMethodTableName(TypeHandle th)
+    {
+        try
+        {
+            Contracts.IRuntimeTypeSystem typeSystemContract = _target.Contracts.RuntimeTypeSystem;
+            Contracts.ILoader loader = _target.Contracts.Loader;
+            if (typeSystemContract.IsFreeObjectMethodTable(th))
+            {
+                return "free";
+            }
+            else
+            {
+                TargetPointer modulePointer = typeSystemContract.GetModule(th);
+                Contracts.ModuleHandle moduleHandle = loader.GetModuleHandleFromModulePtr(modulePointer);
+                if (!loader.TryGetLoadedImageContents(moduleHandle, out _, out _, out _))
+                {
+                    return "<Unloaded Type>";
+                }
+                else
+                {
+                    System.Text.StringBuilder methodTableName = new();
+                    try
+                    {
+                        TypeNameBuilder.AppendType(_target, methodTableName, th, TypeNameFormat.FormatNamespace | TypeNameFormat.FormatFullInst);
+                    }
+                    catch
+                    {
+                        throw new System.Exception("String to EE Type Scenario");
+                    }
+                    return methodTableName.ToString();
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            return $"<Exception: {ex.Message}>";
+        }
+    }
+
     private void PrintResumeData(StringBuilder sb, ResumeData rd)
     {
         sb.AppendLine("    Resume Data:");
@@ -2138,7 +2178,22 @@ internal sealed unsafe partial class SOSDacImpl
         sb.AppendLine($"      Code Start: {rd.CodeStart}");
         sb.AppendLine($"      Resume Offset: 0x{rd.ResumeOffset:x}");
         sb.AppendLine($"      Join Offset: 0x{rd.JoinOffset:x}");
-        sb.AppendLine($"      NumContinuationArgs: {rd.NumArgs}");
+
+        List<AsyncLocal> args = rd.Locals.ToList();
+        sb.AppendLine($"      NumContinuationArgs: {args.Count}");
+
+        for (int i = 0; i < args.Count; i++)
+        {
+            sb.AppendLine($"      Arg[{i}]: {args[i].Address}");
+        }
+
+        IAsync async = _target.Contracts.Async;
+        ImmutableArray<TypeHandle> typeArgs = async.ParseLocal(rd);
+        sb.AppendLine($"      NumTypeArgs: {typeArgs.Length}");
+        for (int i = 0; i < typeArgs.Length; i++)
+        {
+            sb.AppendLine($"        TypeArg[{i}]: {GetMethodTableName(typeArgs[i])}");
+        }
     }
 
     private void PrintAsyncStack(StringBuilder sb, IEnumerable<ResumeData> resumeDatas)

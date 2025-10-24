@@ -28,7 +28,7 @@ internal sealed class SignatureDecoder_1 : ISignatureDecoder
         _target = target;
     }
 
-    private SignatureTypeProvider<TypeHandle> GetTypeHandleProvider(ModuleHandle moduleHandle)
+    public ISignatureTypeProvider<TypeHandle, TypeHandle> GetTypeHandleProvider(ModuleHandle moduleHandle)
     {
         if (_thProviders.TryGetValue(moduleHandle, out SignatureTypeProvider<TypeHandle>? thProvider))
         {
@@ -40,7 +40,7 @@ internal sealed class SignatureDecoder_1 : ISignatureDecoder
         return newProvider;
     }
 
-    private SignatureTypeProvider<MethodDescHandle> GetMethodDescHandleProvider(ModuleHandle moduleHandle)
+    public ISignatureTypeProvider<TypeHandle, MethodDescHandle> GetMethodDescHandleProvider(ModuleHandle moduleHandle)
     {
         if (_mdhProviders.TryGetValue(moduleHandle, out SignatureTypeProvider<MethodDescHandle>? mdhProvider))
         {
@@ -53,7 +53,7 @@ internal sealed class SignatureDecoder_1 : ISignatureDecoder
 
     TypeHandle ISignatureDecoder.DecodeFieldSignature(BlobHandle blobHandle, ModuleHandle moduleHandle, TypeHandle ctx)
     {
-        SignatureTypeProvider<TypeHandle> provider = GetTypeHandleProvider(moduleHandle);
+        ISignatureTypeProvider<TypeHandle, TypeHandle> provider = GetTypeHandleProvider(moduleHandle);
         MetadataReader mdReader = _target.Contracts.EcmaMetadata.GetMetadata(moduleHandle)!;
         BlobReader blobReader = mdReader.GetBlobReader(blobHandle);
         SignatureDecoder<TypeHandle, TypeHandle> decoder = new(provider, mdReader, ctx);
