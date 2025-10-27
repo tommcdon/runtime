@@ -878,10 +878,19 @@ namespace Internal.JitInterface
         public CORINFO_CLASS_STRUCT_* continuationClsHnd;
         // 'Next' field
         public CORINFO_FIELD_STRUCT_* continuationNextFldHnd;
-        // 'Data' field
-        public CORINFO_FIELD_STRUCT_* continuationDataFldHnd;
-        // 'GCData' field
-        public CORINFO_FIELD_STRUCT_* continuationGCDataFldHnd;
+        // 'ResumeInfo' field
+        public CORINFO_FIELD_STRUCT_* continuationResumeInfoFldHnd;
+        // 'State' field
+        public CORINFO_FIELD_STRUCT_* continuationStateFldHnd;
+        // 'Flags' field
+        public CORINFO_FIELD_STRUCT_* continuationFlagsFldHnd;
+        // Method handle for AsyncHelpers.CaptureExecutionContext
+        public CORINFO_METHOD_STRUCT_* captureExecutionContextMethHnd;
+        // Method handle for AsyncHelpers.RestoreExecutionContext
+        public CORINFO_METHOD_STRUCT_* restoreExecutionContextMethHnd;
+        public CORINFO_METHOD_STRUCT_* captureContinuationContextMethHnd;
+        public CORINFO_METHOD_STRUCT_* captureContextsMethHnd;
+        public CORINFO_METHOD_STRUCT_* restoreContextsMethHnd;
     }
 
     // Flags passed from JIT to runtime.
@@ -1262,7 +1271,8 @@ namespace Internal.JitInterface
         STACK_EMPTY = 0x02, // The stack is empty here
         CALL_SITE = 0x04, // This is a call site.
         NATIVE_END_OFFSET_UNKNOWN = 0x08, // Indicates a epilog endpoint
-        CALL_INSTRUCTION = 0x10  // The actual instruction of a call.
+        CALL_INSTRUCTION = 0x10, // The actual instruction of a call.
+        ASYNC = 0x20, // async suspension/resumption code for a specific async call
     };
 
     public struct OffsetMapping
@@ -1321,23 +1331,16 @@ namespace Internal.JitInterface
 
     public struct AsyncContinuationVarInfo
     {
-        // IL number of variable (or one of the special IL numbers, like UNKNOWN_ILNUM)
+        // IL number of variable (or one of the special IL numbers, like TYPECTXT_ILNUM)
         public uint VarNumber;
-        // Offset in continuation's data where this variable is stored
+        // Offset in continuation object where this variable is stored
         public uint Offset;
-        public uint GCIndex;
     }
 
     public struct AsyncSuspensionPoint
     {
-        // IL offset in the root method that resulted in the creation of this suspension point.
-        public uint RootILOffset;
-        // Index of inline tree node containing the IL offset (0 for root)
-        public uint Inlinee;
-        // IL offset that resulted in the creation of the suspension point.
-        public uint ILOffset;
-        public uint NumVars;
-        // Count of AsyncContinuationVarInfo
+        // Count of AsyncContinuationVarInfo in array of locals starting where
+        // the previous suspension point's locals end.
         public uint NumContinuationVars;
     }
 
