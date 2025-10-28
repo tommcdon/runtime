@@ -1248,6 +1248,9 @@ public:
     virtual
     VMPTR_DomainAssembly ResolveAssembly(VMPTR_DomainAssembly vmScope, mdToken tkAssemblyRef) = 0;
 
+    virtual
+    int GetIsAsyncV2(VMPTR_MethodDesc vmMethodDesc) = 0;
+    
     //-----------------------------------------------------------------------------
     // Interface for initializing the native/IL sequence points and native var info
     // for a function.

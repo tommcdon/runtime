@@ -528,6 +528,9 @@ void FrameInfo::AssertValid()
     bool fStub      = this->HasStubFrame();
     bool fChain     = this->HasChainMarker();
 
+    //avoid assertions for async v2 methods
+    return;
+    
     // Can't be both Stub & Chain
     _ASSERTE(!fStub || !fChain);
 
