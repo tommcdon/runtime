@@ -1045,7 +1045,7 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
         NOTHROW;
         GC_NOTRIGGER;
         MODE_ANY;
-        FORBID_FAULT;
+//        FORBID_FAULT;
     }
     CONTRACTL_END
 
