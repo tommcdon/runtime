@@ -1670,6 +1670,8 @@ public:
     void   MapSpecialToNative(int funcletIndex, DWORD* pPrologEndOffset, DWORD* pEpilogStartOffset);
     SIZE_T MapILOffsetToNativeForSetIP(SIZE_T offsetILTo, int funcletIndexFrom, EHRangeTree* pEHRT, BOOL* pExact);
 
+    SIZE_T GetNextNativeOffsetIfAsyncCall(SIZE_T nativeOffsetToMap);
+    
     // MapNativeOffsetToIL Takes a given nativeOffset, and maps it back
     //      to the corresponding IL offset, which it returns.  If mapping indicates
     //      that a the native offset corresponds to a special region of code (for

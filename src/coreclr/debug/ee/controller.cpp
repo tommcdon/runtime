@@ -2644,7 +2644,7 @@ bool DebuggerController::MatchPatch(Thread *thread,
     if (patch->controller->m_thread != NULL && patch->controller->m_thread != thread)
     {
         LOG((LF_CORDB, LL_INFO10000, "DC::MP: patches didn't match b/c threads\n"));
-        return false;
+        //return false; We may be stepping a thread other than the one that set the step.
     }
 
     if (patch->fp != LEAF_MOST_FRAME)
@@ -6137,6 +6137,21 @@ bool DebuggerStepper::TrapStep(ControllerStackInfo *info, bool in)
 
             case WALK_UNKNOWN:
     LWALK_UNKNOWN:
+                if (info->m_activeFrame.md->IsAsyncMethod() || info->m_activeFrame.md->IsAsyncThunkMethod())
+                {
+                    SIZE_T offset = CodeRegionInfo::GetCodeRegionInfo(ji, info->m_activeFrame.md).AddressToOffset((BYTE*)GetControlPC(&(info->m_activeFrame.
+                    registers)));
+                    SIZE_T nextOffset = ji->GetNextNativeOffsetIfAsyncCall(offset);
+                    if (nextOffset != 0)
+                    {
+                        AddBindAndActivateNativeManagedPatch(info->m_activeFrame.md,
+                                ji,
+                                nextOffset,
+                                info->GetReturnFrame().fp,
+                                NULL);
+                        return true;
+                    }
+                }
                 LOG((LF_CORDB,LL_INFO10000,"DS::TS:WALK_UNKNOWN - curIP:%p "
                     "nextIP:%p skipIP:%p 1st byte of opcode:0x%x\n", (BYTE*)GetControlPC(&(info->m_activeFrame.
                     registers)), walker.GetNextIP(),walker.GetSkipIP(),
@@ -6198,6 +6213,21 @@ bool DebuggerStepper::TrapStep(ControllerStackInfo *info, bool in)
                      info->GetReturnFrame().fp,
                      NULL);
             return true;
+        }
+
+        MethodDesc *md = info->m_activeFrame.md;        
+        if (md->IsAsyncMethod() || md->IsAsyncThunkMethod())
+        {
+            SIZE_T nextOffset = ji->GetNextNativeOffsetIfAsyncCall(offset);
+            if (nextOffset != 0)
+            {
+                AddBindAndActivateNativeManagedPatch(md,
+                         ji,
+                         nextOffset,
+                         info->GetReturnFrame().fp,
+                         NULL);
+                return true;
+            }
         }
 
         switch (walker.GetOpcodeWalkType())
@@ -7185,7 +7215,7 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
     mdMethodDef md = patch->key.md;
     SIZE_T offset = patch->offset;
 
-    _ASSERTE((this->GetThread() == thread) || !"Stepper should only get patches on its thread");
+    //_ASSERTE((this->GetThread() == thread) || !"Stepper should only get patches on its thread"); This is not true in an async stepping
 
     // Note we can only run a stack trace if:
     // - the context is in managed code (eg, not a stub)
