@@ -722,6 +722,76 @@ void DebuggerJitInfo::MapILRangeToMapEntryRange(SIZE_T startOffset,
          (*end)->nativeStartOffset, (*end)->nativeEndOffset));
 }
 
+SIZE_T DebuggerJitInfo::GetNextNativeOffsetIfAsyncCall(SIZE_T nativeOffsetToMap)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+    }
+    CONTRACTL_END;
+
+    DWORD nativeOffset = (DWORD)nativeOffsetToMap;
+
+    DebuggerILToNativeMap *m = GetSequenceMap();
+    DebuggerILToNativeMap *mEnd = m + GetSequenceMapCount();
+
+    LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI: nativeOffset = 0x%x\n", nativeOffset));
+
+    if (m)
+    {
+        while (m < mEnd)
+        {
+#ifdef LOGGING
+            if (m->ilOffset == (ULONG) ICorDebugInfo::PROLOG )
+                LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: m->natStart:0x%x m->natEnd:0x%x il:PROLOG\n", m->nativeStartOffset, m->nativeEndOffset));
+            else if (m->ilOffset == (ULONG) ICorDebugInfo::EPILOG )
+                LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: m->natStart:0x%x m->natEnd:0x%x il:EPILOG\n", m->nativeStartOffset, m->nativeEndOffset));
+            else if (m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING)
+                LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: m->natStart:0x%x m->natEnd:0x%x il:NO MAP\n", m->nativeStartOffset, m->nativeEndOffset));
+            else
+                LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: m->natStart:0x%x m->natEnd:0x%x il:0x%x src:0x%x\n", m->nativeStartOffset, m->nativeEndOffset, m->ilOffset, m->source));
+#endif // LOGGING
+
+            if (m->ilOffset == (ULONG) ICorDebugInfo::PROLOG ||
+                m->ilOffset == (ULONG) ICorDebugInfo::EPILOG ||
+                m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING)
+            {
+                m++;
+                continue;
+            }
+
+            if (nativeOffset >= m->nativeStartOffset
+                && ((m->nativeEndOffset == 0 &&
+                    m->ilOffset != (ULONG) ICorDebugInfo::PROLOG)
+                     || nativeOffset < m->nativeEndOffset))
+            {
+                if (m->source == ICorDebugInfo::ASYNC && m+1 < mEnd)
+                {
+                    ULONG currentIL = m->ilOffset;
+                    m++;
+                    while (m < mEnd && m->ilOffset == currentIL)
+                    {
+                        LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: ASYNC call trying - next nat offset:0x%x\n", (m+1)->nativeStartOffset));
+                        m++;
+                    }
+                    if (m < mEnd)
+                    {
+                        LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: ASYNC call - next nat offset:0x%x\n", m->nativeStartOffset));
+                        return m->nativeStartOffset;
+                    }
+                    else
+                    {
+                        return 0;
+                    }
+                }
+            }
+            m++;
+        }
+    }
+    return 0;
+}
+
 // @dbgtodo Microsoft inspection: This function has been replicated in DacDbiStructures so
 // this version can be deleted when inspection is complete.
 

@@ -82,7 +82,7 @@
 //*****************************************************************************
 STDAPI CreateCordbObject(int iDebuggerVersion, IUnknown ** ppCordb)
 {
-    if (ppCordb == NULL)
+    if (ppCordb == NULL) 
     {
         return E_INVALIDARG;
     }

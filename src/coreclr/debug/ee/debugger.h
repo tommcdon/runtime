@@ -1684,6 +1684,8 @@ public:
     SIZE_T MapILOffsetToNativeForSetIP(SIZE_T offsetILTo, int funcletIndexFrom, EHRangeTree* pEHRT, BOOL* pExact);
 #endif // FEATURE_EH_FUNCLETS
 
+    SIZE_T GetNextNativeOffsetIfAsyncCall(SIZE_T nativeOffsetToMap);
+    
     // MapNativeOffsetToIL Takes a given nativeOffset, and maps it back
     //      to the corresponding IL offset, which it returns.  If mapping indicates
     //      that a the native offset corresponds to a special region of code (for

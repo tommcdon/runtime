@@ -754,6 +754,17 @@ HRESULT DacDbiInterfaceImpl::SetCompilerFlags(VMPTR_DomainAssembly vmDomainAssem
 } // DacDbiInterfaceImpl::SetCompilerFlags
 
 
+int DacDbiInterfaceImpl::GetIsAsyncV2(VMPTR_MethodDesc  vmMethodDesc)
+{
+    DD_ENTER_MAY_THROW;
+
+    _ASSERTE(!vmMethodDesc.IsNull());
+
+    MethodDesc * pMD = vmMethodDesc.GetDacPtr();
+    return pMD->IsAsyncMethod() ? 1 : 0;
+}
+
+
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // sequence points and var info
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -866,6 +877,12 @@ void DacDbiInterfaceImpl::GetNativeVarData(MethodDesc *    pMethodDesc,
 
     ULONG32 entryCount;
 
+    if (pMethodDesc->IsAsyncThunkMethod())
+    {
+        pVarInfo->InitVarDataList(NULL, (int)0, (int)0);
+        return;        
+    }
+
     BOOL success = DebugInfoManager::GetBoundariesAndVars(request,
                                                 InfoStoreNew, NULL, // allocator
                                                 BoundsType::Instrumented,
@@ -913,6 +930,13 @@ void DacDbiInterfaceImpl::GetSequencePoints(MethodDesc *     pMethodDesc,
     NewArrayHolder<ICorDebugInfo::OffsetMapping> mapCopy(NULL);
 
     ULONG32 entryCount;
+
+    if (pMethodDesc->IsAsyncThunkMethod())
+    {
+        pSeqPoints->InitSequencePoints(0);
+        return;
+    }
+
     BOOL success = DebugInfoManager::GetBoundariesAndVars(request,
                                                       InfoStoreNew,
                                                       NULL, // allocator
@@ -7153,7 +7177,6 @@ HRESULT DacDbiInterfaceImpl::GetReJitInfo(VMPTR_Module vmModule, mdMethodDef met
     return S_OK;
 }
 
-#ifdef FEATURE_CODE_VERSIONING
 HRESULT DacDbiInterfaceImpl::GetActiveRejitILCodeVersionNode(VMPTR_Module vmModule, mdMethodDef methodTk, OUT VMPTR_ILCodeVersionNode* pVmILCodeVersionNode)
 {
     DD_ENTER_MAY_THROW;
@@ -7184,6 +7207,34 @@ HRESULT DacDbiInterfaceImpl::GetActiveRejitILCodeVersionNode(VMPTR_Module vmModu
     return S_OK;
 }
 
+HRESULT DacDbiInterfaceImpl::GetReJitInfo(VMPTR_MethodDesc vmMethod, CORDB_ADDRESS codeStartAddress, OUT VMPTR_ReJitInfo* pvmReJitInfo)
+{
+    DD_ENTER_MAY_THROW;
+    _ASSERTE(!"You shouldn't be calling this - use GetNativeCodeVersionNode instead");
+    return S_OK;
+}
+
+HRESULT DacDbiInterfaceImpl::AreOptimizationsDisabled(VMPTR_Module vmModule, mdMethodDef methodTk, OUT BOOL* pOptimizationsDisabled)
+{
+    DD_ENTER_MAY_THROW;
+#ifdef FEATURE_REJIT
+    PTR_Module pModule = vmModule.GetDacPtr();
+    if (pModule == NULL || pOptimizationsDisabled == NULL || TypeFromToken(methodTk) != mdtMethodDef)
+    {
+        return E_INVALIDARG;
+    }
+    {
+        CodeVersionManager * pCodeVersionManager = pModule->GetCodeVersionManager();
+        ILCodeVersion activeILVersion = pCodeVersionManager->GetActiveILCodeVersion(pModule, methodTk);
+        *pOptimizationsDisabled = activeILVersion.IsDeoptimized();
+    }
+#else
+    *pOptimizationsDisabled = FALSE;
+#endif
+
+    return S_OK;
+}
+
 HRESULT DacDbiInterfaceImpl::GetNativeCodeVersionNode(VMPTR_MethodDesc vmMethod, CORDB_ADDRESS codeStartAddress, OUT VMPTR_NativeCodeVersionNode* pVmNativeCodeVersionNode)
 {
     DD_ENTER_MAY_THROW;
@@ -7197,6 +7248,13 @@ HRESULT DacDbiInterfaceImpl::GetNativeCodeVersionNode(VMPTR_MethodDesc vmMethod,
 #else
     pVmNativeCodeVersionNode->SetDacTargetPtr(0);
 #endif
+    return S_OK;
+}
+
+HRESULT DacDbiInterfaceImpl::GetSharedReJitInfo(VMPTR_ReJitInfo vmReJitInfo, OUT VMPTR_SharedReJitInfo* pvmSharedReJitInfo)
+{
+    DD_ENTER_MAY_THROW;
+    _ASSERTE(!"You shouldn't be calling this - use GetLCodeVersionNode instead");
     return S_OK;
 }
 
@@ -7224,6 +7282,13 @@ HRESULT DacDbiInterfaceImpl::GetILCodeVersionNode(VMPTR_NativeCodeVersionNode vm
     return S_OK;
 }
 
+HRESULT DacDbiInterfaceImpl::GetSharedReJitInfoData(VMPTR_SharedReJitInfo vmSharedReJitInfo, DacSharedReJitInfo* pData)
+{
+    DD_ENTER_MAY_THROW;
+    _ASSERTE(!"You shouldn't be calling this - use GetILCodeVersionNodeData instead");
+    return S_OK;
+}
+
 HRESULT DacDbiInterfaceImpl::GetILCodeVersionNodeData(VMPTR_ILCodeVersionNode vmILCodeVersionNode, DacSharedReJitInfo* pData)
 {
     DD_ENTER_MAY_THROW;
@@ -7246,49 +7311,6 @@ HRESULT DacDbiInterfaceImpl::GetILCodeVersionNodeData(VMPTR_ILCodeVersionNode vm
 #else
     _ASSERTE(!"You shouldn't be calling this - rejit isn't supported in this build");
 #endif
-    return S_OK;
-}
-#endif // FEATURE_CODE_VERSIONING
-
-HRESULT DacDbiInterfaceImpl::GetReJitInfo(VMPTR_MethodDesc vmMethod, CORDB_ADDRESS codeStartAddress, OUT VMPTR_ReJitInfo* pvmReJitInfo)
-{
-    DD_ENTER_MAY_THROW;
-    _ASSERTE(!"You shouldn't be calling this - use GetNativeCodeVersionNode instead");
-    return S_OK;
-}
-
-HRESULT DacDbiInterfaceImpl::AreOptimizationsDisabled(VMPTR_Module vmModule, mdMethodDef methodTk, OUT BOOL* pOptimizationsDisabled)
-{
-    DD_ENTER_MAY_THROW;
-    PTR_Module pModule = vmModule.GetDacPtr();
-    if (pModule == NULL || pOptimizationsDisabled == NULL || TypeFromToken(methodTk) != mdtMethodDef)
-    {
-        return E_INVALIDARG;
-    }
-#ifdef FEATURE_REJIT    
-    {
-        CodeVersionManager * pCodeVersionManager = pModule->GetCodeVersionManager();
-        ILCodeVersion activeILVersion = pCodeVersionManager->GetActiveILCodeVersion(pModule, methodTk);
-        *pOptimizationsDisabled = activeILVersion.IsDeoptimized();
-    }
-#else
-    *pOptimizationsDisabled = FALSE;
-#endif
-
-    return S_OK;
-}
-
-HRESULT DacDbiInterfaceImpl::GetSharedReJitInfo(VMPTR_ReJitInfo vmReJitInfo, OUT VMPTR_SharedReJitInfo* pvmSharedReJitInfo)
-{
-    DD_ENTER_MAY_THROW;
-    _ASSERTE(!"You shouldn't be calling this - use GetILCodeVersionNode instead");
-    return S_OK;
-}
-
-HRESULT DacDbiInterfaceImpl::GetSharedReJitInfoData(VMPTR_SharedReJitInfo vmSharedReJitInfo, DacSharedReJitInfo* pData)
-{
-    DD_ENTER_MAY_THROW;
-    _ASSERTE(!"You shouldn't be calling this - use GetILCodeVersionNodeData instead");
     return S_OK;
 }
 

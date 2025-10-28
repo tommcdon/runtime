@@ -109,6 +109,7 @@ public:
                              BOOL             fEnableEnC);
 
 
+    int GetIsAsyncV2(VMPTR_MethodDesc  vmMethodDesc);
     // Initialize the native/IL sequence points and native var info for a function.
     void GetNativeCodeSequencePointsAndVarInfo(VMPTR_MethodDesc  vmMethodDesc,
                                                CORDB_ADDRESS     startAddr,

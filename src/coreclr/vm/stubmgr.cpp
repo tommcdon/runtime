@@ -1036,7 +1036,7 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
         NOTHROW;
         GC_NOTRIGGER;
         MODE_ANY;
-        FORBID_FAULT;
+//        FORBID_FAULT;
     }
     CONTRACTL_END
 
@@ -1123,6 +1123,25 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
     // MethodDesc. If, however, this is an IL method, then we are at risk to have another thread backpatch the call
     // here, so we'd miss if we patched the prestub. Therefore, we go right to the IL method and patch IL offset 0
     // by using TRACE_UNJITTED_METHOD.
+#if !defined(DACCESS_COMPILE)
+    EX_TRY
+    {
+        if (pMD->IsAsyncThunkMethod())
+        {
+            pMD = pMD->GetAsyncOtherVariantNoCreate();
+            if (pMD)
+            {
+                trace->InitForUnjittedMethod(pMD);
+                return TRUE;
+            }
+        }
+    }
+    EX_CATCH
+    {
+        LOG((LF_CORDB, LL_INFO10000, "DoTraceStub - EX_CATCH\n"));
+    }
+    EX_END_CATCH
+#endif    
     if (!pMD->IsIL() && !pMD->IsILStub())
     {
         trace->InitForStub(GetPreStubEntryPoint());
