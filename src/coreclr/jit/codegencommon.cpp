@@ -6441,7 +6441,7 @@ void CodeGen::genIPmappingGen()
         }
 
         // Otherwise report the higher offset unless the previous mapping is a
-        // label.
+        // label coming from IL.
         if (prev->ipmdIsLabel)
         {
             it = compiler->genIPmappings.erase(it);
@@ -6760,6 +6760,13 @@ void CodeGen::genReportAsyncDebugInfo()
     if (suspPoints == nullptr)
     {
         return;
+    }
+
+    assert(genAsyncResumeInfoTable != nullptr);
+    for (size_t i = 0; i < suspPoints->size(); i++)
+    {
+        emitLocation& emitLoc                   = ((emitLocation*)genAsyncResumeInfoTable->dsCont)[i];
+        (*suspPoints)[i].DiagnosticNativeOffset = emitLoc.CodeOffset(GetEmitter());
     }
 
     ICorDebugInfo::AsyncInfo asyncInfo;
