@@ -5,17 +5,17 @@ using System.Collections.Generic;
 
 namespace Microsoft.Diagnostics.DataContractReader.Data;
 
-public sealed class NextContinuationData : IData<NextContinuationData>
+public sealed class DispatcherInfo : IData<DispatcherInfo>
 {
-    private const string TypeName = "AsyncHelpers+RuntimeAsyncTaskCore+NextContinuationData";
+    private const string TypeName = "AsyncHelpers+RuntimeAsyncTaskCore+DispatcherInfo";
     private const string TypeNamespace = "System.Runtime.CompilerServices";
 
     private static bool _parsed;
     private static Dictionary<string, uint> _fieldOffsets = [];
 
-    static NextContinuationData IData<NextContinuationData>.Create(Target target, TargetPointer address) => new NextContinuationData(target, address);
+    static DispatcherInfo IData<DispatcherInfo>.Create(Target target, TargetPointer address) => new DispatcherInfo(target, address);
 
-    public NextContinuationData(Target target, TargetPointer address)
+    public DispatcherInfo(Target target, TargetPointer address)
     {
         if (!_parsed)
         {
@@ -27,9 +27,9 @@ public sealed class NextContinuationData : IData<NextContinuationData>
         NextContinuation = target.ReadPointer(address + _fieldOffsets[nameof(NextContinuation)]);
     }
 
-    // Pointer to another NextContinuationData object
+    // Pointer to another DispatcherInfo object
     public TargetPointer Next { get; }
 
-    // Pointer to a pointer to a Continuation object
+    // Pointer to a Continuation object
     public TargetPointer NextContinuation { get; }
 }

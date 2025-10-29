@@ -2176,8 +2176,7 @@ internal sealed unsafe partial class SOSDacImpl
         sb.AppendLine($"      Method Name: {GetMethodDescName(rd.MethodDesc)}");
         sb.AppendLine($"      Method Desc: {rd.MethodDesc.Address}");
         sb.AppendLine($"      Code Start: {rd.CodeStart}");
-        sb.AppendLine($"      Resume Offset: 0x{rd.ResumeOffset:x}");
-        sb.AppendLine($"      Join Offset: 0x{rd.JoinOffset:x}");
+        sb.AppendLine($"      Diagnostics Offset: 0x{rd.DiagnosticsOffset:x}");
 
         List<AsyncLocal> args = rd.Locals.ToList();
         sb.AppendLine($"      NumContinuationArgs: {args.Count}");

@@ -57,7 +57,7 @@ internal readonly partial struct Async_1 : IAsync
         return false;
     }
 
-    private TargetPointer GetTLSNextContinuationDataAddr(TargetPointer threadPtr)
+    private TargetPointer GetTLSDispatcherInfoAddr(TargetPointer threadPtr)
     {
         if (!TryGetTypeByName(
             "AsyncHelpers+RuntimeAsyncTaskCore",
@@ -82,7 +82,7 @@ internal readonly partial struct Async_1 : IAsync
                 MetadataReader mdReader = _ecmaMetadata.GetMetadata(moduleHandle)!;
                 FieldDefinition fieldDef = mdReader.GetFieldDefinition(fieldHandle);
 
-                Debug.Assert(mdReader.GetString(fieldDef.Name) == "t_nextContinuation");
+                Debug.Assert(mdReader.GetString(fieldDef.Name) == "t_dispatcherInfo");
 
                 uint fieldOffset = _rts.GetFieldDescOffset(fieldPointer, fieldDef);
 
@@ -133,24 +133,24 @@ internal readonly partial struct Async_1 : IAsync
         {
             Continuation continuation = _target.ProcessedData.GetOrAdd<Continuation>(continuationPtr);
 
-            if (continuation.Resume != TargetPointer.Null)
+            if (continuation.ResumeInfo != TargetPointer.Null)
             {
-                CodeBlockHandle? cbh = _eman.GetCodeBlockHandle(continuation.Resume.Value);
+                ResumeInfo resumeInfo = _target.ProcessedData.GetOrAdd<ResumeInfo>(continuation.ResumeInfo);
+                CodeBlockHandle? cbh = _eman.GetCodeBlockHandle(resumeInfo.Resume.Value);
                 if (!cbh.HasValue)
                     continue;
                 TargetPointer pMethodDesc = _eman.GetMethodDesc(cbh.Value);
                 MethodDescHandle mdh = _rts.GetMethodDescHandle(pMethodDesc);
                 TargetCodePointer codeStart = _rts.GetNativeCode(mdh);
-                AsyncSuspensionPoint[] suspensionPoints = _debugInfo.GetAsyncSuspensionPoints(codeStart).ToArray();
-                AsyncVarInfo[] asyncVars = _debugInfo.GetAsyncVarInfo(codeStart).ToArray();
+                AsyncSuspensionPoint[] suspensionPoints = [.. _debugInfo.GetAsyncSuspensionPoints(codeStart)];
+                AsyncVarInfo[] asyncVars = [.. _debugInfo.GetAsyncVarInfo(codeStart)];
                 if (suspensionPoints.Length <= continuation.State)
                     throw new InvalidOperationException("Invalid continuation state index.");
 
                 yield return new ResumeData(
                     mdh,
                     codeStart,
-                    suspensionPoints[continuation.State].NativeResumeOffset,
-                    suspensionPoints[continuation.State].NativeJoinOffset,
+                    suspensionPoints[continuation.State].NativeDiagnosticsOffset,
                     GetLocals(suspensionPoints, asyncVars, continuation));
             }
 
@@ -160,20 +160,17 @@ internal readonly partial struct Async_1 : IAsync
 
     IEnumerable<IEnumerable<ResumeData>> IAsync.GetAsyncData(TargetPointer thread)
     {
-        TargetPointer tlsNextContinuationAddr = GetTLSNextContinuationDataAddr(thread);
+        TargetPointer tlsDispatcherInfoAddr = GetTLSDispatcherInfoAddr(thread);
 
-        while (tlsNextContinuationAddr != TargetPointer.Null)
+        while (tlsDispatcherInfoAddr != TargetPointer.Null)
         {
-            NextContinuationData nextContinuationData = _target.ProcessedData.GetOrAdd<NextContinuationData>(tlsNextContinuationAddr);
-            if (nextContinuationData.NextContinuation != TargetPointer.Null)
+            DispatcherInfo dispatcherInfo = _target.ProcessedData.GetOrAdd<DispatcherInfo>(tlsDispatcherInfoAddr);
+            if (dispatcherInfo.NextContinuation != TargetPointer.Null)
             {
-                // nextContinuationData.NextContinuation is a pointer to a pointer to a Continuation object
-                // so we need to dereference it again to get the Continuation pointer
-                TargetPointer continuationPtr = _target.ReadPointer(nextContinuationData.NextContinuation);
-                yield return ReadAsyncStack(continuationPtr);
+                yield return ReadAsyncStack(dispatcherInfo.NextContinuation);
             }
 
-            tlsNextContinuationAddr = nextContinuationData.Next;
+            tlsDispatcherInfoAddr = dispatcherInfo.Next;
         }
     }
 

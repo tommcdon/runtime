@@ -25,15 +25,15 @@ public sealed class Continuation : IData<Continuation>
 
         Address = address;
         Next = target.ReadPointer(address + _fieldOffsets[nameof(Next)] + (uint)target.PointerSize);
-        Resume = target.ReadPointer(address + _fieldOffsets[nameof(Resume)] + (uint)target.PointerSize);
-        State = target.Read<uint>(address + _fieldOffsets[nameof(State)] + (uint)target.PointerSize);
+        ResumeInfo = target.ReadPointer(address + _fieldOffsets[nameof(ResumeInfo)] + (uint)target.PointerSize);
         Flags = target.Read<uint>(address + _fieldOffsets[nameof(Flags)] + (uint)target.PointerSize);
+        State = target.Read<uint>(address + _fieldOffsets[nameof(State)] + (uint)target.PointerSize);
     }
 
     public TargetPointer Address { get; }
 
     public TargetPointer Next { get; }
-    public TargetPointer Resume { get; }
-    public uint State { get; }
+    public TargetPointer ResumeInfo { get; }
     public uint Flags { get; }
+    public uint State { get; }
 }

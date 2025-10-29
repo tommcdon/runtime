@@ -233,21 +233,17 @@ internal sealed class DebugInfo_1(Target target) : IDebugInfo
 
     private static IEnumerable<AsyncSuspensionPoint> DoAsyncSuspensionPoints(NibbleReader reader, uint numSuspensionPoints)
     {
-        uint nativeResumeOffset = 0;
-        uint nativeJoinOffset = 0;
+        uint nativeDiagnosticsOffset = 0;
         for (uint i = 0; i < numSuspensionPoints; i++)
         {
-            uint nativeResumeOffsetDelta = reader.ReadUInt();
-            int nativeJoinOffsetDelta = reader.ReadInt();
+            uint nativeDiagnosticsOffsetDelta = reader.ReadUInt();
             uint numContinuationVars = reader.ReadUInt();
 
-            nativeResumeOffset += nativeResumeOffsetDelta;
-            nativeJoinOffset = (uint)((int)nativeJoinOffset + nativeJoinOffsetDelta);
+            nativeDiagnosticsOffset += nativeDiagnosticsOffsetDelta;
 
             yield return new AsyncSuspensionPoint()
             {
-                NativeResumeOffset = nativeResumeOffset,
-                NativeJoinOffset = nativeJoinOffset,
+                NativeDiagnosticsOffset = nativeDiagnosticsOffset,
                 NumContinuationVars = numContinuationVars,
             };
         }

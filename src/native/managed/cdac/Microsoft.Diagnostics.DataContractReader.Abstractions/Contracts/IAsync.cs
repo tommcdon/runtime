@@ -14,8 +14,7 @@ public readonly record struct AsyncLocal(
 public readonly record struct ResumeData(
     MethodDescHandle MethodDesc,
     TargetCodePointer CodeStart,
-    uint ResumeOffset,
-    uint JoinOffset,
+    uint DiagnosticsOffset,
     IEnumerable<AsyncLocal> Locals);
 
 public interface IAsync : IContract
