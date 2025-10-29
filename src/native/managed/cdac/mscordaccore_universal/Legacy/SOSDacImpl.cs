@@ -2183,7 +2183,7 @@ internal sealed unsafe partial class SOSDacImpl
 
         for (int i = 0; i < args.Count; i++)
         {
-            sb.AppendLine($"      Arg[{i}]: {args[i].Address}");
+            sb.AppendLine($"      Arg[{i}]: {args[i].Address}, ILVarNum: {args[i].ILVarNum}");
         }
 
         IAsync async = _target.Contracts.Async;

@@ -181,21 +181,28 @@ internal readonly partial struct Async_1 : IAsync
         TargetPointer modulePtr = _rts.GetModule(typeHandle);
         ModuleHandle moduleHandle = _loader.GetModuleHandleFromModulePtr(modulePtr);
 
-        uint token = _rts.GetMethodToken(rd.MethodDesc);
-        TargetPointer ilHeader = _loader.GetILHeader(moduleHandle, token);
-        if (ilHeader == TargetPointer.Null)
-            throw new InvalidOperationException("IL Header not found.");
-
-        if (!HeaderReaderHelpers.TryGetLocalVarSigToken(_target, ilHeader, out int localVarSigToken))
-            throw new InvalidOperationException("No local var sig token found.");
-
         if (_ecmaMetadata.GetMetadata(moduleHandle) is not MetadataReader mdReader)
             throw new InvalidOperationException("Metadata not found.");
 
-        StandaloneSignatureHandle localSignatureHandle = (StandaloneSignatureHandle)MetadataTokens.Handle(localVarSigToken);
-        StandaloneSignature sig = mdReader.GetStandaloneSignature(localSignatureHandle);
+        uint token = _rts.GetMethodToken(rd.MethodDesc);
+        MethodDefinitionHandle methodDefHandle = (MethodDefinitionHandle)MetadataTokens.Handle((int)token);
+        MethodDefinition methodDef = mdReader.GetMethodDefinition(methodDefHandle);
+        MethodSignature<TypeHandle> methodSig = methodDef.DecodeSignature(_signatureDecoder.GetTypeHandleProvider(moduleHandle), typeHandle);
 
-        ImmutableArray<TypeHandle> types = sig.DecodeLocalSignature(_signatureDecoder.GetTypeHandleProvider(moduleHandle), typeHandle);
-        return types;
+        // Only fat headers have local var sigs
+        ImmutableArray<TypeHandle> localTypes = [];
+        TargetPointer ilHeader = _loader.GetILHeader(moduleHandle, token);
+        if (ilHeader != TargetPointer.Null)
+        {
+            if (HeaderReaderHelpers.TryGetLocalVarSigToken(_target, ilHeader, out int localVarSigToken))
+            {
+                StandaloneSignatureHandle localSignatureHandle = (StandaloneSignatureHandle)MetadataTokens.Handle(localVarSigToken);
+                StandaloneSignature sig = mdReader.GetStandaloneSignature(localSignatureHandle);
+                localTypes = sig.DecodeLocalSignature(_signatureDecoder.GetTypeHandleProvider(moduleHandle), typeHandle);
+            }
+        }
+
+        // Order in this array should match up with the ILVarNum in AsyncLocal
+        return [.. methodSig.ParameterTypes, .. localTypes];
     }
 }
