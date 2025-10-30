@@ -2172,26 +2172,40 @@ internal sealed unsafe partial class SOSDacImpl
 
     private void PrintResumeData(StringBuilder sb, ResumeData rd)
     {
-        sb.AppendLine("    Resume Data:");
-        sb.AppendLine($"      Method Name: {GetMethodDescName(rd.MethodDesc)}");
-        sb.AppendLine($"      Method Desc: {rd.MethodDesc.Address}");
-        sb.AppendLine($"      Code Start: {rd.CodeStart}");
-        sb.AppendLine($"      Diagnostics Offset: 0x{rd.DiagnosticsOffset:x}");
+        IRuntimeTypeSystem rts = _target.Contracts.RuntimeTypeSystem;
+        IExecutionManager eman = _target.Contracts.ExecutionManager;
+        IAsync async = _target.Contracts.Async;
 
-        List<AsyncLocal> args = rd.Locals.ToList();
-        sb.AppendLine($"      NumContinuationArgs: {args.Count}");
-
-        for (int i = 0; i < args.Count; i++)
+        if (eman.GetCodeBlockHandle(rd.DiagnosticIP) is not CodeBlockHandle cbh)
         {
-            sb.AppendLine($"      Arg[{i}]: {args[i].Address}, ILVarNum: {args[i].ILVarNum}");
+            sb.AppendLine("    (invalid Resume Data)");
+            return;
         }
 
-        IAsync async = _target.Contracts.Async;
-        ImmutableArray<TypeHandle> typeArgs = async.ParseLocal(rd);
-        sb.AppendLine($"      NumTypeArgs: {typeArgs.Length}");
-        for (int i = 0; i < typeArgs.Length; i++)
+        TargetPointer mdPtr = eman.GetMethodDesc(cbh);
+        MethodDescHandle mdHandle = rts.GetMethodDescHandle(mdPtr);
+        sb.AppendLine("    Resume Data:");
+        sb.AppendLine($"      Method Name: {GetMethodDescName(mdHandle)}");
+        sb.AppendLine($"      Method Desc: {mdPtr}");
+        sb.AppendLine($"      Resume IP: 0x{rd.ResumePoint.Value:x}");
+        sb.AppendLine($"      Diagnostic IP: 0x{rd.DiagnosticIP.Value:x}");
+
+        List<AsyncLocal> locals = async.GetLocals(rd).ToList();
+        sb.AppendLine($"      Num Saved Locals: {locals.Count}");
+
+        for (int i = 0; i < locals.Count; i++)
         {
-            sb.AppendLine($"        TypeArg[{i}]: {GetMethodTableName(typeArgs[i])}");
+            string localTypeName;
+            if (async.TryGetLocalType(rd, locals[i].ILVarNum, out TypeHandle localType))
+            {
+                localTypeName = GetMethodTableName(localType);
+            }
+            else
+            {
+                localTypeName = "<Unknown>";
+            }
+
+            sb.AppendLine($"      Local[{i}]: {locals[i].Address}, ILVarNum: {locals[i].ILVarNum}, Type: {localTypeName}");
         }
     }
 
