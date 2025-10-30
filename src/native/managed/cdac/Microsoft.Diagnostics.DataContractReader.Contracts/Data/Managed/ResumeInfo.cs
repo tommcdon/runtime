@@ -23,11 +23,11 @@ public sealed class ResumeInfo : IData<ResumeInfo>
             _parsed = true;
         }
 
-        Resume = target.ReadPointer(address + _fieldOffsets[nameof(Resume)] + (uint)target.PointerSize);
-        DiagnosticIP = target.ReadPointer(address + _fieldOffsets[nameof(DiagnosticIP)] + (uint)target.PointerSize);
+        Resume = target.ReadCodePointer(address + _fieldOffsets[nameof(Resume)]);
+        DiagnosticIP = target.ReadCodePointer(address + _fieldOffsets[nameof(DiagnosticIP)]);
     }
 
 
-    public TargetPointer Resume { get; }
-    public TargetPointer DiagnosticIP { get; }
+    public TargetCodePointer Resume { get; }
+    public TargetCodePointer DiagnosticIP { get; }
 }

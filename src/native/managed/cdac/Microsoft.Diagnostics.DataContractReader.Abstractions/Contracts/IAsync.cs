@@ -7,22 +7,21 @@ using System.Collections.Immutable;
 
 namespace Microsoft.Diagnostics.DataContractReader.Contracts;
 
-public readonly record struct AsyncLocal(
+public record AsyncLocal(
     uint ILVarNum,
-    TargetPointer Address);
+    TargetPointer Address,
+    TypeHandle? Type);
 
-public readonly record struct ResumeData(
-    MethodDescHandle MethodDesc,
-    TargetCodePointer CodeStart,
-    uint DiagnosticsOffset,
-    IEnumerable<AsyncLocal> Locals);
+public record ResumeData(
+    TargetCodePointer ResumePoint,
+    TargetCodePointer DiagnosticIP);
 
 public interface IAsync : IContract
 {
     static string IContract.Name { get; } = nameof(Async);
 
     IEnumerable<IEnumerable<ResumeData>> GetAsyncData(TargetPointer thread) => throw new NotImplementedException();
-    ImmutableArray<TypeHandle> ParseLocal(ResumeData rd) => throw new NotImplementedException();
+    IEnumerable<AsyncLocal> GetLocals(ResumeData rd) => throw new NotImplementedException();
 }
 
 public readonly struct Async : IAsync
