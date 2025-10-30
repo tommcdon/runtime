@@ -2195,8 +2195,16 @@ internal sealed unsafe partial class SOSDacImpl
 
         for (int i = 0; i < locals.Count; i++)
         {
-            TypeHandle? localType = locals[i].Type;
-            string localTypeName = localType.HasValue ? GetMethodTableName(localType.Value) : "<Unknown>";
+            string localTypeName;
+            if (async.TryGetLocalType(rd, locals[i].ILVarNum, out TypeHandle localType))
+            {
+                localTypeName = GetMethodTableName(localType);
+            }
+            else
+            {
+                localTypeName = "<Unknown>";
+            }
+
             sb.AppendLine($"      Local[{i}]: {locals[i].Address}, ILVarNum: {locals[i].ILVarNum}, Type: {localTypeName}");
         }
     }

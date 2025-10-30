@@ -3,14 +3,12 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 
 namespace Microsoft.Diagnostics.DataContractReader.Contracts;
 
 public record AsyncLocal(
     uint ILVarNum,
-    TargetPointer Address,
-    TypeHandle? Type);
+    TargetPointer Address);
 
 public record ResumeData(
     TargetCodePointer ResumePoint,
@@ -22,6 +20,7 @@ public interface IAsync : IContract
 
     IEnumerable<IEnumerable<ResumeData>> GetAsyncData(TargetPointer thread) => throw new NotImplementedException();
     IEnumerable<AsyncLocal> GetLocals(ResumeData rd) => throw new NotImplementedException();
+    bool TryGetLocalType(ResumeData rd, uint ilVarNum, out TypeHandle typeHandle) => throw new NotImplementedException();
 }
 
 public readonly struct Async : IAsync

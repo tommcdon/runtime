@@ -134,6 +134,29 @@ internal readonly partial struct Async_1 : IAsync
         }
     }
 
+    IEnumerable<AsyncLocal> IAsync.GetLocals(ResumeData data)
+    {
+        ResumeData_1 rd = AssertCorrectResumeData(data);
+
+        AsyncSuspensionPoint[] suspensionPoints = [.. _debugInfo.GetAsyncSuspensionPoints(rd.DiagnosticIP)];
+        AsyncVarInfo[] asyncVars = [.. _debugInfo.GetAsyncVarInfo(rd.DiagnosticIP)];
+        if (suspensionPoints.Length <= rd.Continuation.State)
+            throw new InvalidOperationException("Invalid continuation state index.");
+
+
+        uint varBeginIndex = 0;
+        for (int i = 0; i < rd.Continuation.State; i++)
+            varBeginIndex += suspensionPoints[i].NumContinuationVars;
+
+        AsyncSuspensionPoint asp = suspensionPoints[rd.Continuation.State];
+        uint numVars = asp.NumContinuationVars;
+        for (int i = 0; i < numVars; i++)
+        {
+            AsyncVarInfo avi = asyncVars[varBeginIndex + i];
+            yield return new AsyncLocal(avi.VarNumber, rd.Continuation.Address + avi.Offset);
+        }
+    }
+
     private TypeHandle[] ParseILVarTypes(ResumeData_1 rd)
     {
         if (_eman.GetCodeBlockHandle(rd.DiagnosticIP) is not CodeBlockHandle cbh)
@@ -171,33 +194,19 @@ internal readonly partial struct Async_1 : IAsync
         return [.. methodSig.ParameterTypes, .. localTypes];
     }
 
-    IEnumerable<AsyncLocal> IAsync.GetLocals(ResumeData data)
+    bool IAsync.TryGetLocalType(ResumeData data, uint ilVarNum, out TypeHandle typeHandle)
     {
+        typeHandle = default;
+
         ResumeData_1 rd = AssertCorrectResumeData(data);
-
-        AsyncSuspensionPoint[] suspensionPoints = [.. _debugInfo.GetAsyncSuspensionPoints(rd.DiagnosticIP)];
-        AsyncVarInfo[] asyncVars = [.. _debugInfo.GetAsyncVarInfo(rd.DiagnosticIP)];
-        if (suspensionPoints.Length <= rd.Continuation.State)
-            throw new InvalidOperationException("Invalid continuation state index.");
-
         TypeHandle[] typeHandles = ParseILVarTypes(rd);
-
-        uint varBeginIndex = 0;
-        for (int i = 0; i < rd.Continuation.State; i++)
-            varBeginIndex += suspensionPoints[i].NumContinuationVars;
-
-        AsyncSuspensionPoint asp = suspensionPoints[rd.Continuation.State];
-        uint numVars = asp.NumContinuationVars;
-        for (int i = 0; i < numVars; i++)
+        if (ilVarNum < typeHandles.Length)
         {
-            AsyncVarInfo avi = asyncVars[varBeginIndex + i];
-
-            TypeHandle? asyncLocalType = null;
-            if (avi.VarNumber < typeHandles.Length)
-                asyncLocalType = typeHandles[avi.VarNumber];
-
-            yield return new AsyncLocal(avi.VarNumber, rd.Continuation.Address + avi.Offset, asyncLocalType);
+            typeHandle = typeHandles[ilVarNum];
+            return true;
         }
+
+        return false;
     }
 
     private static ResumeData_1 AssertCorrectResumeData(ResumeData rd)
