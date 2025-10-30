@@ -11649,9 +11649,12 @@ class CordbAsyncChain;
 class CordbAsyncFrame : public CordbBase, public ICorDebugILFrame, public ICorDebugILFrame2, public ICorDebugILFrame3, public ICorDebugILFrame4
 {
     RSSmartPtr<CordbNativeCode> m_pCode;
+    RSSmartPtr<CordbAppDomain> m_pAppDomain;
     CordbAsyncChain* m_pChain;
     CORDB_ADDRESS m_pCodeStart;
     UINT64 m_nDiagnosticOffset;
+    int m_nNumberOfVars;
+    struct DacAsyncLocalsData* m_pAsyncVars;
 public:
     CordbAsyncFrame(CordbProcess* process,
                     CordbAsyncChain*   pChain,
@@ -11732,6 +11735,9 @@ public:
     COM_METHOD EnumerateLocalVariablesEx(ILCodeKind flags, ICorDebugValueEnum **ppValueEnum);
     COM_METHOD GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICorDebugValue **ppValue);
     COM_METHOD GetCodeEx(ILCodeKind flags, ICorDebugCode **ppCode);
+
+    // Internal usage
+    HRESULT LoadArgsNLocalsInfo(VMPTR_Thread thread, int chainIndex, int frameIndex, int numberOfLocals);
 };
 
 typedef CordbEnumerator<RSSmartPtr<CordbAsyncFrame>,
