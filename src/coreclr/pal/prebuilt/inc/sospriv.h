@@ -3765,6 +3765,96 @@ EXTERN_C const IID IID_ISOSDacInterface16;
 #endif 	/* __ISOSDacInterface16_INTERFACE_DEFINED__ */
 
 
+
+#ifndef __IAsyncDacInterface1_INTERFACE_DEFINED__
+#define __IAsyncDacInterface1_INTERFACE_DEFINED__
+
+/* interface IAsyncDacInterface1 */
+/* [uuid][local][object] */ 
+
+
+EXTERN_C const IID IID_IAsyncDacInterface1;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("7d46a03c-26d7-44fb-9ff3-49a699511fd7")
+    IAsyncDacInterface1 : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncCallStack( 
+            CLRDATA_ADDRESS thread,
+            int count,
+            struct DacAsyncFrameData *values,
+            int *pNeeded) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IAsyncDacInterface1Vtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IAsyncDacInterface1 * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IAsyncDacInterface1 * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IAsyncDacInterface1 * This);
+        
+        DECLSPEC_XFGVIRT(IAsyncDacInterface1, GetAsyncCallStack)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncCallStack )( 
+            IAsyncDacInterface1 * This,
+            CLRDATA_ADDRESS thread,
+            int count,
+            struct DacAsyncFrameData *values,
+            int *pNeeded);
+        
+        END_INTERFACE
+    } IAsyncDacInterface1Vtbl;
+
+    interface IAsyncDacInterface1
+    {
+        CONST_VTBL struct IAsyncDacInterface1Vtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IAsyncDacInterface1_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IAsyncDacInterface1_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IAsyncDacInterface1_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IAsyncDacInterface1_GetAsyncCallStack(This,thread,count,values,pNeeded)	\
+    ( (This)->lpVtbl -> GetAsyncCallStack(This,thread,count,values,pNeeded) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IAsyncDacInterface1_INTERFACE_DEFINED__ */
+
 /* Additional Prototypes for ALL interfaces */
 
 /* end of Additional Prototypes */

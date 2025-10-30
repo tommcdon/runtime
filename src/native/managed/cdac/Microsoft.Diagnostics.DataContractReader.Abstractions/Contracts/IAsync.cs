@@ -12,6 +12,8 @@ public readonly record struct AsyncLocal(
     TargetPointer Address);
 
 public readonly record struct ResumeData(
+    ModuleHandle Module,
+    uint MethodToken,
     MethodDescHandle MethodDesc,
     TargetCodePointer CodeStart,
     uint DiagnosticsOffset,

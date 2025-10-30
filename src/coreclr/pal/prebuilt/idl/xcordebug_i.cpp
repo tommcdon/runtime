@@ -1,6 +1,3 @@
-// Licensed to the .NET Foundation under one or more agreements.
-// The .NET Foundation licenses this file to you under the MIT license.
-
 
 
 /* this ALWAYS GENERATED file contains the IIDs and CLSIDs */
@@ -8,7 +5,15 @@
 /* link this file in with the server and any clients */
 
 
- /* File created by MIDL compiler version 8.01.0622 */
+ /* File created by MIDL compiler version 8.01.0628 */
+/* Compiler settings for xcordebug.idl:
+    Oicf, W1, Zp8, env=Win64 (32b run), target_arch=AMD64 8.01.0628 
+    protocol : dce , ms_ext, c_ext, robust
+    error checks: allocation ref bounds_check enum stub_data 
+    VC __declspec() decoration level: 
+         __declspec(uuid()), __declspec(selectany), __declspec(novtable)
+         DECLSPEC_UUID(), MIDL_INTERFACE()
+*/
 /* @@MIDL_FILE_HEADING(  ) */
 
 #pragma warning( disable: 4049 )  /* more than 64k source lines */
@@ -61,6 +66,9 @@ typedef IID CLSID;
 #endif // !_MIDL_USE_GUIDDEF_
 
 MIDL_DEFINE_GUID(IID, IID_ICorDebugProcess4,0xE930C679,0x78AF,0x4953,0x8A,0xB7,0xB0,0xAA,0xBF,0x0F,0x9F,0x80);
+
+
+MIDL_DEFINE_GUID(IID, IID_ICorDebugThreadInternal1,0x06D9AF11,0xC45C,0x4B30,0x9D,0x99,0xF8,0xDE,0xD2,0x76,0x32,0x6C);
 
 #undef MIDL_DEFINE_GUID
 

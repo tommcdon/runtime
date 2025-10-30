@@ -147,7 +147,13 @@ internal readonly partial struct Async_1 : IAsync
                 if (suspensionPoints.Length <= continuation.State)
                     throw new InvalidOperationException("Invalid continuation state index.");
 
+                uint token = _rts.GetMethodToken(mdh);
+                TypeHandle type = _rts.GetTypeHandle(_rts.GetMethodTable(mdh));
+                TargetPointer modulePtr = _rts.GetModule(type);
+                ModuleHandle moduleHandle = _loader.GetModuleHandleFromModulePtr(modulePtr);
                 yield return new ResumeData(
+                    moduleHandle,
+                    token,
                     mdh,
                     codeStart,
                     suspensionPoints[continuation.State].NativeDiagnosticsOffset,

@@ -52,6 +52,9 @@ struct MachineInfo;
 
 #include <shash.h>
 
+// to load cdac for async debugging
+#include "cdac.h"
+
 #undef ASSERT
 #define CRASH(x)  _ASSERTE(!(x))
 #define ASSERT(x) _ASSERTE(x)
@@ -1113,6 +1116,8 @@ typedef enum {
     enumCordbEnumerator,    //  45
     enumCordbHeap,          //  48
     enumCordbHeapSegments,  //  47
+    enumCordbAsyncChain,    //  48    
+    enumCordbAsyncFrame,    //  49
     enumMaxDerived,         //
     enumMaxThis = 1024
 } enumCordbDerived;
@@ -3691,6 +3696,9 @@ public:
     // This is synced via the process lock.
     RsPtrTable<CordbEval> m_EvalTable;
 
+    CDAC m_cdac;
+    RSExtSmartPtr<IAsyncDacInterface1> m_pAsyncDacInterface;
+
     void PrepopulateThreadsOrThrow();
 
     // Lookup or create an appdomain.
@@ -4128,6 +4136,8 @@ private:
 
     // Try to initialize DAC, may fail
     BOOL TryInitializeDac();
+
+    BOOL TryInitializeCDac();
 
     // Expect DAC initialize to succeed.
     void InitializeDac();
@@ -6100,12 +6110,13 @@ public:
 /* ------------------------------------------------------------------------- *
  * Thread classes
  * ------------------------------------------------------------------------- */
-
+class CordbAsyncChain;
 class CordbThread : public CordbBase, public ICorDebugThread,
                                       public ICorDebugThread2,
                                       public ICorDebugThread3,
                                       public ICorDebugThread4,
-                                      public ICorDebugThread5
+                                      public ICorDebugThread5,
+                                      public ICorDebugThreadInternal1
 {
 public:
     CordbThread(CordbProcess * pProcess, VMPTR_Thread);
@@ -6184,6 +6195,9 @@ public:
 
     // Gets the current CustomNotification object from the thread or NULL if no such object exists
     COM_METHOD GetCurrentCustomDebuggerNotification(ICorDebugValue ** ppNotificationObject);
+
+    // ICorDebugThreadInternal1
+    COM_METHOD GetAsyncCallStackChain(ICorDebugChain ** ppChain);
     //-----------------------------------------------------------
     // Internal members
     //-----------------------------------------------------------
@@ -6375,7 +6389,6 @@ private:
 
     // Object handle for Exception object in debuggee.
     VMPTR_OBJECTHANDLE    m_vmExcepObjHandle;
-
 public:
 
     //Returns true if current user state of a thread is USER_WAIT_SLEEP_JOIN
@@ -6424,6 +6437,7 @@ private:
     // offload to the shim to support V2 scenarios.
     HANDLE                m_hCachedThread;
     HANDLE                m_hCachedOutOfProcThread;
+    RSSmartPtr<CordbAsyncChain> m_pAsyncChain;
 };
 
 /* ------------------------------------------------------------------------- *
@@ -11628,6 +11642,141 @@ struct RSDebuggingInfo
     CordbProcess * m_MRUprocess;
 
     CordbRCEventThread * m_RCET;
+};
+
+class CordbAsyncChain;
+
+class CordbAsyncFrame : public CordbBase, public ICorDebugILFrame, public ICorDebugILFrame2, public ICorDebugILFrame3, public ICorDebugILFrame4
+{
+    RSSmartPtr<CordbNativeCode> m_pCode;
+    CordbAsyncChain* m_pChain;
+    CORDB_ADDRESS m_pCodeStart;
+    UINT64 m_nDiagnosticOffset;
+public:
+    CordbAsyncFrame(CordbProcess* process,
+                    CordbAsyncChain*   pChain,
+                    VMPTR_Module        vmModule,
+                    mdMethodDef         methodDef,
+                    VMPTR_MethodDesc    vmMethodDesc,
+                    CORDB_ADDRESS       codeStart,
+                    UINT64              diagnosticOffset);
+    HRESULT Init();
+    virtual ~CordbAsyncFrame();
+    virtual void Neuter();
+
+
+#ifdef _DEBUG
+    virtual const char * DbgGetName() { return "CordbAsyncFrame"; }
+#endif
+
+    //-----------------------------------------------------------
+    // IUnknown
+    //-----------------------------------------------------------
+
+    ULONG STDMETHODCALLTYPE AddRef()
+    {
+        return (BaseAddRef());
+    }
+    ULONG STDMETHODCALLTYPE Release()
+    {
+        return (BaseRelease());
+    }
+    COM_METHOD QueryInterface(REFIID riid, void **ppInterface);
+
+    //-----------------------------------------------------------
+    // ICorDebugFrame
+    //-----------------------------------------------------------
+
+    COM_METHOD GetChain(ICorDebugChain **ppChain);
+    COM_METHOD GetCode(ICorDebugCode **ppCode);
+    COM_METHOD GetFunction(ICorDebugFunction **ppFunction);
+    COM_METHOD GetFunctionToken(mdMethodDef *pToken);
+    COM_METHOD GetStackRange(CORDB_ADDRESS *pStart, CORDB_ADDRESS *pEnd);
+    COM_METHOD CreateStepper(ICorDebugStepper **ppStepper);
+    COM_METHOD GetCaller(ICorDebugFrame **ppFrame);
+    COM_METHOD GetCallee(ICorDebugFrame **ppFrame);
+
+    //-----------------------------------------------------------
+    // ICorDebugILFrame
+    //-----------------------------------------------------------
+
+    COM_METHOD GetIP(ULONG32* pnOffset, CorDebugMappingResult *pMappingResult);
+    COM_METHOD SetIP(ULONG32 nOffset);
+    COM_METHOD EnumerateLocalVariables(ICorDebugValueEnum **ppValueEnum);
+    COM_METHOD GetLocalVariable(DWORD dwIndex, ICorDebugValue **ppValue);
+    COM_METHOD EnumerateArguments(ICorDebugValueEnum **ppValueEnum);
+    COM_METHOD GetArgument(DWORD dwIndex, ICorDebugValue ** ppValue);
+    COM_METHOD GetStackDepth(ULONG32 *pDepth);
+    COM_METHOD GetStackValue(DWORD dwIndex, ICorDebugValue **ppValue);
+    COM_METHOD CanSetIP(ULONG32 nOffset);
+
+    //-----------------------------------------------------------
+    // ICorDebugILFrame2
+    //-----------------------------------------------------------
+
+    // Called at an EnC remap opportunity to remap to the latest version of a function
+    COM_METHOD RemapFunction(ULONG32 nOffset);
+
+    COM_METHOD EnumerateTypeParameters(ICorDebugTypeEnum **ppTyParEnum);
+
+    //-----------------------------------------------------------
+    // ICorDebugILFrame3
+    //-----------------------------------------------------------
+
+    COM_METHOD GetReturnValueForILOffset(ULONG32 ILoffset, ICorDebugValue** ppReturnValue);
+
+    //-----------------------------------------------------------
+    // ICorDebugILFrame4
+    //-----------------------------------------------------------
+
+    COM_METHOD EnumerateLocalVariablesEx(ILCodeKind flags, ICorDebugValueEnum **ppValueEnum);
+    COM_METHOD GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICorDebugValue **ppValue);
+    COM_METHOD GetCodeEx(ILCodeKind flags, ICorDebugCode **ppCode);
+};
+
+typedef CordbEnumerator<RSSmartPtr<CordbAsyncFrame>,
+                        ICorDebugFrame*,
+                        ICorDebugFrameEnum, IID_ICorDebugFrameEnum,
+                        QueryInterfaceConvert<RSSmartPtr<CordbAsyncFrame>, ICorDebugFrame, IID_ICorDebugFrame> > CordbAsyncFrameEnumerator;
+
+                        
+class CordbAsyncChain : public CordbBase, public ICorDebugChain
+{
+    RSSmartPtr<CordbThread> m_pThread;
+    RSSmartPtr<CordbAsyncFrameEnumerator> m_pFrameEnum;
+    RSSmartPtr<CordbAsyncFrame> *m_pAsyncFrames;
+    int m_nAsyncFrameCount;
+public:
+    HRESULT AddAsyncFrame(int position, CordbAsyncFrame* pFrame);
+    CordbAsyncChain(CordbProcess* pProcess, CordbThread* pThread, int asyncFrameCount);
+    virtual ~CordbAsyncChain();
+
+    ULONG STDMETHODCALLTYPE AddRef()
+    {
+        return (BaseAddRef());
+    }
+    ULONG STDMETHODCALLTYPE Release()
+    {
+        return (BaseRelease());
+    }
+    COM_METHOD QueryInterface(REFIID riid, void **ppInterface);
+
+    //
+    // ICorDebugChain
+    //
+
+    COM_METHOD GetThread(ICorDebugThread ** ppThread);
+    COM_METHOD GetStackRange(CORDB_ADDRESS * pStart, CORDB_ADDRESS * pEnd);
+    COM_METHOD GetContext(ICorDebugContext ** ppContext);
+    COM_METHOD GetCaller(ICorDebugChain ** ppChain);
+    COM_METHOD GetCallee(ICorDebugChain ** ppChain);
+    COM_METHOD GetPrevious(ICorDebugChain ** ppChain);
+    COM_METHOD GetNext(ICorDebugChain ** ppChain);
+    COM_METHOD IsManaged(BOOL * pManaged);
+    COM_METHOD EnumerateFrames(ICorDebugFrameEnum ** ppFrames);
+    COM_METHOD GetActiveFrame(ICorDebugFrame ** ppFrame);
+    COM_METHOD GetRegisterSet(ICorDebugRegisterSet ** ppRegisters);
+    COM_METHOD GetReason(CorDebugChainReason * pReason);
 };
 
 #include "rspriv.inl"

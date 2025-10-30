@@ -3,11 +3,9 @@
 /* this ALWAYS GENERATED file contains the definitions for the interfaces */
 
 
- /* File created by MIDL compiler version 8.01.0622 */
-/* at Mon Jan 18 19:14:07 2038
- */
-/* Compiler settings for F:/Dev/coreclr/inc/xcordebug.idl:
-    Oicf, W1, Zp8, env=Win32 (32b run), target_arch=X86 8.01.0622 
+ /* File created by MIDL compiler version 8.01.0628 */
+/* Compiler settings for xcordebug.idl:
+    Oicf, W1, Zp8, env=Win64 (32b run), target_arch=AMD64 8.01.0628 
     protocol : dce , ms_ext, c_ext, robust
     error checks: allocation ref bounds_check enum stub_data 
     VC __declspec() decoration level: 
@@ -43,6 +41,14 @@
 #pragma once
 #endif
 
+#ifndef DECLSPEC_XFGVIRT
+#if defined(_CONTROL_FLOW_GUARD_XFG)
+#define DECLSPEC_XFGVIRT(base, func) __declspec(xfg_virtual(base, func))
+#else
+#define DECLSPEC_XFGVIRT(base, func)
+#endif
+#endif
+
 /* Forward Declarations */ 
 
 #ifndef __ICorDebugProcess4_FWD_DEFINED__
@@ -50,6 +56,13 @@
 typedef interface ICorDebugProcess4 ICorDebugProcess4;
 
 #endif 	/* __ICorDebugProcess4_FWD_DEFINED__ */
+
+
+#ifndef __ICorDebugThreadInternal1_FWD_DEFINED__
+#define __ICorDebugThreadInternal1_FWD_DEFINED__
+typedef interface ICorDebugThreadInternal1 ICorDebugThreadInternal1;
+
+#endif 	/* __ICorDebugThreadInternal1_FWD_DEFINED__ */
 
 
 /* header files for imported files */
@@ -96,18 +109,22 @@ EXTERN_C const IID IID_ICorDebugProcess4;
     {
         BEGIN_INTERFACE
         
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
         HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
             ICorDebugProcess4 * This,
             /* [in] */ REFIID riid,
             /* [annotation][iid_is][out] */ 
             _COM_Outptr_  void **ppvObject);
         
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
         ULONG ( STDMETHODCALLTYPE *AddRef )( 
             ICorDebugProcess4 * This);
         
+        DECLSPEC_XFGVIRT(IUnknown, Release)
         ULONG ( STDMETHODCALLTYPE *Release )( 
             ICorDebugProcess4 * This);
         
+        DECLSPEC_XFGVIRT(ICorDebugProcess4, Filter)
         HRESULT ( STDMETHODCALLTYPE *Filter )( 
             ICorDebugProcess4 * This,
             /* [size_is][length_is][in] */ const BYTE pRecord[  ],
@@ -118,6 +135,7 @@ EXTERN_C const IID IID_ICorDebugProcess4;
             /* [in] */ ICorDebugManagedCallback *pCallback,
             /* [out][in] */ CORDB_CONTINUE_STATUS *pContinueStatus);
         
+        DECLSPEC_XFGVIRT(ICorDebugProcess4, ProcessStateChanged)
         HRESULT ( STDMETHODCALLTYPE *ProcessStateChanged )( 
             ICorDebugProcess4 * This,
             /* [in] */ CorDebugStateChange eChange);
@@ -160,6 +178,90 @@ EXTERN_C const IID IID_ICorDebugProcess4;
 
 
 #endif 	/* __ICorDebugProcess4_INTERFACE_DEFINED__ */
+
+
+#ifndef __ICorDebugThreadInternal1_INTERFACE_DEFINED__
+#define __ICorDebugThreadInternal1_INTERFACE_DEFINED__
+
+/* interface ICorDebugThreadInternal1 */
+/* [unique][uuid][local][object] */ 
+
+
+EXTERN_C const IID IID_ICorDebugThreadInternal1;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("06D9AF11-C45C-4B30-9D99-F8DED276326C")
+    ICorDebugThreadInternal1 : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncCallStackChain( 
+            /* [out] */ ICorDebugChain **ppChain) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct ICorDebugThreadInternal1Vtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            ICorDebugThreadInternal1 * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            ICorDebugThreadInternal1 * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            ICorDebugThreadInternal1 * This);
+        
+        DECLSPEC_XFGVIRT(ICorDebugThreadInternal1, GetAsyncCallStackChain)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncCallStackChain )( 
+            ICorDebugThreadInternal1 * This,
+            /* [out] */ ICorDebugChain **ppChain);
+        
+        END_INTERFACE
+    } ICorDebugThreadInternal1Vtbl;
+
+    interface ICorDebugThreadInternal1
+    {
+        CONST_VTBL struct ICorDebugThreadInternal1Vtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define ICorDebugThreadInternal1_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define ICorDebugThreadInternal1_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define ICorDebugThreadInternal1_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define ICorDebugThreadInternal1_GetAsyncCallStackChain(This,ppChain)	\
+    ( (This)->lpVtbl -> GetAsyncCallStackChain(This,ppChain) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __ICorDebugThreadInternal1_INTERFACE_DEFINED__ */
 
 
 /* Additional Prototypes for ALL interfaces */

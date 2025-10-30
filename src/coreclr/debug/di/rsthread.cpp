@@ -162,7 +162,7 @@ void CordbThread::Neuter()
     }
 
     ClearStackFrameCache();
-
+    m_pAsyncChain.Assign(NULL);
     CordbBase::Neuter();
 }
 
@@ -187,6 +187,10 @@ HRESULT CordbThread::QueryInterface(REFIID id, void ** ppInterface)
     else if (id == IID_ICorDebugThread5)
     {
         *ppInterface = static_cast<ICorDebugThread5*>(this);
+    }
+    else if (id == IID_ICorDebugThreadInternal1)
+    {
+        *ppInterface = static_cast<ICorDebugThreadInternal1 *>(this);
     }
     else if (id == IID_IUnknown)
     {
@@ -1027,6 +1031,53 @@ HRESULT CordbThread::GetActiveChain(ICorDebugChain ** ppChain)
                 // This is the Arrowhead case, where ICDChain has been deprecated.
                 hr = E_NOTIMPL;
             }
+        }
+    }
+    EX_CATCH_HRESULT(hr);
+    return hr;
+}
+
+struct MSLAYOUT DacAsyncFrameData
+{
+    VMPTR_Module          vmModule;
+    mdMethodDef           funcMetadataToken;
+    VMPTR_MethodDesc      vmMethodDesc;
+    CORDB_ADDRESS         codeStartAddr;
+    UINT64                diagnosticIP;    
+};
+
+HRESULT CordbThread::GetAsyncCallStackChain(ICorDebugChain ** ppChain)
+{
+    PUBLIC_API_ENTRY(this);
+    if (m_pAsyncChain)
+    {
+        return m_pAsyncChain->QueryInterface(IID_ICorDebugChain, (void**)ppChain);
+    }
+    HRESULT hr = E_FAIL;
+    EX_TRY
+    {
+        int countAsyncStacks = 0;
+        GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0, NULL, &countAsyncStacks);
+        if (countAsyncStacks > 0)
+        {
+            struct DacAsyncFrameData* asyncStacks = new struct DacAsyncFrameData[countAsyncStacks];
+            GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), countAsyncStacks, asyncStacks, &countAsyncStacks);
+
+            // Create a CordbAsyncChain for the async call stack.
+            m_pAsyncChain.Assign(new CordbAsyncChain(GetProcess(), this, countAsyncStacks));
+            for (int i = 0; i < countAsyncStacks; i++)
+            {
+                m_pAsyncChain->AddAsyncFrame(i, new CordbAsyncFrame(GetProcess(),
+                                                              m_pAsyncChain,
+                                                              asyncStacks[i].vmModule,
+                                                              asyncStacks[i].funcMetadataToken,
+                                                              asyncStacks[i].vmMethodDesc,
+                                                              asyncStacks[i].codeStartAddr,
+                                                              asyncStacks[i].diagnosticIP));
+            }
+            m_pAsyncChain->QueryInterface(IID_ICorDebugChain, (void**)ppChain);
+            delete[] asyncStacks;
+            hr = S_OK;
         }
     }
     EX_CATCH_HRESULT(hr);
@@ -11059,4 +11110,340 @@ HRESULT CordbCodeEnum::Next(ULONG celt, ICorDebugCode *values[], ULONG *pceltFet
     }
 
     return hr;
+}
+
+CordbAsyncChain::CordbAsyncChain(CordbProcess* pProcess, CordbThread* pThread, int asyncFrameCount)
+: CordbBase(pProcess, 0, enumCordbAsyncChain)
+{
+    m_nAsyncFrameCount = asyncFrameCount;
+    m_pProcess.Assign(pProcess);
+    m_pThread.Assign(pThread);
+    m_pAsyncFrames = new RSSmartPtr<CordbAsyncFrame>[asyncFrameCount];
+}
+
+CordbAsyncChain::~CordbAsyncChain()
+{
+}
+
+HRESULT CordbAsyncChain::AddAsyncFrame(int position, CordbAsyncFrame* pFrame)
+{
+    m_pAsyncFrames[position].Assign(pFrame);
+    return S_OK;
+}
+    
+HRESULT CordbAsyncChain::QueryInterface(REFIID id, void **pInterface)
+{
+    if (id == IID_ICorDebugChain)
+    {
+        *pInterface = static_cast<ICorDebugChain *>(this);
+    }
+    else if (id == IID_IUnknown)
+    {
+        *pInterface = static_cast<IUnknown *>(static_cast<ICorDebugChain *>(this));
+    }
+    else
+    {
+        *pInterface = NULL;
+        return E_NOINTERFACE;
+    }
+    AddRef();
+    return S_OK;
+}
+HRESULT CordbAsyncChain::GetThread(ICorDebugThread ** ppThread)
+{
+    return m_pThread->QueryInterface(IID_ICorDebugThread, (void **)ppThread);
+}
+HRESULT CordbAsyncChain::GetStackRange(CORDB_ADDRESS * pStart, CORDB_ADDRESS * pEnd)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetContext(ICorDebugContext ** ppContext)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetCaller(ICorDebugChain ** ppChain)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetCallee(ICorDebugChain ** ppChain)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetPrevious(ICorDebugChain ** ppChain)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetNext(ICorDebugChain ** ppChain)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::IsManaged(BOOL * pManaged)
+{
+    *pManaged = TRUE;
+    return S_OK;
+}
+
+HRESULT CordbAsyncChain::EnumerateFrames(ICorDebugFrameEnum ** ppFrames)
+{
+    if (m_pFrameEnum == NULL)
+    {
+        m_pFrameEnum.Assign(new CordbAsyncFrameEnumerator(GetProcess(), m_pAsyncFrames, (DWORD)m_nAsyncFrameCount));
+        GetProcess()->GetContinueNeuterList()->Add(GetProcess(), m_pFrameEnum);
+    }
+    m_pFrameEnum->Reset();
+    return m_pFrameEnum->QueryInterface(__uuidof(ICorDebugFrameEnum), (VOID**)ppFrames);
+}
+
+HRESULT CordbAsyncChain::GetActiveFrame(ICorDebugFrame ** ppFrame)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetRegisterSet(ICorDebugRegisterSet ** ppRegisters)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncChain::GetReason(CorDebugChainReason * pReason)
+{
+    *pReason = CorDebugChainReason::CHAIN_ASYNC;
+    return S_OK;
+}
+
+CordbAsyncFrame::CordbAsyncFrame(CordbProcess* pProcess,
+                    CordbAsyncChain* pChain,
+                    VMPTR_Module        vmModule,
+                    mdMethodDef         methodDef,
+                    VMPTR_MethodDesc    vmMethodDesc,
+                    CORDB_ADDRESS       codeStart,
+                    UINT64              diagnosticOffset)
+: CordbBase(pProcess, 0, enumCordbAsyncFrame)
+{
+    CONTRACTL
+    {
+        THROWS;
+    }
+    CONTRACTL_END;
+    VMPTR_DomainAssembly vmDomainAssembly;
+    GetProcess()->GetDAC()->GetDomainAssemblyFromModule(vmModule, &vmDomainAssembly);
+    CordbModule * pModule = NULL;
+    pModule = GetProcess()->LookupOrCreateModule(vmDomainAssembly);
+    {
+        RSLockHolder stopGoLock(GetProcess()->GetStopGoLock());
+        m_pCode.Assign(pModule->LookupOrCreateNativeCode(methodDef, vmMethodDesc, codeStart));
+    }
+    m_pCode->LoadNativeInfo();
+    m_pCodeStart = codeStart;
+    m_nDiagnosticOffset = diagnosticOffset;
+    m_pChain = pChain;
+}
+HRESULT CordbAsyncFrame::Init()
+{
+    return S_OK;
+}
+CordbAsyncFrame::~CordbAsyncFrame()
+{
+
+}
+void CordbAsyncFrame::Neuter()
+{
+
+}
+
+//-----------------------------------------------------------
+// IUnknown
+//-----------------------------------------------------------
+
+HRESULT CordbAsyncFrame::QueryInterface(REFIID id, void **pInterface)
+{
+    // don't query for IUnknown or ICorDebugFrame! Someone else should have
+    // already taken care of that.
+    if (id == IID_ICorDebugFrame)
+    {
+        *pInterface = static_cast<ICorDebugFrame*>(this);
+    }
+    else if (id == IID_ICorDebugILFrame)
+    {
+        *pInterface = static_cast<ICorDebugILFrame*>(this);
+    }
+    else if (id == IID_ICorDebugILFrame2)
+    {
+        *pInterface = static_cast<ICorDebugILFrame2*>(this);
+    }
+    else if (id == IID_ICorDebugILFrame3)
+    {
+        *pInterface = static_cast<ICorDebugILFrame3*>(this);
+    }
+    else if (id == IID_ICorDebugILFrame4)
+    {
+        *pInterface = static_cast<ICorDebugILFrame4*>(this);
+    }
+    else if (id == IID_IUnknown)
+    {
+        *pInterface = static_cast<IUnknown *>(static_cast<ICorDebugILFrame *>(this));
+    }
+    else
+    {
+        *pInterface = NULL;
+        return E_NOINTERFACE;
+    }
+
+    ExternalAddRef();
+    return S_OK;
+}
+
+//-----------------------------------------------------------
+// ICorDebugFrame
+//-----------------------------------------------------------
+
+HRESULT CordbAsyncFrame::GetChain(ICorDebugChain **ppChain)
+{
+    return E_NOTIMPL;
+}
+
+HRESULT CordbAsyncFrame::GetCode(ICorDebugCode **ppCode)
+{
+    return m_pCode->QueryInterface(IID_ICorDebugCode, (void **)ppCode);
+}
+
+HRESULT CordbAsyncFrame::GetFunction(ICorDebugFunction **ppFunction)
+{
+    return m_pCode->GetFunction(ppFunction);
+}
+
+HRESULT CordbAsyncFrame::GetFunctionToken(mdMethodDef *pToken)
+{
+    return m_pCode->GetFunction()->GetToken(pToken);
+}
+
+//do not ask for it in an async frame -- fix concord
+HRESULT CordbAsyncFrame::GetStackRange(CORDB_ADDRESS *pStart, CORDB_ADDRESS *pEnd)
+{
+    *pStart = 0;
+    *pEnd = 1;
+    return S_OK;
+}
+
+HRESULT CordbAsyncFrame::CreateStepper(ICorDebugStepper **ppStepper)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::GetCaller(ICorDebugFrame **ppFrame)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::GetCallee(ICorDebugFrame **ppFrame)
+{
+    return E_NOTIMPL;
+}
+
+//-----------------------------------------------------------
+// ICorDebugILFrame
+//-----------------------------------------------------------
+
+HRESULT CordbAsyncFrame::GetIP(ULONG32* pnOffset, CorDebugMappingResult *pMappingResult)
+{
+    CorDebugMappingResult mappingType;
+    ULONG uILOffset = m_pCode->GetSequencePoints()->MapNativeOffsetToIL(
+                    (DWORD)m_nDiagnosticOffset,
+                    &mappingType);
+    if (pnOffset != NULL)
+    {
+        *pnOffset = uILOffset;
+    }
+    if (pMappingResult != NULL)
+    {
+        *pMappingResult = mappingType;
+    }
+    return S_OK;
+}
+
+HRESULT CordbAsyncFrame::SetIP(ULONG32 nOffset)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::EnumerateLocalVariables(ICorDebugValueEnum **ppValueEnum)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::GetLocalVariable(DWORD dwIndex, ICorDebugValue **ppValue)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::EnumerateArguments(ICorDebugValueEnum **ppValueEnum)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::GetArgument(DWORD dwIndex, ICorDebugValue ** ppValue)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::GetStackDepth(ULONG32 *pDepth)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::GetStackValue(DWORD dwIndex, ICorDebugValue **ppValue)
+{
+    return E_NOTIMPL;
+}
+HRESULT CordbAsyncFrame::CanSetIP(ULONG32 nOffset)
+{
+    return E_NOTIMPL;
+}
+
+//-----------------------------------------------------------
+// ICorDebugILFrame2
+//-----------------------------------------------------------
+
+// Called at an EnC remap opportunity to remap to the latest version of a function
+HRESULT CordbAsyncFrame::RemapFunction(ULONG32 nOffset)
+{
+    return E_NOTIMPL;
+}
+
+HRESULT CordbAsyncFrame::EnumerateTypeParameters(ICorDebugTypeEnum **ppTyParEnum)
+{
+    return E_NOTIMPL;
+}
+
+//-----------------------------------------------------------
+// ICorDebugILFrame3
+//-----------------------------------------------------------
+
+HRESULT CordbAsyncFrame::GetReturnValueForILOffset(ULONG32 ILoffset, ICorDebugValue** ppReturnValue)
+{
+    return E_NOTIMPL;
+}
+
+//-----------------------------------------------------------
+// ICorDebugILFrame4
+//-----------------------------------------------------------
+
+HRESULT CordbAsyncFrame::EnumerateLocalVariablesEx(ILCodeKind flags, ICorDebugValueEnum **ppValueEnum)
+{
+    return E_NOTIMPL;
+}
+
+HRESULT CordbAsyncFrame::GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICorDebugValue **ppValue)
+{
+    return E_NOTIMPL;
+}
+
+HRESULT CordbAsyncFrame::GetCodeEx(ILCodeKind flags, ICorDebugCode **ppCode)
+{
+    HRESULT hr = S_OK;
+    PUBLIC_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    if (flags != ILCODE_ORIGINAL_IL && flags != ILCODE_REJIT_IL)
+        return E_INVALIDARG;
+
+    if (flags == ILCODE_ORIGINAL_IL)
+    {
+        return GetCode(ppCode);
+    }
+    else
+    {
+        *ppCode = NULL;
+    }
+    return S_OK;
 }

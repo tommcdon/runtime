@@ -1517,6 +1517,50 @@ HRESULT ShimProcess::CreateAndStartWin32ET(Cordb * pCordb)
     return ErrWrapper(hr);
 }
 
+extern "C" bool TryGetSymbol(ICorDebugDataTarget* dataTarget, uint64_t baseAddress, const char* symbolName, uint64_t* symbolAddress);
+
+BOOL CordbProcess::TryInitializeCDac()
+{
+    CONTRACTL
+    {
+        THROWS;
+    }
+    CONTRACTL_END;
+    HRESULT hr = EnsureClrInstanceIdSet();
+    if (FAILED(hr))
+    {
+        return FALSE;
+    }
+    // Try to locate contract descriptor and create cDAC (best-effort).
+    uint64_t contractDescriptorAddr = 0;
+    NonVMComHolder<IUnknown> cdacInterface = nullptr;
+
+    if (TryGetSymbol(m_pDACDataTarget, m_clrInstanceId, "DotNetRuntimeContractDescriptor", &contractDescriptorAddr))
+    {
+        IUnknown* thisImpl = nullptr;
+        ICorDebugMutableDataTarget* thisMutableImpl = nullptr;
+        HRESULT qiRes = m_pDACDataTarget->QueryInterface(IID_IUnknown, (void**)&thisImpl);
+        _ASSERTE(SUCCEEDED(qiRes));
+        qiRes = m_pDACDataTarget->QueryInterface(IID_ICorDebugMutableDataTarget, (void**)&thisMutableImpl);
+        _ASSERTE(SUCCEEDED(qiRes));
+    
+        CDAC& cdac = m_cdac;
+        cdac = CDAC::Create(contractDescriptorAddr, thisMutableImpl, thisImpl);
+
+        if (m_cdac.IsValid())
+        {
+            m_cdac.CreateSosInterface(&cdacInterface);
+            _ASSERTE(cdacInterface != nullptr);
+            hr = cdacInterface->QueryInterface(IID_IAsyncDacInterface1, (void**)&m_pAsyncDacInterface);
+            _ASSERTE(SUCCEEDED(hr));            
+        }
+    }
+    if (cdacInterface == nullptr)
+    {
+        return E_FAIL;
+    }
+    return S_OK;
+}
 
 //---------------------------------------------------------------------------------------
 //
@@ -1824,7 +1868,7 @@ HRESULT CordbProcess::Init()
         // fIsLSStarted means before phase 6 (eg, RS should expect a startup exception)
 
         // Determines if the LS is started.
-
+        TryInitializeCDac();
         {
             BOOL fReady = TryInitializeDac();
 

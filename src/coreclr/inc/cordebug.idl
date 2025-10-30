@@ -4728,6 +4728,7 @@ interface ICorDebugChain : IUnknown
         CHAIN_DEBUGGER_EVAL     = 0x200,
         CHAIN_CONTEXT_SWITCH    = 0x400,
         CHAIN_FUNC_EVAL         = 0x800,
+        CHAIN_ASYNC             = 0x1000,
     } CorDebugChainReason;
 
     HRESULT GetReason([out] CorDebugChainReason *pReason);

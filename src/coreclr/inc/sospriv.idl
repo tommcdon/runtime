@@ -34,6 +34,7 @@ struct DacpRCWData;
 struct DacpAllocData;
 struct DacpGenerationAllocData;
 struct DacpExceptionObjectData;
+struct DacAsyncFrameData;
 cpp_quote("#if 0")
 typedef ULONG64 CLRDATA_ADDRESS;
 typedef int CONTEXT;
@@ -571,4 +572,14 @@ interface ISOSDacInterface15 : IUnknown
 interface ISOSDacInterface16 : IUnknown
 {
     HRESULT GetGCDynamicAdaptationMode(int* pDynamicAdaptationMode);
+}
+
+[
+    object,
+    local,
+    uuid(7d46a03c-26d7-44fb-9ff3-49a699511fd7)
+]
+interface IAsyncDacInterface1 : IUnknown
+{
+    HRESULT GetAsyncCallStack(CLRDATA_ADDRESS thread, int count, struct DacAsyncFrameData *values, int *pNeeded);
 }

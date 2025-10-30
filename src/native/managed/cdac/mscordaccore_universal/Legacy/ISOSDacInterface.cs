@@ -89,6 +89,15 @@ internal struct DacpAssemblyData
     public uint dwLocationFlags;
 }
 
+internal struct DacAsyncFrameData
+{
+    public ClrDataAddress vmModule;
+    public uint funcMetadataToken;
+    public ClrDataAddress vmMethodDesc;
+    public ClrDataAddress codeStartAddr;
+    public ulong diagnosticOffset;
+}
+
 internal struct DacpThreadData
 {
     public int corThreadId;
@@ -624,6 +633,9 @@ internal unsafe partial interface ISOSDacInterface
     int GetRegisterName(int regName, uint count, char* buffer, uint* pNeeded);
 
     [PreserveSig]
+    int GetAsyncCallStack(ClrDataAddress thread, int count, [In, Out, MarshalUsing(CountElementName = nameof(count))] DacAsyncFrameData[]? values, int* pNeeded);
+
+    [PreserveSig]
     int GetThreadAllocData(ClrDataAddress thread, /*struct DacpAllocData */ void* data);
     [PreserveSig]
     int GetHeapAllocData(uint count, /*struct DacpGenerationAllocData */ void* data, uint* pNeeded);
@@ -926,4 +938,12 @@ internal unsafe partial interface ISOSDacInterface16
 {
     [PreserveSig]
     int GetGCDynamicAdaptationMode(int* pDynamicAdaptationMode);
+}
+
+[GeneratedComInterface]
+[Guid("7d46a03c-26d7-44fb-9ff3-49a699511fd7")]
+internal unsafe partial interface IAsyncDacInterface1
+{
+    [PreserveSig]
+    int GetAsyncCallStack(ClrDataAddress thread, int count, [In, Out, MarshalUsing(CountElementName = nameof(count))] DacAsyncFrameData[]? values, int* pNeeded);
 }
