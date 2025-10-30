@@ -2251,24 +2251,6 @@ internal sealed unsafe partial class SOSDacImpl
         }
     }
 
-    private void PrintHelper()
-    {
-        StringBuilder sb = new StringBuilder();
-        try
-        {
-            AsyncTestFunction(sb);
-        }
-        catch (System.Exception ex)
-        {
-            sb.AppendLine($"Exception: {ex}");
-        }
-        finally
-        {
-            string filePath = "C:\\Users\\maxcharlamb\\temp\\output.txt";
-            File.WriteAllText(filePath, sb.ToString());
-        }
-    }
-
     int ISOSDacInterface.GetMethodDescPtrFromIP(ClrDataAddress ip, ClrDataAddress* ppMD)
     {
         if (ip == 0 || ppMD == null)
@@ -2283,7 +2265,7 @@ internal sealed unsafe partial class SOSDacImpl
 
             if (ip < 100)
             {
-                PrintHelper();
+                PrintHelper(AsyncTestFunction);
             }
 
             CodeBlockHandle? handle = executionManager.GetCodeBlockHandle(ip.ToTargetCodePointer(_target));

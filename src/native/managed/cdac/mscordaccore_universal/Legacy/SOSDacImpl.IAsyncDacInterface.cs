@@ -3,6 +3,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
@@ -17,6 +18,25 @@ namespace Microsoft.Diagnostics.DataContractReader.Legacy;
 /// </summary>
 internal sealed unsafe partial class SOSDacImpl : IAsyncDacInterface
 {
+    private static void PrintHelper(Action<StringBuilder> action)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.AppendLine("====================");
+        try
+        {
+            action(sb);
+        }
+        catch (System.Exception ex)
+        {
+            sb.AppendLine($"Exception: {ex}");
+        }
+        finally
+        {
+            string filePath = "C:\\Users\\maxcharlamb\\temp\\output.txt";
+            File.AppendAllText(filePath, sb.ToString());
+        }
+    }
+
     int IAsyncDacInterface.GetAsyncChainCount(ClrDataAddress thread, int* chains)
     {
         int hr = HResults.S_OK;
@@ -32,6 +52,8 @@ internal sealed unsafe partial class SOSDacImpl : IAsyncDacInterface
             IAsync async = _target.Contracts.Async;
             IEnumerable<IEnumerable<ResumeData>> threadResumeDatas = async.GetAsyncData(thread.ToTargetPointer(_target));
             *chains = threadResumeDatas.Count();
+
+            PrintHelper((sb) => sb.AppendLine($"GetAsyncChainCount: thread={thread}, chains={*chains}"));
         }
         catch (System.Exception ex)
         {
@@ -96,6 +118,18 @@ internal sealed unsafe partial class SOSDacImpl : IAsyncDacInterface
 
             if (pNeeded is not null)
                 *pNeeded = currentChain.Count;
+
+            PrintHelper((sb) =>
+            {
+                sb.AppendLine($"GetAsyncCallStack: thread={thread}, chainId={chainId}, count={count}, needed={*pNeeded}");
+                for (int i = 0; values is not null && i < Math.Min(count, currentChain.Count); i++)
+                {
+                    DacpAsyncFrameData v = values[i];
+                    sb.AppendLine(
+                        $"  [{i}] module={v.module}, funcMetadataToken={v.funcMetadataToken}, methodDesc={v.methodDesc}, codeStartAddr={v.codeStartAddr}, diagnosticOffset={v.diagnosticOffset}, numVars={v.numVars}"
+                    );
+                }
+            });
         }
         catch (System.Exception ex)
         {
@@ -149,6 +183,18 @@ internal sealed unsafe partial class SOSDacImpl : IAsyncDacInterface
 
             if (pNeeded is not null)
                 *pNeeded = locals.Count;
+
+            PrintHelper((sb) =>
+            {
+                sb.AppendLine($"GetAsyncLocals: thread={thread}, chainId={chainId}, frameId={frameId}, count={count}, needed={*pNeeded}");
+                for (int i = 0; values is not null && i < Math.Min(count, locals.Count); i++)
+                {
+                    DacpAsyncLocalData v = values[i];
+                    sb.AppendLine(
+                        $"  [{i}] address={v.address}, ilVarNum={v.ilVarNum}"
+                    );
+                }
+            });
         }
         catch (System.Exception ex)
         {
