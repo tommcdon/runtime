@@ -10877,7 +10877,8 @@ enum CorDebugChainReason
         CHAIN_ENTER_UNMANAGED   = 0x100,
         CHAIN_DEBUGGER_EVAL = 0x200,
         CHAIN_CONTEXT_SWITCH    = 0x400,
-        CHAIN_FUNC_EVAL = 0x800
+        CHAIN_FUNC_EVAL = 0x800,
+        CHAIN_ASYNC = 0x1000,
     }   CorDebugChainReason;
 
 

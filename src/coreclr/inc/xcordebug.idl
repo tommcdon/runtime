@@ -53,3 +53,15 @@ interface ICorDebugProcess4 : IUnknown
     HRESULT ProcessStateChanged([in] CorDebugStateChange eChange);
 
 };
+
+
+[
+    object,
+    local,
+    uuid(06D9AF11-C45C-4B30-9D99-F8DED276326C),
+    pointer_default(unique)
+]
+interface ICorDebugThreadInternal1 : IUnknown
+{
+    HRESULT GetAsyncCallStackChain([out] ICorDebugChain **ppChain);
+};

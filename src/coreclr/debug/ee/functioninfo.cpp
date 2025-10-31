@@ -772,7 +772,7 @@ SIZE_T DebuggerJitInfo::GetNextNativeOffsetIfAsyncCall(SIZE_T nativeOffsetToMap)
                     m++;
                     while (m < mEnd && m->ilOffset == currentIL)
                     {
-                        LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: ASYNC call trying - next nat offset:0x%x\n", (m+1)->nativeStartOffset));
+                        LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTS: ASYNC call trying - m->natStart:0x%x m->natEnd:0x%x il:0x%x src:0x%x\n", m->nativeStartOffset, m->nativeEndOffset, m->ilOffset, m->source));
                         m++;
                     }
                     if (m < mEnd)

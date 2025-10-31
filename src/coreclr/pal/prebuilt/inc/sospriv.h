@@ -3765,6 +3765,131 @@ EXTERN_C const IID IID_ISOSDacInterface16;
 #endif 	/* __ISOSDacInterface16_INTERFACE_DEFINED__ */
 
 
+#ifndef __IAsyncDacInterface1_INTERFACE_DEFINED__
+#define __IAsyncDacInterface1_INTERFACE_DEFINED__
+
+/* interface IAsyncDacInterface1 */
+/* [uuid][local][object] */ 
+
+
+EXTERN_C const IID IID_IAsyncDacInterface1;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("7d46a03c-26d7-44fb-9ff3-49a699511fd7")
+    IAsyncDacInterface1 : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncChainCount( 
+            CLRDATA_ADDRESS thread,
+            int *chains) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncCallStack( 
+            CLRDATA_ADDRESS thread,
+            int chainId,
+            int count,
+            struct DacAsyncFrameData *values,
+            int *pNeeded) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncLocals( 
+            CLRDATA_ADDRESS thread,
+            int chainId,
+            int frameId,
+            int count,
+            struct DacAsyncLocalData *values,
+            int *pNeeded) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IAsyncDacInterface1Vtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IAsyncDacInterface1 * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IAsyncDacInterface1 * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IAsyncDacInterface1 * This);
+        
+        DECLSPEC_XFGVIRT(IAsyncDacInterface1, GetAsyncChainCount)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncChainCount )( 
+            IAsyncDacInterface1 * This,
+            CLRDATA_ADDRESS thread,
+            int *chains);
+        
+        DECLSPEC_XFGVIRT(IAsyncDacInterface1, GetAsyncCallStack)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncCallStack )( 
+            IAsyncDacInterface1 * This,
+            CLRDATA_ADDRESS thread,
+            int chainId,
+            int count,
+            struct DacAsyncFrameData *values,
+            int *pNeeded);
+        
+        DECLSPEC_XFGVIRT(IAsyncDacInterface1, GetAsyncLocals)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncLocals )( 
+            IAsyncDacInterface1 * This,
+            CLRDATA_ADDRESS thread,
+            int chainId,
+            int frameId,
+            int count,
+            struct DacAsyncLocalData *values,
+            int *pNeeded);
+        
+        END_INTERFACE
+    } IAsyncDacInterface1Vtbl;
+
+    interface IAsyncDacInterface1
+    {
+        CONST_VTBL struct IAsyncDacInterface1Vtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IAsyncDacInterface1_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IAsyncDacInterface1_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IAsyncDacInterface1_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IAsyncDacInterface1_GetAsyncChainCount(This,thread,chains)	\
+    ( (This)->lpVtbl -> GetAsyncChainCount(This,thread,chains) ) 
+
+#define IAsyncDacInterface1_GetAsyncCallStack(This,thread,chainId,count,values,pNeeded)	\
+    ( (This)->lpVtbl -> GetAsyncCallStack(This,thread,chainId,count,values,pNeeded) ) 
+
+#define IAsyncDacInterface1_GetAsyncLocals(This,thread,chainId,frameId,count,values,pNeeded)	\
+    ( (This)->lpVtbl -> GetAsyncLocals(This,thread,chainId,frameId,count,values,pNeeded) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IAsyncDacInterface1_INTERFACE_DEFINED__ */
+
 /* Additional Prototypes for ALL interfaces */
 
 /* end of Additional Prototypes */

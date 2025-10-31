@@ -1,3 +1,5 @@
+include_directories(${CLR_SRC_NATIVE_DIR}/managed/cdac/inc)
+
 add_definitions(
     -DDBI_COMPILE
     -DFEATURE_METADATA_CUSTOM_DATA_SOURCE
@@ -32,6 +34,7 @@ set(CORDBDI_SOURCES
   shared.cpp
   symbolinfo.cpp
   valuehome.cpp
+  cdac.cpp
 )
 
 set(CORDBDI_HEADERS
@@ -45,7 +48,9 @@ set(CORDBDI_HEADERS
     rsenumerator.hpp
     rspriv.h
     rspriv.inl
-    symbolinfo.h)
+    symbolinfo.h
+    cdac.h
+)
 
 
 if(CLR_CMAKE_HOST_WIN32)
@@ -84,3 +89,10 @@ list(APPEND CORDBDI_SOURCES ${CORDBDI_SOURCES_ASM_FILE})
 add_library_clr(cordbdi STATIC ${CORDBDI_SOURCES})
 target_precompile_headers(cordbdi PRIVATE stdafx.h)
 add_dependencies(cordbdi eventing_headers)
+
+target_link_libraries(cordbdi
+    PRIVATE
+    dbgutil
+)
+
+
