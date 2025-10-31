@@ -34,7 +34,7 @@ internal sealed unsafe partial class SOSDacImpl
     : ISOSDacInterface, ISOSDacInterface2, ISOSDacInterface3, ISOSDacInterface4, ISOSDacInterface5,
       ISOSDacInterface6, ISOSDacInterface7, ISOSDacInterface8, ISOSDacInterface9, ISOSDacInterface10,
       ISOSDacInterface11, ISOSDacInterface12, ISOSDacInterface13, ISOSDacInterface14, ISOSDacInterface15,
-      ISOSDacInterface16, IAsyncDacInterface1
+      ISOSDacInterface16
 {
     private readonly Target _target;
 
@@ -4750,51 +4750,4 @@ internal sealed unsafe partial class SOSDacImpl
         return hr;
     }
     #endregion ISOSDacInterface16
-    #region IAsyncDacInterface1
-    int IAsyncDacInterface1.GetAsyncCallStack(ClrDataAddress thread, int count, [In, Out, MarshalUsing(CountElementName = nameof(count))] DacAsyncFrameData[]? values, int* pNeeded)
-    {
-        if (thread == 0)
-            return HResults.E_INVALIDARG;
-        StringBuilder sb = new StringBuilder();
-        int hr = HResults.S_OK;
-        Contracts.IThread contract = _target.Contracts.Thread;
-        TargetPointer threadPtr = thread.ToTargetPointer(_target);
-        Contracts.ThreadData threadData = contract.GetThreadData(threadPtr);
-        sb = new StringBuilder();
-        sb.AppendLine($"Thread {threadData.Id:x} {threadData.OSId.Value:x} Async Stacks:");
-        PrintAsyncStacksForThread(sb, threadPtr);
-        string filePath = "C:\\diag\\async_v2_2025\\runtime_max\\dotnet-runtime\\output2.txt";
-        File.WriteAllText(filePath, sb.ToString());
-        IAsync async = _target.Contracts.Async;
-        IEnumerable<IEnumerable<ResumeData>> threadResumeDatas = async.GetAsyncData(threadPtr);
-        if (threadResumeDatas.Count() > count)
-        {
-            *pNeeded = threadResumeDatas.SelectMany(innerEnumerable => innerEnumerable).Count();
-            return hr;
-        }
-        int index = 0;
-        foreach (IEnumerable<ResumeData> resumeDatas in threadResumeDatas)
-        {
-            foreach (ResumeData resumeData in resumeDatas)
-            {
-                if (values is not null)
-                {
-                    values[index].vmModule = resumeData.Module.Address.ToClrDataAddress(_target);
-                    values[index].funcMetadataToken = resumeData.MethodToken;
-                    values[index].vmMethodDesc = resumeData.MethodDesc.Address.ToClrDataAddress(_target);
-                    values[index].codeStartAddr = resumeData.CodeStart.ToClrDataAddress(_target);
-                    values[index].diagnosticOffset = resumeData.DiagnosticsOffset;
-                    index++;
-                }
-            }
-        }
-        return hr;
-    }
-    #endregion ISOSDacInterface16
-    // Provide legacy ISOSDacInterface implementation for GetAsyncCallStack so the class
-    // fully implements the older DAC interface as well. Return E_NOTIMPL for now.
-    int ISOSDacInterface.GetAsyncCallStack(ClrDataAddress thread, int count, [In, Out, MarshalUsing(CountElementName = nameof(count))] DacAsyncFrameData[]? values, int* pNeeded)
-    {
-        return HResults.E_NOTIMPL;
-    }
 }

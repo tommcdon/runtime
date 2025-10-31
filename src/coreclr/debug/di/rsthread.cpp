@@ -1039,6 +1039,7 @@ HRESULT CordbThread::GetActiveChain(ICorDebugChain ** ppChain)
 
 struct MSLAYOUT DacAsyncFrameData
 {
+    int                   frameId;
     VMPTR_Module          vmModule;
     mdMethodDef           funcMetadataToken;
     VMPTR_MethodDesc      vmMethodDesc;
@@ -1047,10 +1048,10 @@ struct MSLAYOUT DacAsyncFrameData
     UINT32                numberOfVars;   
 };
 
-struct MSLAYOUT DacAsyncLocalsData
+struct MSLAYOUT DacAsyncLocalData
 {
-    UINT32                iLVarNum;
     CORDB_ADDRESS         address;
+    UINT32                iLVarNum;
 };
 
 HRESULT CordbThread::GetAsyncCallStackChain(ICorDebugChain ** ppChain)
@@ -1064,11 +1065,11 @@ HRESULT CordbThread::GetAsyncCallStackChain(ICorDebugChain ** ppChain)
     EX_TRY
     {
         int countAsyncStacks = 0;
-        GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0, NULL, &countAsyncStacks);
+        GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0/*chainId*/, 0, NULL, &countAsyncStacks);
         if (countAsyncStacks > 0)
         {
             struct DacAsyncFrameData* asyncStacks = new struct DacAsyncFrameData[countAsyncStacks];
-            GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), countAsyncStacks, asyncStacks, &countAsyncStacks);
+            GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0, countAsyncStacks, asyncStacks, &countAsyncStacks);
             // Create a CordbAsyncChain for the async call stack.
             m_pAsyncChain.Assign(new CordbAsyncChain(GetProcess(), this, countAsyncStacks));
             for (int i = 0; i < countAsyncStacks; i++)
@@ -1080,9 +1081,8 @@ HRESULT CordbThread::GetAsyncCallStackChain(ICorDebugChain ** ppChain)
                                                               asyncStacks[i].vmMethodDesc,
                                                               asyncStacks[i].codeStartAddr,
                                                               asyncStacks[i].diagnosticIP);
-                frame->LoadArgsNLocalsInfo(m_vmThreadToken, 1, i+1, asyncStacks[i].numberOfVars);
+                frame->LoadArgsNLocalsInfo(m_vmThreadToken, 0, i, asyncStacks[i].numberOfVars);
                 m_pAsyncChain->AddAsyncFrame(i, frame);
-                GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0, NULL, &countAsyncStacks);
             }
             m_pAsyncChain->QueryInterface(IID_ICorDebugChain, (void**)ppChain);
             delete[] asyncStacks;
@@ -11329,8 +11329,8 @@ HRESULT CordbAsyncFrame::GetFunctionToken(mdMethodDef *pToken)
 //do not ask for it in an async frame -- fix concord
 HRESULT CordbAsyncFrame::GetStackRange(CORDB_ADDRESS *pStart, CORDB_ADDRESS *pEnd)
 {
-    *pStart = 0;
-    *pEnd = 1;
+    *pStart = (CORDB_ADDRESS)this; //this is used by VIL to find the correct frame, we need to return something or fix VIL????
+    *pEnd = (CORDB_ADDRESS)this;
     return S_OK;
 }
 
@@ -11378,7 +11378,7 @@ HRESULT CordbAsyncFrame::EnumerateLocalVariables(ICorDebugValueEnum **ppValueEnu
 }
 HRESULT CordbAsyncFrame::GetLocalVariable(DWORD dwIndex, ICorDebugValue **ppValue)
 {
-    return E_NOTIMPL;
+    return GetLocalVariableEx(ILCODE_ORIGINAL_IL, dwIndex, ppValue);
 }
 HRESULT CordbAsyncFrame::EnumerateArguments(ICorDebugValueEnum **ppValueEnum)
 {
@@ -11467,10 +11467,16 @@ HRESULT CordbAsyncFrame::GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICo
     // load generic args
     {
         RSLockHolder stopGoLock(GetProcess()->GetStopGoLock());
-        m_pCode->GetFunction()->GetILCode()->GetLocalVariableType(dwIndex, NULL /* generic args here */, &pType);
+        CordbFunction* function = m_pCode->GetFunction();
+        ULONG argCount = 0;
+        _ASSERTE(function != NULL);
+        IfFailRet(function->GetILCodeAndSigToken());
+        IfFailRet(function->GetSig(NULL, &argCount, NULL));
+        CordbILCode* ilCode = function->GetILCode();        
+        IfFailRet(ilCode->GetLocalVariableType(dwIndex, NULL /* generic args here */, &pType));
         for (int i = 0 ; i < m_nNumberOfVars; i++)
         {
-            if (m_pAsyncVars[i].iLVarNum == dwIndex)
+            if (m_pAsyncVars[i].iLVarNum == dwIndex+argCount)
             {
                 CordbValue::CreateValueByType(m_pAppDomain,
                     pType,
@@ -11479,6 +11485,7 @@ HRESULT CordbAsyncFrame::GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICo
                     MemoryRange(NULL, 0),
                     NULL,
                     ppValue);
+                break;
             }
         }
     }
@@ -11513,7 +11520,8 @@ HRESULT CordbAsyncFrame::GetCodeEx(ILCodeKind flags, ICorDebugCode **ppCode)
 HRESULT CordbAsyncFrame::LoadArgsNLocalsInfo(VMPTR_Thread thread, int chainIndex, int frameIndex, int numberOfLocals)
 {
     m_nNumberOfVars = numberOfLocals;
-    m_pAsyncVars = new struct DacAsyncLocalsData[numberOfLocals];
-    //GetProcess()->m_pAsyncDacInterface->GetAsyncFrameArgsAndLocals(VmPtrToCookie(thread), chainIndex, frameIndex, numberOfLocals, m_pAsyncVars);
+    m_pAsyncVars = new struct DacAsyncLocalData[numberOfLocals];
+    int numberOfLocalsToRet = 0;
+    GetProcess()->m_pAsyncDacInterface->GetAsyncLocals(VmPtrToCookie(thread), chainIndex, frameIndex, numberOfLocals, m_pAsyncVars, &numberOfLocalsToRet);
     return S_OK;
 }

@@ -5407,6 +5407,7 @@ class CordbFunction : public CordbBase,
                       public ICorDebugFunction4,
                       public ICorDebugFunction5
 {
+    friend class CordbAsyncFrame;
 public:
     //-----------------------------------------------------------
     // Create from scope and member objects.
@@ -11654,7 +11655,7 @@ class CordbAsyncFrame : public CordbBase, public ICorDebugILFrame, public ICorDe
     CORDB_ADDRESS m_pCodeStart;
     UINT64 m_nDiagnosticOffset;
     int m_nNumberOfVars;
-    struct DacAsyncLocalsData* m_pAsyncVars;
+    struct DacAsyncLocalData* m_pAsyncVars;
 public:
     CordbAsyncFrame(CordbProcess* process,
                     CordbAsyncChain*   pChain,
