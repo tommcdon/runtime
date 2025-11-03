@@ -11374,7 +11374,7 @@ HRESULT CordbAsyncFrame::SetIP(ULONG32 nOffset)
 }
 HRESULT CordbAsyncFrame::EnumerateLocalVariables(ICorDebugValueEnum **ppValueEnum)
 {
-    return E_NOTIMPL;
+    return EnumerateLocalVariablesEx(ILCODE_ORIGINAL_IL, ppValueEnum);
 }
 HRESULT CordbAsyncFrame::GetLocalVariable(DWORD dwIndex, ICorDebugValue **ppValue)
 {
@@ -11382,7 +11382,26 @@ HRESULT CordbAsyncFrame::GetLocalVariable(DWORD dwIndex, ICorDebugValue **ppValu
 }
 HRESULT CordbAsyncFrame::EnumerateArguments(ICorDebugValueEnum **ppValueEnum)
 {
-    return E_NOTIMPL;
+    PUBLIC_REENTRANT_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    VALIDATE_POINTER_TO_OBJECT(ppValueEnum, ICorDebugValueEnum **);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    HRESULT hr = S_OK;
+
+    EX_TRY
+    {
+        RSInitHolder<CordbAsyncValueEnum> cdVE(new CordbAsyncValueEnum(this, CordbAsyncValueEnum::ARGS));
+
+        // Initialize the new enum
+        hr = cdVE->Init();
+        IfFailThrow(hr);
+
+        cdVE.TransferOwnershipExternal(ppValueEnum);
+    }
+    EX_CATCH_HRESULT(hr);
+
+    return hr;
 }
 HRESULT CordbAsyncFrame::GetArgument(DWORD dwIndex, ICorDebugValue ** ppValue)
 {
@@ -11456,7 +11475,26 @@ HRESULT CordbAsyncFrame::GetReturnValueForILOffset(ULONG32 ILoffset, ICorDebugVa
 
 HRESULT CordbAsyncFrame::EnumerateLocalVariablesEx(ILCodeKind flags, ICorDebugValueEnum **ppValueEnum)
 {
-    return E_NOTIMPL;
+    PUBLIC_REENTRANT_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    VALIDATE_POINTER_TO_OBJECT(ppValueEnum, ICorDebugValueEnum **);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    HRESULT hr = S_OK;
+
+    EX_TRY
+    {
+        RSInitHolder<CordbAsyncValueEnum> cdVE(new CordbAsyncValueEnum(this, CordbAsyncValueEnum::LOCAL_VARS));
+
+        // Initialize the new enum
+        hr = cdVE->Init();
+        IfFailThrow(hr);
+
+        cdVE.TransferOwnershipExternal(ppValueEnum);
+    }
+    EX_CATCH_HRESULT(hr);
+
+    return hr;
 }
 
 HRESULT CordbAsyncFrame::GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICorDebugValue **ppValue)
@@ -11472,7 +11510,7 @@ HRESULT CordbAsyncFrame::GetLocalVariableEx(ILCodeKind flags, DWORD dwIndex, ICo
         _ASSERTE(function != NULL);
         IfFailRet(function->GetILCodeAndSigToken());
         IfFailRet(function->GetSig(NULL, &argCount, NULL));
-        CordbILCode* ilCode = function->GetILCode();        
+        CordbILCode* ilCode = function->GetILCode();
         IfFailRet(ilCode->GetLocalVariableType(dwIndex, NULL /* generic args here */, &pType));
         for (int i = 0 ; i < m_nNumberOfVars; i++)
         {
@@ -11524,4 +11562,278 @@ HRESULT CordbAsyncFrame::LoadArgsNLocalsInfo(VMPTR_Thread thread, int chainIndex
     int numberOfLocalsToRet = 0;
     GetProcess()->m_pAsyncDacInterface->GetAsyncLocals(VmPtrToCookie(thread), chainIndex, frameIndex, numberOfLocals, m_pAsyncVars, &numberOfLocalsToRet);
     return S_OK;
+}
+
+//
+// This is an internal helper to get the CordbFunction object associated with this native frame.
+//
+// Return Value:
+//    the associated CordbFunction object
+//
+
+CordbFunction *CordbAsyncFrame::GetFunction()
+{
+    return m_pCode->GetFunction();
+}
+
+/* ------------------------------------------------------------------------- *
+
+ * Value Enumerator class
+ *
+ * Used by CordbAsyncFrame for EnumLocalVars & EnumArgs.
+
+ * ------------------------------------------------------------------------- */
+
+CordbAsyncValueEnum::CordbAsyncValueEnum(CordbAsyncFrame *frame, ValueEnumMode mode) :
+    CordbBase(frame->GetProcess(), 0)
+{
+    _ASSERTE( frame != NULL );
+    _ASSERTE( mode == LOCAL_VARS || mode == ARGS);
+
+    m_frame = frame;
+    m_mode = mode;
+    m_iCurrent = 0;
+    m_iMax = 0;
+}
+
+/*
+ * CordbAsyncValueEnum::Init
+ *
+ * Initialize a CordbAsyncValueEnum object. Must be called after allocating the object and before using it. If Init
+ * fails, then destroy the object and release the memory.
+ *
+ * Parameters:
+ *     none.
+ *
+ * Returns:
+ *    HRESULT for success or failure.
+ *
+ */
+HRESULT CordbAsyncValueEnum::Init()
+{
+    HRESULT hr = S_OK;
+
+    // Get the function signature
+    CordbFunction *func = m_frame->GetFunction();
+
+    switch (m_mode)
+    {
+        case ARGS:
+        {
+            ULONG methodArgCount;
+            IfFailRet(func->GetSig(NULL, &methodArgCount, NULL));
+
+            // Grab the argument count for the size of the enumeration.
+            m_iCurrent = 0;
+            m_iMax = methodArgCount;
+            break;
+        }
+        case LOCAL_VARS:
+        {
+            // Get the locals signature.
+            ULONG localsCount;
+            IfFailRet(func->GetILCodeAndSigToken());
+            IfFailRet(func->GetILCode()->GetLocalVarSig(NULL, &localsCount));
+
+            // Grab the number of locals for the size of the enumeration.
+            m_iCurrent = 0;
+            m_iMax = localsCount;
+            break;
+        }
+    }
+
+    return hr;
+}
+
+CordbAsyncValueEnum::~CordbAsyncValueEnum()
+{
+    _ASSERTE(this->IsNeutered());
+    _ASSERTE(m_frame == NULL);
+}
+
+void CordbAsyncValueEnum::Neuter()
+{
+    m_frame = NULL;
+    CordbBase::Neuter();
+}
+
+
+
+HRESULT CordbAsyncValueEnum::QueryInterface(REFIID id, void **pInterface)
+{
+    if (id == IID_ICorDebugEnum)
+        *pInterface = static_cast<ICorDebugEnum*>(this);
+    else if (id == IID_ICorDebugValueEnum)
+        *pInterface = static_cast<ICorDebugValueEnum*>(this);
+    else if (id == IID_IUnknown)
+        *pInterface = static_cast<IUnknown*>(static_cast<ICorDebugValueEnum*>(this));
+    else
+    {
+        *pInterface = NULL;
+        return E_NOINTERFACE;
+    }
+
+    ExternalAddRef();
+    return S_OK;
+}
+
+HRESULT CordbAsyncValueEnum::Skip(ULONG celt)
+{
+    PUBLIC_REENTRANT_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    HRESULT hr = E_FAIL;
+    if ( (m_iCurrent+celt) < m_iMax ||
+         celt == 0)
+    {
+        m_iCurrent += celt;
+        hr = S_OK;
+    }
+
+    return hr;
+}
+
+HRESULT CordbAsyncValueEnum::Reset()
+{
+    PUBLIC_REENTRANT_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    m_iCurrent = 0;
+    return S_OK;
+}
+
+HRESULT CordbAsyncValueEnum::Clone(ICorDebugEnum **ppEnum)
+{
+    PUBLIC_REENTRANT_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    VALIDATE_POINTER_TO_OBJECT(ppEnum, ICorDebugEnum **);
+
+    HRESULT hr = S_OK;
+    EX_TRY
+    {
+        *ppEnum = NULL;
+        RSInitHolder<CordbAsyncValueEnum> pCVE(new CordbAsyncValueEnum(m_frame, m_mode));
+
+        // Initialize the new enum
+        hr = pCVE->Init();
+        IfFailThrow(hr);
+
+        pCVE.TransferOwnershipExternal(ppEnum);
+    }
+    EX_CATCH_HRESULT(hr);
+
+    return hr;
+}
+
+HRESULT CordbAsyncValueEnum::GetCount(ULONG *pcelt)
+{
+    PUBLIC_REENTRANT_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    VALIDATE_POINTER_TO_OBJECT(pcelt, ULONG *);
+
+    if( pcelt == NULL)
+    {
+        return E_INVALIDARG;
+    }
+
+    (*pcelt) = m_iMax;
+    return S_OK;
+}
+
+//
+// In the event of failure, the current pointer will be left at
+// one element past the troublesome element.  Thus, if one were
+// to repeatedly ask for one element to iterate through the
+// array, you would iterate exactly m_iMax times, regardless
+// of individual failures.
+HRESULT CordbAsyncValueEnum::Next(ULONG celt, ICorDebugValue *values[], ULONG *pceltFetched)
+{
+    PUBLIC_API_ENTRY(this);
+    FAIL_IF_NEUTERED(this);
+    ATT_REQUIRE_STOPPED_MAY_FAIL(GetProcess());
+
+    VALIDATE_POINTER_TO_OBJECT_ARRAY(values, ICorDebugValue *,
+        celt, true, true);
+    VALIDATE_POINTER_TO_OBJECT_OR_NULL(pceltFetched, ULONG *);
+
+    if ((pceltFetched == NULL) && (celt != 1))
+    {
+        return E_INVALIDARG;
+    }
+
+    if (celt == 0)
+    {
+        if (pceltFetched != NULL)
+        {
+            *pceltFetched = 0;
+        }
+        return S_OK;
+    }
+
+    HRESULT hr = S_OK;
+
+    int iMax = (int)min( (ULONG)m_iMax, m_iCurrent+celt);
+    int i;
+    for (i = m_iCurrent; i< iMax;i++)
+    {
+        switch ( m_mode )
+        {
+        case ARGS:
+            {
+                hr = m_frame->GetArgument(i, &(values[i-m_iCurrent]));
+                break;
+            }
+        case LOCAL_VARS:
+            {
+                hr = m_frame->GetLocalVariableEx(ILCODE_ORIGINAL_IL, i, &(values[i-m_iCurrent]));
+                break;
+            }
+        }
+        if (FAILED(hr))
+        {
+            break;
+        }
+    }
+
+    int count = (i - m_iCurrent);
+
+    if (FAILED(hr))
+    {
+        //
+        // we failed: +1 pushes us past troublesome element
+        //
+        m_iCurrent += 1 + count;
+    }
+    else
+    {
+        m_iCurrent += count;
+    }
+
+    if (pceltFetched != NULL)
+    {
+        *pceltFetched = count;
+    }
+
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
+
+    //
+    // If we reached the end of the enumeration, but not the end
+    // of the number of requested items, we return S_FALSE.
+    //
+    if (((ULONG)count) < celt)
+    {
+        return S_FALSE;
+    }
+
+    return hr;
 }
