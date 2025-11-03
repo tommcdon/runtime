@@ -1538,14 +1538,11 @@ BOOL CordbProcess::TryInitializeCDac()
     if (TryGetSymbol(m_pDACDataTarget, m_clrInstanceId, "DotNetRuntimeContractDescriptor", &contractDescriptorAddr))
     {
         IUnknown* thisImpl = nullptr;
-        ICorDebugMutableDataTarget* thisMutableImpl = nullptr;
         HRESULT qiRes = m_pDACDataTarget->QueryInterface(IID_IUnknown, (void**)&thisImpl);
         _ASSERTE(SUCCEEDED(qiRes));
-        qiRes = m_pDACDataTarget->QueryInterface(IID_ICorDebugMutableDataTarget, (void**)&thisMutableImpl);
-        _ASSERTE(SUCCEEDED(qiRes));
-    
+
         CDAC& cdac = m_cdac;
-        cdac = CDAC::Create(contractDescriptorAddr, thisMutableImpl, thisImpl);
+        cdac = CDAC::Create(contractDescriptorAddr, m_pMutableDataTarget, thisImpl);
 
         if (m_cdac.IsValid())
         {
