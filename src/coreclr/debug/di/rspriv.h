@@ -11709,7 +11709,7 @@ class CordbAsyncFrame : public CordbBase, public ICorDebugILFrame, public ICorDe
     CORDB_ADDRESS m_pCodeStart;
     UINT64 m_nDiagnosticOffset;
     int m_nNumberOfVars;
-    struct DacAsyncLocalData* m_pAsyncVars;
+    struct DacpAsyncLocalData* m_pAsyncVars;
 public:
     CordbAsyncFrame(CordbProcess* process,
                     CordbAsyncChain*   pChain,

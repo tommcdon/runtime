@@ -3788,7 +3788,7 @@ EXTERN_C const IID IID_IAsyncDacInterface1;
             CLRDATA_ADDRESS thread,
             int chainId,
             int count,
-            struct DacAsyncFrameData *values,
+            struct DacpAsyncFrameData *values,
             int *pNeeded) = 0;
         
         virtual HRESULT STDMETHODCALLTYPE GetAsyncLocals( 
@@ -3796,7 +3796,7 @@ EXTERN_C const IID IID_IAsyncDacInterface1;
             int chainId,
             int frameId,
             int count,
-            struct DacAsyncLocalData *values,
+            struct DacpAsyncLocalData *values,
             int *pNeeded) = 0;
         
     };
@@ -3835,7 +3835,7 @@ EXTERN_C const IID IID_IAsyncDacInterface1;
             CLRDATA_ADDRESS thread,
             int chainId,
             int count,
-            struct DacAsyncFrameData *values,
+            struct DacpAsyncFrameData *values,
             int *pNeeded);
         
         DECLSPEC_XFGVIRT(IAsyncDacInterface1, GetAsyncLocals)
@@ -3845,7 +3845,7 @@ EXTERN_C const IID IID_IAsyncDacInterface1;
             int chainId,
             int frameId,
             int count,
-            struct DacAsyncLocalData *values,
+            struct DacpAsyncLocalData *values,
             int *pNeeded);
         
         END_INTERFACE

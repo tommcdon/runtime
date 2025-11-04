@@ -1037,7 +1037,7 @@ HRESULT CordbThread::GetActiveChain(ICorDebugChain ** ppChain)
     return hr;
 }
 
-struct MSLAYOUT DacAsyncFrameData
+struct MSLAYOUT DacpAsyncFrameData
 {
     int                   frameId;
     VMPTR_Module          vmModule;
@@ -1048,7 +1048,7 @@ struct MSLAYOUT DacAsyncFrameData
     UINT32                numberOfVars;   
 };
 
-struct MSLAYOUT DacAsyncLocalData
+struct MSLAYOUT DacpAsyncLocalData
 {
     CORDB_ADDRESS         address;
     UINT32                iLVarNum;
@@ -1068,7 +1068,7 @@ HRESULT CordbThread::GetAsyncCallStackChain(ICorDebugChain ** ppChain)
         GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0/*chainId*/, 0, NULL, &countAsyncStacks);
         if (countAsyncStacks > 0)
         {
-            struct DacAsyncFrameData* asyncStacks = new struct DacAsyncFrameData[countAsyncStacks];
+            struct DacpAsyncFrameData* asyncStacks = new struct DacpAsyncFrameData[countAsyncStacks];
             GetProcess()->m_pAsyncDacInterface->GetAsyncCallStack(VmPtrToCookie(m_vmThreadToken), 0, countAsyncStacks, asyncStacks, &countAsyncStacks);
             // Create a CordbAsyncChain for the async call stack.
             m_pAsyncChain.Assign(new CordbAsyncChain(GetProcess(), this, countAsyncStacks));
@@ -11558,7 +11558,7 @@ HRESULT CordbAsyncFrame::GetCodeEx(ILCodeKind flags, ICorDebugCode **ppCode)
 HRESULT CordbAsyncFrame::LoadArgsNLocalsInfo(VMPTR_Thread thread, int chainIndex, int frameIndex, int numberOfLocals)
 {
     m_nNumberOfVars = numberOfLocals;
-    m_pAsyncVars = new struct DacAsyncLocalData[numberOfLocals];
+    m_pAsyncVars = new struct DacpAsyncLocalData[numberOfLocals];
     int numberOfLocalsToRet = 0;
     GetProcess()->m_pAsyncDacInterface->GetAsyncLocals(VmPtrToCookie(thread), chainIndex, frameIndex, numberOfLocals, m_pAsyncVars, &numberOfLocalsToRet);
     return S_OK;

@@ -34,8 +34,8 @@ struct DacpRCWData;
 struct DacpAllocData;
 struct DacpGenerationAllocData;
 struct DacpExceptionObjectData;
-struct DacAsyncFrameData;
-struct DacAsyncLocalData;
+struct DacpAsyncFrameData;
+struct DacpAsyncLocalData;
 cpp_quote("#if 0")
 typedef ULONG64 CLRDATA_ADDRESS;
 typedef int CONTEXT;
@@ -583,6 +583,6 @@ interface ISOSDacInterface16 : IUnknown
 interface IAsyncDacInterface1 : IUnknown
 {
     HRESULT GetAsyncChainCount(CLRDATA_ADDRESS thread, int *chains);
-    HRESULT GetAsyncCallStack(CLRDATA_ADDRESS thread, int chainId, int count, struct DacAsyncFrameData *values, int *pNeeded);
-    HRESULT GetAsyncLocals(CLRDATA_ADDRESS thread, int chainId, int frameId, int count, struct DacAsyncLocalData *values, int *pNeeded);
+    HRESULT GetAsyncCallStack(CLRDATA_ADDRESS thread, int chainId, int count, struct DacpAsyncFrameData *values, int *pNeeded);
+    HRESULT GetAsyncLocals(CLRDATA_ADDRESS thread, int chainId, int frameId, int count, struct DacpAsyncLocalData *values, int *pNeeded);
 }
