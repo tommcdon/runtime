@@ -7312,13 +7312,14 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
 
             // Enable the JMC backstop for traditional steppers to catch us in case
             // we didn't predict the call target properly.
-            // Except for async thunks, we know where the target is.
-            if (!(trace.GetTraceType() == TRACE_UNJITTED_METHOD && trace.GetMethodDesc()->IsAsyncMethod()))
+            // Except for async thunks, we know where the target is. 
+            MethodDesc* pMD = NonVirtualEntry2MethodDesc(GetIP(context));           
+            if (!(trace.GetTraceType() == TRACE_UNJITTED_METHOD && trace.GetMethodDesc()->IsAsyncMethod())
+                && !(trace.GetTraceType() == TRACE_MANAGED && pMD != NULL && (pMD->IsAsyncThunkMethod() || pMD->IsAsyncMethod())))
             {
                 LOG((LF_CORDB, LL_INFO10000, "DS::TP: Enabling JMC backstop MOIN\n"));
                 EnableJMCBackStop(NULL);
             }
-                // EnableJMCBackStop(NULL);
 
 
             if (!traceOk
