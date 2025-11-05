@@ -1542,7 +1542,7 @@ BOOL CordbProcess::TryInitializeCDac()
         _ASSERTE(SUCCEEDED(qiRes));
 
         CDAC& cdac = m_cdac;
-        cdac = CDAC::Create(contractDescriptorAddr, m_pMutableDataTarget, thisImpl);
+        cdac = CDAC::Create(contractDescriptorAddr, m_pDACDataTarget, thisImpl);
 
         if (m_cdac.IsValid())
         {
