@@ -897,6 +897,7 @@ DEFINE_FIELD_U(rgFilename,                 StackFrameHelper,   rgFilename)
 DEFINE_FIELD_U(rgiLineNumber,              StackFrameHelper,   rgiLineNumber)
 DEFINE_FIELD_U(rgiColumnNumber,            StackFrameHelper,   rgiColumnNumber)
 DEFINE_FIELD_U(rgiLastFrameFromForeignExceptionStackTrace,            StackFrameHelper,   rgiLastFrameFromForeignExceptionStackTrace)
+DEFINE_FIELD_U(rguAsyncFrameFlag,           StackFrameHelper,   rguAsyncFrameFlag)
 DEFINE_FIELD_U(iFrameCount,                StackFrameHelper,   iFrameCount)
 
 DEFINE_CLASS(EVENT_SOURCE,           Tracing,            EventSource)

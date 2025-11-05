@@ -36,6 +36,7 @@ namespace System.Diagnostics
         private int[]? rgiLineNumber;
         private int[]? rgiColumnNumber;
         private bool[]? rgiLastFrameFromForeignExceptionStackTrace;
+        private uint[]? rguAsyncFrameFlag;
         private int iFrameCount;
 #pragma warning restore 414
 
@@ -74,6 +75,8 @@ namespace System.Diagnostics
             rgiColumnNumber = null;
 
             rgiLastFrameFromForeignExceptionStackTrace = null;
+
+            rguAsyncFrameFlag = null;
 
             // 0 means capture all frames.  For StackTraces from an Exception, the EE always
             // captures all frames.  For other uses of StackTraces, we can abort stack walking after
@@ -162,5 +165,8 @@ namespace System.Diagnostics
         }
 
         public int GetNumberOfFrames() { return iFrameCount; }
+
+        public bool IsAsyncFrameSeparator(int i) { return rguAsyncFrameFlag != null && (rguAsyncFrameFlag[i] & 0x1) != 0; }
+        public bool IsAsyncFrame(int i) { return rguAsyncFrameFlag != null && (rguAsyncFrameFlag[i] & 0x2) != 0; }
     }
 }

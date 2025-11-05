@@ -225,6 +225,17 @@ namespace System.Diagnostics
             for (int iFrameIndex = 0; iFrameIndex < _numOfFrames; iFrameIndex++)
             {
                 StackFrame? sf = GetFrame(iFrameIndex);
+                if (sf?.IsAsyncFrameSeparator == true)
+                {
+                    // We want a newline at the end of every line except for the last
+                    if (fFirstFrame)
+                        fFirstFrame = false;
+                    else
+                        sb.AppendLine();
+
+                    sb.Append("----- Async Method Frame Separator -----");
+                    continue;
+                }
                 MethodBase? mb = sf?.GetMethod();
                 if (mb != null && (ShowInStackTrace(mb) ||
                                    (iFrameIndex == _numOfFrames - 1))) // Don't filter last frame
@@ -249,6 +260,10 @@ namespace System.Diagnostics
                             methodChanged = TryResolveStateMachineMethod(ref mb, out declaringType);
                         }
                     }
+                    else if (sf?.IsAsyncFrame == true)
+                    {
+                        sb.Append("[Async] ");
+                    }
 
                     // if there is a type (non global method) print it
                     // ResolveStateMachineMethod may have set declaringType to null
@@ -263,6 +278,7 @@ namespace System.Diagnostics
                         }
                         sb.Append('.');
                     }
+
                     sb.Append(mb.Name);
 
                     // deal with the generic portion of the method

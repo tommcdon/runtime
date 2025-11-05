@@ -31,6 +31,7 @@ enum StackTraceElementFlags
     // Set if the element references a method that needs a keep alive object
     STEF_KEEPALIVE = 0x0004,
     STEF_CONTINUATION = 0x0008,
+    STEF_CONTINUATION_SEPARATOR = 0x0010,
 };
 
 // This struct is used by SOS in the diagnostic repo.

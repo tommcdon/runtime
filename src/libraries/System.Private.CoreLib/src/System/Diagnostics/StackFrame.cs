@@ -50,6 +50,9 @@ namespace System.Diagnostics
         /// </summary>
         private bool _isLastFrameFromForeignExceptionStackTrace;
 
+        private bool _isAsyncFrameSeparator;
+        private bool _isAsyncFrame;
+
         private void InitMembers()
         {
             _nativeOffset = OFFSET_UNKNOWN;
@@ -203,8 +206,19 @@ namespace System.Diagnostics
             StringBuilder sb = new StringBuilder(255);
             bool includeFileInfoIfAvailable;
 
+            if (_isAsyncFrameSeparator)
+            {
+                sb.Append("----- Async Method Frame Separator -----");
+                sb.Append(Environment.NewLine);
+                return sb.ToString();
+            }
+
             if (_method != null)
             {
+                if (_isAsyncFrame)
+                {
+                    sb.Append("[Async] ");
+                }
                 sb.Append(_method.Name);
 
                 // deal with the generic portion of the method
@@ -258,5 +272,8 @@ namespace System.Diagnostics
 
             return sb.ToString();
         }
+
+        internal bool IsAsyncFrame => _isAsyncFrame;
+        internal bool IsAsyncFrameSeparator => _isAsyncFrameSeparator;
     }
 }

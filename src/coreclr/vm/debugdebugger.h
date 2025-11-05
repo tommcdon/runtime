@@ -44,6 +44,7 @@ public:
     I4ARRAYREF rgiColumnNumber;
 
     BOOLARRAYREF rgiLastFrameFromForeignExceptionStackTrace;
+    U4ARRAYREF rguAsyncFrameFlag;
 
     int iFrameCount;
 

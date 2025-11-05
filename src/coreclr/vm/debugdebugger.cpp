@@ -214,9 +214,9 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
             continue;
         }
 
-        typedef struct
+        typedef struct NextContinuationData
         {
-            OBJECTREF* pNext;
+            NextContinuationData* pNext;
             OBJECTREF* pContinuation; // System.Runtime.CompilerServices.Continuation
         } NextContinuationData;
 
@@ -289,6 +289,10 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                         PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
                         if (pILResolver != nullptr)
                         {
+                            if (pContinuationResumeList->GetCount() == 0)
+                            {
+                                pContinuationResumeList->Append({ nullptr, 0 });
+                            }
                             pContinuationResumeList->Append({ pILResolver->GetStubTargetMethodDesc(), pResumeNext->FinalResumeIP });
                         }
                     }
@@ -299,9 +303,12 @@ bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArr
                     continuation = pNext;
                 }
 
-                // TODO: use NextContinuationData's "Next" field to continue the list
-                //pNextContinuation = pNext;
-                break;
+                pNextContinuation = pNextContinuation->pNext;
+
+                if (pNextContinuation != nullptr && pNextContinuation->pContinuation != nullptr && *(pNextContinuation->pContinuation) != nullptr)
+                {
+                    pContinuationResumeList->Append({ nullptr, 0 });
+                }
             } // while pNextContinuation != NULL
         }
         GCPROTECT_END();
@@ -399,20 +406,32 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         for (UINT32 i = 0; i < pData->continuationResumeList.GetCount() && (pData->NumFramesRequested == 0 || pData->cElements < pData->NumFramesRequested); i++)
         {
             DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
-            MethodDesc* pResumeMd = resumeData.pResumeMd;
-            PCODE pResumeIp = resumeData.pResumeIp;
-            
-            DWORD dwNativeOffset = 0;
-            EECodeInfo codeInfo(pResumeIp);
-            if (codeInfo.IsValid())
+            if (resumeData.pResumeMd == nullptr)
             {
-                dwNativeOffset = codeInfo.GetRelOffset();
+                // separator between continuations
+                pData->pElements[pData->cElements].InitPass1(
+                    0,
+                    nullptr,
+                    0,
+                    STEF_CONTINUATION_SEPARATOR);
             }
-            pData->pElements[pData->cElements].InitPass1(
-                dwNativeOffset,
-                pResumeMd,
-                pResumeIp,
-                STEF_CONTINUATION);
+            else
+            {
+                MethodDesc* pResumeMd = resumeData.pResumeMd;
+                PCODE pResumeIp = resumeData.pResumeIp;
+            
+                DWORD dwNativeOffset = 0;
+                EECodeInfo codeInfo(pResumeIp);
+                if (codeInfo.IsValid())
+                {
+                    dwNativeOffset = codeInfo.GetRelOffset();
+                }
+                pData->pElements[pData->cElements].InitPass1(
+                    dwNativeOffset,
+                    pResumeMd,
+                    pResumeIp,
+                    STEF_CONTINUATION);
+            }
 
             ++pData->cElements;
         }
@@ -627,6 +646,10 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
         OBJECTREF columnNumbers = AllocatePrimitiveArray(ELEMENT_TYPE_I4, data.cElements);
         SetObjectReference( (OBJECTREF *)&(gc.pStackFrameHelper->rgiColumnNumber), (OBJECTREF)columnNumbers);
 
+        // Allocate memory for the AsyncFrameFlag flags
+        OBJECTREF asyncFrameFlag = AllocatePrimitiveArray(ELEMENT_TYPE_U4, data.cElements);
+        SetObjectReference( (OBJECTREF *)&(gc.pStackFrameHelper->rguAsyncFrameFlag), (OBJECTREF)asyncFrameFlag);
+
         // Allocate memory for the flag indicating if this frame represents the last one from a foreign
         // exception stack trace provided we have any such frames. Otherwise, set it to null.
         // When StackFrameHelper.IsLastFrameFromForeignExceptionStackTrace is invoked in managed code,
@@ -652,6 +675,10 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
         unsigned iCurDynamic = 0;
         for (int iElement=0; iElement < data.cElements; iElement++)
         {
+            if (data.pElements[iElement].flags & STEF_CONTINUATION_SEPARATOR)
+            {
+                continue; 
+            }
             MethodDesc *pMethod = data.pElements[iElement].pFunc;
             if (pMethod->IsLCGMethod())
             {
@@ -673,6 +700,20 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
         int iNumValidFrames = 0;
         for (int i = 0; i < data.cElements; i++)
         {
+            if (data.pElements[i].flags & STEF_CONTINUATION_SEPARATOR)
+            {
+                CLR_U4 *pAsyncFrameFlag = (CLR_U4 *)((U4ARRAYREF)gc.pStackFrameHelper->rguAsyncFrameFlag)
+                            ->GetDirectPointerToNonObjectElements();
+                pAsyncFrameFlag[iNumValidFrames++] = (CLR_U4)0x1;
+                continue;
+            }
+            if (data.pElements[i].flags & STEF_CONTINUATION)
+            {
+                CLR_U4 *pAsyncFrameFlag = (CLR_U4 *)((U4ARRAYREF)gc.pStackFrameHelper->rguAsyncFrameFlag)
+                            ->GetDirectPointerToNonObjectElements();
+                pAsyncFrameFlag[iNumValidFrames] = (CLR_U4)0x2;
+            }
+
             // The managed stacktrace classes always returns typical method definition, so we don't need to bother providing exact instantiation.
             // Generics::GetExactInstantiationsOfMethodAndItsClassFromCallInformation(data.pElements[i].pFunc, data.pElements[i].pExactGenericArgsToken, &pExactMethod, &thExactType);
             MethodDesc* pFunc = data.pElements[i].pFunc;
@@ -1253,6 +1294,16 @@ void DebugStackTrace::Element::InitPass1(
 )
 {
     LIMITED_METHOD_CONTRACT;
+
+    if (flags & STEF_CONTINUATION_SEPARATOR)
+    {
+        this->pFunc = NULL;
+        this->dwOffset = 0;
+        this->ip = NULL;
+        this->flags = flags;
+        return;
+    }
+
     _ASSERTE(pFunc != NULL);
 
     // May have a null IP for ecall frames. If IP is null, then dwNativeOffset should be 0 too.
@@ -1804,6 +1855,11 @@ void DebugStackTrace::Element::InitPass2()
     CONTRACTL_END;
 
     _ASSERTE(!ThreadStore::HoldingThreadStore());
+
+    if (this->flags & STEF_CONTINUATION_SEPARATOR)
+    {
+        return;
+    }
 
     bool bRes = false;
 

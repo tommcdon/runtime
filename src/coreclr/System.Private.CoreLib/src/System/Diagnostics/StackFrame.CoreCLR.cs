@@ -15,6 +15,8 @@ namespace System.Diagnostics
         /// </summary>
         internal StackFrame(StackFrameHelper stackFrameHelper, int skipFrames, bool needFileInfo)
         {
+            _isAsyncFrameSeparator = stackFrameHelper.IsAsyncFrameSeparator(skipFrames);
+            _isAsyncFrame = stackFrameHelper.IsAsyncFrame(skipFrames);
             _method = stackFrameHelper.GetMethodBase(skipFrames);
             _nativeOffset = stackFrameHelper.GetOffset(skipFrames);
             _ilOffset = stackFrameHelper.GetILOffset(skipFrames);
