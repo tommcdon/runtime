@@ -1444,6 +1444,7 @@ BOOL StubLinkStubManager::TraceManager(Thread *thread,
 
 #endif // #ifndef DACCESS_COMPILE
 
+#ifdef FEATURE_JIT
 // -------------------------------------------------------
 // JumpStub stubs
 //
@@ -1492,6 +1493,7 @@ BOOL JumpStubStubManager::DoTraceStub(PCODE stubStartAddress,
 
     return TRUE;
 }
+#endif // FEATURE_JIT
 
 //
 // Stub manager for code sections. It forwards the query to the more appropriate
@@ -1555,8 +1557,10 @@ BOOL RangeSectionStubManager::DoTraceStub(PCODE stubStartAddress, TraceDestinati
 
     switch (GetStubKind(stubStartAddress))
     {
+#ifdef FEATURE_JIT
     case STUB_CODE_BLOCK_JUMPSTUB:
         return JumpStubStubManager::g_pManager->DoTraceStub(stubStartAddress, trace);
+#endif // FEATURE_JIT
 
     case STUB_CODE_BLOCK_STUBLINK:
         return StubLinkStubManager::g_pManager->DoTraceStub(stubStartAddress, trace);
@@ -2270,6 +2274,7 @@ StubLinkStubManager::DoEnumMemoryRegions(CLRDataEnumMemoryFlags flags)
     GetRangeList()->EnumMemoryRegions(flags);
 }
 
+#ifdef FEATURE_JIT
 void
 JumpStubStubManager::DoEnumMemoryRegions(CLRDataEnumMemoryFlags flags)
 {
@@ -2278,6 +2283,7 @@ JumpStubStubManager::DoEnumMemoryRegions(CLRDataEnumMemoryFlags flags)
     DAC_ENUM_VTHIS();
     EMEM_OUT(("MEM: %p JumpStubStubManager\n", dac_cast<TADDR>(this)));
 }
+#endif // FEATURE_JIT
 
 void
 RangeSectionStubManager::DoEnumMemoryRegions(CLRDataEnumMemoryFlags flags)

@@ -823,7 +823,7 @@ void AsyncTransformation::Transform(
 
     m_resumptionBBs.push_back(resumeBB);
 
-    CreateDebugInfoForSuspensionPoint(block, callDefInfo, layout);
+    CreateDebugInfoForSuspensionPoint(layout);
 }
 
 //------------------------------------------------------------------------
@@ -1421,6 +1421,9 @@ BasicBlock* AsyncTransformation::CreateSuspension(
 
     LIR::AsRange(suspendBB).InsertAtEnd(LIR::SeqTree(m_comp, ilOffsetNode));
 
+    GenTree* recordOffset = new (m_comp, GT_RECORD_ASYNC_RESUME) GenTreeVal(GT_RECORD_ASYNC_RESUME, TYP_VOID, stateNum);
+    LIR::AsRange(suspendBB).InsertAtEnd(recordOffset);
+
     // Allocate continuation
     GenTree* returnedContinuation = m_comp->gtNewLclvNode(m_returnedContinuationVar, TYP_REF);
 
@@ -1709,6 +1712,20 @@ void AsyncTransformation::CreateCheckAndSuspendAfterCall(BasicBlock*            
     LIR::AsRange(block).InsertAfter(storeContinuation, null, returnedContinuation, neNull, jtrue);
     *remainder = m_comp->fgSplitBlockAfterNode(block, jtrue);
     JITDUMP("  Remainder is " FMT_BB "\n", (*remainder)->bbNum);
+
+    // For non-inlined calls adjust offset for the split. We have the exact
+    // offset of the await call, so we can do better than
+    // fgSplitBlockAfterNode. The previous block contains the call so add 1 to
+    // include its start offset (the IL offsets are only used for range checks
+    // in the backend, so having the offset be inside an IL instruction is ok.)
+    DebugInfo di = call->GetAsyncInfo().CallAsyncDebugInfo.GetRoot();
+    DebugInfo par;
+    if (!di.GetParent(&par))
+    {
+        IL_OFFSET awaitOffset    = di.GetLocation().GetOffset();
+        block->bbCodeOffsEnd     = awaitOffset + 1;
+        (*remainder)->bbCodeOffs = awaitOffset + 1;
+    }
 
     FlowEdge* retBBEdge = m_comp->fgAddRefPred(suspendBB, block);
     block->SetCond(retBBEdge, block->GetTargetEdge());
@@ -2103,13 +2120,9 @@ GenTreeStoreInd* AsyncTransformation::StoreAtOffset(
 //   Create debug info for the specific suspension point we just created.
 //
 // Parameters:
-//   asyncCallBlock - Block that has the async call
-//   callDefInfo    - Information about the call def
 //   layout         - Layout of continuation
 //
-void AsyncTransformation::CreateDebugInfoForSuspensionPoint(BasicBlock*               asyncCallBlock,
-                                                            const CallDefinitionInfo& callDefInfo,
-                                                            const ContinuationLayout& layout)
+void AsyncTransformation::CreateDebugInfoForSuspensionPoint(const ContinuationLayout& layout)
 {
     uint32_t numLocals = 0;
     for (const LiveLocalInfo& local : layout.Locals)
@@ -2131,10 +2144,6 @@ void AsyncTransformation::CreateDebugInfoForSuspensionPoint(BasicBlock*         
     suspensionPoint.DiagnosticNativeOffset = 0;
     suspensionPoint.NumContinuationVars    = numLocals;
     m_comp->compSuspensionPoints->push_back(suspensionPoint);
-
-    GenTree* recordOffset = new (m_comp, GT_RECORD_ASYNC_RESUME)
-        GenTreeVal(GT_RECORD_ASYNC_RESUME, TYP_VOID, (int)(m_comp->compSuspensionPoints->size() - 1));
-    LIR::AsRange(asyncCallBlock).InsertAfter(callDefInfo.InsertAfter, recordOffset);
 }
 
 // AsyncTransformation::GetResultBaseVar:

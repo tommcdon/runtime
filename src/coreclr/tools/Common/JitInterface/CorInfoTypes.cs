@@ -119,6 +119,7 @@ namespace Internal.JitInterface
         private uint totalILArgs() { return (uint)(numArgs + (hasImplicitThis() ? 1 : 0)); }
         private bool isVarArg() { return ((getCallConv() == CorInfoCallConv.CORINFO_CALLCONV_VARARG) || (getCallConv() == CorInfoCallConv.CORINFO_CALLCONV_NATIVEVARARG)); }
         internal bool hasTypeArg() { return ((callConv & CorInfoCallConv.CORINFO_CALLCONV_PARAMTYPE) != 0); }
+        private bool isAsyncCall() { return ((callConv & CorInfoCallConv.CORINFO_CALLCONV_ASYNCCALL) != 0); }
     };
 
     //----------------------------------------------------------------------------
@@ -377,6 +378,7 @@ namespace Internal.JitInterface
         CORINFO_CALLCONV_HASTHIS = 0x20,
         CORINFO_CALLCONV_EXPLICITTHIS = 0x40,
         CORINFO_CALLCONV_PARAMTYPE = 0x80,     // Passed last. Same as CORINFO_GENERICS_CTXT_FROM_PARAMTYPEARG
+        CORINFO_CALLCONV_ASYNCCALL = 0x100,    // Is this a call with async calling convention?
     }
 
     // Represents the calling conventions supported with the extensible calling convention syntax
@@ -1339,6 +1341,11 @@ namespace Internal.JitInterface
 
     public struct AsyncSuspensionPoint
     {
+        // Offset of IP stored in ResumeInfo.DiagnosticIP. This offset maps to
+        // the IL call that resulted in the suspension point through an ASYNC
+        // mapping. Also used as a unique key for debug information about the
+        // suspension point. See ResumeInfo.DiagnosticIP in SPC for more info.
+        public uint DiagnosticNativeOffset;
         // Count of AsyncContinuationVarInfo in array of locals starting where
         // the previous suspension point's locals end.
         public uint NumContinuationVars;
@@ -1386,6 +1393,9 @@ namespace Internal.JitInterface
 
         // token comes from resolved static virtual method
         CORINFO_TOKENKIND_ResolvedStaticVirtualMethod = 0x1000 | CORINFO_TOKENKIND_Method,
+
+        // token comes from runtime async awaiting pattern
+        CORINFO_TOKENKIND_Await = 0x2000 | CORINFO_TOKENKIND_Method,
     };
 
     // These are error codes returned by CompileMethod
