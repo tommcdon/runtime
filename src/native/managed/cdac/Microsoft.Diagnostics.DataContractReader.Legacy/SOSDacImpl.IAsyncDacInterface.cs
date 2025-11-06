@@ -16,7 +16,7 @@ namespace Microsoft.Diagnostics.DataContractReader.Legacy;
 /// Implementation of IAsyncDacInterface interface intended to be passed out to consumers
 /// interacting with the DAC via those COM interfaces.
 /// </summary>
-internal sealed unsafe partial class SOSDacImpl : IAsyncDacInterface
+public sealed unsafe partial class SOSDacImpl : IAsyncDacInterface
 {
     private static void PrintHelper(Action<StringBuilder> action)
     {
