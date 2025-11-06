@@ -199,11 +199,19 @@ internal readonly partial struct Async_1 : IAsync
         typeHandle = default;
 
         ResumeData_1 rd = AssertCorrectResumeData(data);
-        TypeHandle[] typeHandles = ParseILVarTypes(rd);
-        if (ilVarNum < typeHandles.Length)
+
+        try
         {
-            typeHandle = typeHandles[ilVarNum];
-            return true;
+            TypeHandle[] typeHandles = ParseILVarTypes(rd);
+            if (ilVarNum < typeHandles.Length)
+            {
+                typeHandle = typeHandles[ilVarNum];
+                return true;
+            }
+        }
+        catch (System.Exception)
+        {
+            // Ignore errors
         }
 
         return false;

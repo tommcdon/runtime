@@ -1319,6 +1319,7 @@ public:
     HRESULT DumpStowedExceptionObject(CLRDataEnumMemoryFlags flags, CLRDATA_ADDRESS ccwPtr);
     HRESULT EnumMemStowedException(CLRDataEnumMemoryFlags flags);
 #endif
+    HRESULT EnumContinuationData(CLRDataEnumMemoryFlags flags, PTR_Thread pThread, PTR_MethodTable pMT);
 
     HRESULT EnumMemWriteDataSegment();
 

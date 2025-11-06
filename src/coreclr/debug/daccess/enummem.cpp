@@ -804,6 +804,8 @@ HRESULT ClrDataAccess::EnumMemWalkStackHelper(CLRDataEnumMemoryFlags flags,
         TADDR currentSP;
         currentSP = dac_cast<TADDR>(pThread->GetCachedStackLimit()) + sizeof(TADDR);
 
+        bool asyncFramesPresent = false;
+
         // exhaust the frames using DAC api
         for (; status == S_OK; )
         {
@@ -965,6 +967,27 @@ HRESULT ClrDataAccess::EnumMemWalkStackHelper(CLRDataEnumMemoryFlags flags,
                                 }
                             }
                             EX_CATCH_RETHROW_ONLY_COR_E_OPERATIONCANCELLED
+
+                            EX_TRY
+                            {
+                                if (pMethodDesc->IsAsyncMethod())
+                                {
+                                    asyncFramesPresent = true;
+                                }
+                                else if (asyncFramesPresent)
+                                {
+                                    DefineFullyQualifiedNameForClass();
+                                    if (!strcmp(GetFullyQualifiedNameForClassNestedAware(pMethodDesc->GetMethodTable()),
+                                            "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTaskCore") &&
+                                        !strcmp(pMethodDesc->GetName(), "DispatchContinuations"))
+                                    {
+                                        // capture async v2 continuations
+                                        EnumContinuationData(flags, dac_cast<PTR_Thread>(dac_cast<TADDR>(pThread)), pMethodDesc->GetMethodTable());
+                                    }
+                                }
+                            }
+                            EX_CATCH_RETHROW_ONLY_COR_E_OPERATIONCANCELLED
+
 
                             pMethodDesc->EnumMemoryRegions(flags);
 
@@ -1338,6 +1361,159 @@ HRESULT ClrDataAccess::EnumMemDumpAllThreadsStack(CLRDataEnumMemoryFlags flags)
     m_dumpStats.m_cbStack = m_cbMemoryReported - cbMemoryReported;
 
     return status;
+}
+
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+//
+// Walks and saves the managed continuation data for async methods.
+//
+// In order for the cDAC to parse continuation data, we need the following MethodTables enumerated:
+//
+// 1. System.Runtime.CompilerServices.RuntimeAsyncTaskCore+DispatcherInfo
+// 2. System.Runtime.CompilerServices.Continuation
+// 3. System.Runtime.CompilerServices.ResumeInfo
+// 
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+HRESULT ClrDataAccess::EnumContinuationData(CLRDataEnumMemoryFlags flags, PTR_Thread pThread, PTR_MethodTable pMT)
+{
+    SUPPORTS_DAC;
+
+    if (pThread == NULL)
+        return E_INVALIDARG;
+
+    // Look for thread static field t_dispatcherInfo: Type=DispatcherInfo*
+    // Which is a nested struct containing the field NextContinuation: Type=System.Runtime.CompilerServices.Continuation
+    // Continuation has a field "Resume" which is a fnptr to the method to invoke to resume the async method.
+    ApproxFieldDescIterator fieldIter(pMT, ApproxFieldDescIterator::STATIC_FIELDS);
+    for (FieldDesc *field = fieldIter.Next(); field != NULL; field = fieldIter.Next())
+    {
+        if (field->IsEnCNew() || !field->IsThreadStatic() || field->GetFieldType() != ELEMENT_TYPE_PTR)
+            continue;
+
+        TypeHandle typeHandle = field->GetFieldTypeHandleThrowing();
+        if (typeHandle == NULL)
+            continue;
+
+        MethodTable* pFieldMT = typeHandle.GetMethodTable();
+        if (pFieldMT == NULL)
+            continue;
+
+        // dac unsafe?
+        // pFieldMT->EnsureTlsIndexAllocated();
+
+        LPCUTF8 fieldName = field->GetName();
+        if (fieldName == nullptr || strcmp(fieldName, "t_dispatcherInfo"))
+            continue;
+
+        // enumerate DispatcherInfo type
+        typeHandle.GetTypeParam().GetMethodTable()->EnumMemoryRegions(flags);
+
+        struct DispatcherInfo;
+        typedef DPTR(DispatcherInfo) PTR_DispatcherInfo;
+        typedef DPTR(PTR_DispatcherInfo) PTR_PTR_DispatcherInfo;
+        struct DispatcherInfo
+        {
+            PTR_DispatcherInfo pNext;
+            OBJECTREF continuation; // System.Runtime.CompilerServices.Continuation
+        };
+
+        struct ResumeInfo
+        {
+            PCODE pResume;
+            PCODE pDiagnosticIP;
+        };
+        typedef DPTR(ResumeInfo) PTR_ResumeInfo;
+
+        PTR_BYTE base = pMT->GetNonGCThreadStaticsBasePointer(dac_cast<PTR_Thread>(pThread));
+        if (base == NULL)
+            continue;
+
+        SIZE_T offset = field->GetOffset();
+        PTR_PTR_DispatcherInfo ppDispatcherInfo = (PTR_PTR_DispatcherInfo)((PTR_BYTE)base + (DWORD)offset);
+        if (ppDispatcherInfo == NULL || *ppDispatcherInfo == NULL)
+            continue;
+
+        PTR_DispatcherInfo pDispatcherInfo = *ppDispatcherInfo;
+        while (pDispatcherInfo != NULL)
+        {
+            DispatcherInfo dispatcherInfo = *pDispatcherInfo;
+            if (pDispatcherInfo->continuation == NULL)
+            {
+                break;
+            }
+
+            OBJECTREF continuation = pDispatcherInfo->continuation;
+            while (continuation != NULL)
+            {
+                // dump the managed Continuation object
+                DumpManagedObject(flags, continuation);
+
+                OBJECTREF pNext = nullptr;
+                PTR_ResumeInfo pResumeInfo = nullptr;
+                UINT32 state = 0;
+                UINT32 continuationflags = 0;
+                int numFound = 0;
+                {
+                    PTR_MethodTable derivedContMT = continuation->GetMethodTable();
+                    PTR_MethodTable contMT = derivedContMT->GetParentMethodTable();
+
+                    // Enumerate the MethodTable for Continuation
+                    derivedContMT->EnumMemoryRegions(flags);
+                    ApproxFieldDescIterator continuationFieldIter(contMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+                    for (FieldDesc *continuationField = continuationFieldIter.Next(); continuationField != NULL && numFound < 3; continuationField = continuationFieldIter.Next())
+                    {
+                        LPCUTF8 fieldName = continuationField->GetName();
+                        if (!strcmp(fieldName, "Next"))
+                        {
+                            pNext = (OBJECTREF)(Object*)continuation->GetPtrOffset(continuationField->GetOffset());
+                            numFound++;
+                        }
+                        else if (!strcmp(fieldName, "ResumeInfo"))
+                        {
+                            // Dump the ResumeInfo method table
+                            continuationField->GetFieldTypeHandleThrowing()
+                                .GetTypeParam()
+                                .GetMethodTable()->EnumMemoryRegions(flags);
+                            pResumeInfo = dac_cast<PTR_ResumeInfo>((TADDR)continuation->GetPtrOffset(continuationField->GetOffset()));
+                            numFound++;
+                        }
+                        else if (!strcmp(fieldName, "State"))
+                        {
+                            state = continuation->GetOffset32(continuationField->GetOffset());
+                            numFound++;
+                        }
+                    }
+                }
+
+                if (pResumeInfo != nullptr)
+                {
+                    ResumeInfo resumeInfo = *pResumeInfo;
+
+                    EECodeInfo codeInfo(resumeInfo.pDiagnosticIP);
+                    if (codeInfo.IsValid())
+                    {
+                        MethodDesc* pContMD = codeInfo.GetMethodDesc();
+
+                        // DacValidateMD pulls in data needed to validate in the DAC/cDAC
+                        if (DacValidateMD(pContMD))
+                            pContMD->EnumMemoryRegions(flags);
+                    }
+                }
+
+                if (pNext == nullptr)
+                {
+                    break;
+                }
+                
+                continuation = pNext;
+            }
+
+            pDispatcherInfo = dispatcherInfo.pNext;
+        } // while pNextContinuation != NULL
+
+    } // foreach static field
+
+    return S_OK;
 }
 
 
