@@ -5812,7 +5812,7 @@ static bool IsTailCall(const BYTE * ip, ControllerStackInfo* info, TailCallFunct
     }
 
     TraceDestination trace;
-    if (!g_pEEInterface->TraceStub(ip, &trace) || !g_pEEInterface->FollowTrace(&trace))
+    if (!g_pEEInterface->TraceStub(ip, &trace) || !g_pEEInterface->FollowTrace(&trace) || trace.GetTraceType() == TRACE_EXTERNAL_METHOD_FIXUP)
     {
         return false;
     }
