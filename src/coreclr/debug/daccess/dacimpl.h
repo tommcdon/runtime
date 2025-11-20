@@ -816,7 +816,8 @@ class ClrDataAccess
       public ISOSDacInterface13,
       public ISOSDacInterface14,
       public ISOSDacInterface15,
-      public ISOSDacInterface16
+      public ISOSDacInterface16,
+      public IAsyncDacInterface2
 {
 public:
     ClrDataAccess(ICorDebugDataTarget * pTarget, ICLRDataTarget * pLegacyTarget=0);
@@ -1226,6 +1227,9 @@ public:
 
     // ISOSDacInterface16
     virtual HRESULT STDMETHODCALLTYPE GetGCDynamicAdaptationMode(int* pDynamicAdaptationMode);
+
+    // IAsyncDacInterface2
+    virtual HRESULT GetAsyncMethodFlags(CLRDATA_ADDRESS pMethodDesc, ClrDataAsyncMethodFlag *pAsyncMethodFlags);
 
     //
     // ClrDataAccess.

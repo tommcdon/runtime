@@ -3890,6 +3890,116 @@ EXTERN_C const IID IID_IAsyncDacInterface1;
 
 #endif 	/* __IAsyncDacInterface1_INTERFACE_DEFINED__ */
 
+
+
+
+/* interface __MIDL_itf_sospriv_0000_0022 */
+/* [local] */ 
+
+typedef /* [public][public] */ 
+enum __MIDL___MIDL_itf_sospriv_0000_0022_0001
+    {
+        CLRDATA_ASYNCMETHOD_FLAGS_NOTASYNC	= 0,
+        CLRDATA_ASYNCMETHOD_FLAGS_THUNK	= 0x1,
+        CLRDATA_ASYNCMETHOD_FLAGS_IMPL	= 0x2,
+        CLRDATA_ASYNCMETHOD_FLAGS_TASKRETURNING	= 0x4
+    } 	ClrDataAsyncMethodFlag;
+
+
+
+extern RPC_IF_HANDLE __MIDL_itf_sospriv_0000_0022_v0_0_c_ifspec;
+extern RPC_IF_HANDLE __MIDL_itf_sospriv_0000_0022_v0_0_s_ifspec;
+
+
+
+
+#ifndef __IAsyncDacInterface2_INTERFACE_DEFINED__
+#define __IAsyncDacInterface2_INTERFACE_DEFINED__
+
+/* interface IAsyncDacInterface2 */
+/* [uuid][local][object] */ 
+
+
+EXTERN_C const IID IID_IAsyncDacInterface2;
+
+#if defined(__cplusplus) && !defined(CINTERFACE)
+    
+    MIDL_INTERFACE("0297702A-0EE0-467C-92EC-DC3ACCF08AD8")
+    IAsyncDacInterface2 : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncMethodFlags( 
+            CLRDATA_ADDRESS pMethodDesc,
+            ClrDataAsyncMethodFlag *pAsyncMethodFlags) = 0;
+        
+    };
+    
+    
+#else 	/* C style interface */
+
+    typedef struct IAsyncDacInterface2Vtbl
+    {
+        BEGIN_INTERFACE
+        
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )( 
+            IAsyncDacInterface2 * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */ 
+            _COM_Outptr_  void **ppvObject);
+        
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )( 
+            IAsyncDacInterface2 * This);
+        
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )( 
+            IAsyncDacInterface2 * This);
+        
+        DECLSPEC_XFGVIRT(IAsyncDacInterface2, GetAsyncMethodFlags)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncMethodFlags )( 
+            IAsyncDacInterface2 * This,
+            CLRDATA_ADDRESS pMethodDesc,
+            ClrDataAsyncMethodFlag *pAsyncMethodFlags);
+        
+        END_INTERFACE
+    } IAsyncDacInterface2Vtbl;
+
+    interface IAsyncDacInterface2
+    {
+        CONST_VTBL struct IAsyncDacInterface2Vtbl *lpVtbl;
+    };
+
+    
+
+#ifdef COBJMACROS
+
+
+#define IAsyncDacInterface2_QueryInterface(This,riid,ppvObject)	\
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) ) 
+
+#define IAsyncDacInterface2_AddRef(This)	\
+    ( (This)->lpVtbl -> AddRef(This) ) 
+
+#define IAsyncDacInterface2_Release(This)	\
+    ( (This)->lpVtbl -> Release(This) ) 
+
+
+#define IAsyncDacInterface2_GetAsyncMethodFlags(This,pMethodDesc,pAsyncMethodFlags)	\
+    ( (This)->lpVtbl -> GetAsyncMethodFlags(This,pMethodDesc,pAsyncMethodFlags) ) 
+
+#endif /* COBJMACROS */
+
+
+#endif 	/* C style interface */
+
+
+
+
+#endif 	/* __IAsyncDacInterface2_INTERFACE_DEFINED__ */
+
+
+
 /* Additional Prototypes for ALL interfaces */
 
 /* end of Additional Prototypes */

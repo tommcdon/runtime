@@ -3243,6 +3243,10 @@ ClrDataAccess::QueryInterface(THIS_
     {
         ifaceRet = static_cast<ISOSDacInterface16*>(this);
     }
+    else if (IsEqualIID(interfaceId, __uuidof(IAsyncDacInterface2)))
+    {
+        ifaceRet = static_cast<IAsyncDacInterface2*>(this);
+    }
     else
     {
         *iface = NULL;
@@ -5949,6 +5953,15 @@ ClrDataAccess::GetMethodVarInfo(MethodDesc* methodDesc,
         nativeCodeStartAddr = PCODEToPINSTR(methodDesc->GetNativeCode());
     }
 
+    if (methodDesc->IsAsyncThunkMethod())
+    {
+        *numVarInfo = 0;
+        *varInfo = 0;
+        *codeOffset = 0;
+        nativeVars.SuppressRelease();
+        return S_OK;
+    }
+
     DebugInfoRequest request;
     request.InitFromStartingAddr(methodDesc, nativeCodeStartAddr);
 
@@ -6006,6 +6019,22 @@ ClrDataAccess::GetMethodNativeMap(MethodDesc* methodDesc,
     else
     {
         nativeCodeStartAddr = PCODEToPINSTR(methodDesc->GetNativeCode());
+    }
+
+    if (methodDesc->IsAsyncThunkMethod())
+    {
+        *mapAllocated = false;
+        *numMap = 0;
+        *map = nullptr;
+        if (codeStart)
+        {
+            *codeStart = 0;
+        }
+        if (codeOffset)
+        {
+            *codeOffset = 0;
+        }
+        return S_OK;
     }
 
     DebugInfoRequest request;
@@ -6889,6 +6918,49 @@ HRESULT ClrDataAccess::GetWatsonBuckets(DWORD dwThreadId, GenericModeBlock * pGM
 }
 
 #endif // TARGET_UNIX
+
+HRESULT ClrDataAccess::GetAsyncMethodFlags(CLRDATA_ADDRESS methodDesc, ClrDataAsyncMethodFlag *pAsyncMethodFlags)
+{
+    _ASSERTE(methodDesc != NULL);
+    _ASSERTE(pAsyncMethodFlags != NULL);
+
+    if ((methodDesc == NULL) || (pAsyncMethodFlags == NULL))
+    {
+        return E_INVALIDARG;
+    }
+
+    DAC_ENTER();
+
+    HRESULT hr = S_OK;
+
+    MethodDesc* pMethodDesc = dac_cast<PTR_MethodDesc>(methodDesc);
+
+    *pAsyncMethodFlags = CLRDATA_ASYNCMETHOD_FLAGS_NOTASYNC;
+    if (pMethodDesc->IsAsyncMethod())
+    {
+        if (pMethodDesc->IsAsyncThunkMethod())
+        {
+            *pAsyncMethodFlags = CLRDATA_ASYNCMETHOD_FLAGS_THUNK;
+        }
+        else if (pMethodDesc->IsAsyncVariantMethod())
+        {
+            *pAsyncMethodFlags = CLRDATA_ASYNCMETHOD_FLAGS_IMPL;
+        }
+        else if (pMethodDesc->IsTaskReturningMethod())
+        {
+            *pAsyncMethodFlags = CLRDATA_ASYNCMETHOD_FLAGS_TASKRETURNING;
+        }
+        else
+        {
+            hr = E_UNEXPECTED; // unknown type of async method!
+        }
+    }
+
+    DAC_LEAVE();
+
+    return hr;
+}
+
 
 //----------------------------------------------------------------------------
 //

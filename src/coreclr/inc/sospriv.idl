@@ -575,6 +575,14 @@ interface ISOSDacInterface16 : IUnknown
     HRESULT GetGCDynamicAdaptationMode(int* pDynamicAdaptationMode);
 }
 
+typedef enum
+{
+    CLRDATA_ASYNCMETHOD_FLAGS_NOTASYNC   = 0x00000000, // Not an async method
+    CLRDATA_ASYNCMETHOD_FLAGS_THUNK = 0x00000001, // Async method thunk, noting there is another variant that has the actual user method code in it
+    CLRDATA_ASYNCMETHOD_FLAGS_IMPL = 0x00000002, // Async method with actual IL implementation, noting there will be a async thunk variant in addition to this
+    CLRDATA_ASYNCMETHOD_FLAGS_TASKRETURNING = 0x00000004,  // Regular Task/ValueTask returning method, noting there will be an async call-able variant in addition to this
+} ClrDataAsyncMethodFlag;
+
 [
     object,
     local,
@@ -585,4 +593,16 @@ interface IAsyncDacInterface1 : IUnknown
     HRESULT GetAsyncChainCount(CLRDATA_ADDRESS thread, int *chains);
     HRESULT GetAsyncCallStack(CLRDATA_ADDRESS thread, int chainId, int count, struct DacpAsyncFrameData *values, int *pNeeded);
     HRESULT GetAsyncLocals(CLRDATA_ADDRESS thread, int chainId, int frameId, int count, struct DacpAsyncLocalData *values, int *pNeeded);
+    //HRESULT GetAsyncMethodFlags(CLRDATA_ADDRESS pMethodDesc, ClrDataAsyncMethodFlag *pAsyncMethodFlags);
+}
+
+
+[
+    object,
+    local,
+    uuid(0297702A-0EE0-467C-92EC-DC3ACCF08AD8)
+]
+interface IAsyncDacInterface2 : IUnknown
+{
+    HRESULT GetAsyncMethodFlags(CLRDATA_ADDRESS pMethodDesc, ClrDataAsyncMethodFlag *pAsyncMethodFlags);
 }
