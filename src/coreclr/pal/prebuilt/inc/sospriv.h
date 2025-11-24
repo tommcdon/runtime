@@ -3912,7 +3912,6 @@ extern RPC_IF_HANDLE __MIDL_itf_sospriv_0000_0022_v0_0_s_ifspec;
 
 
 
-
 #ifndef __IAsyncDacInterface2_INTERFACE_DEFINED__
 #define __IAsyncDacInterface2_INTERFACE_DEFINED__
 
@@ -3931,6 +3930,12 @@ EXTERN_C const IID IID_IAsyncDacInterface2;
         virtual HRESULT STDMETHODCALLTYPE GetAsyncMethodFlags( 
             CLRDATA_ADDRESS pMethodDesc,
             ClrDataAsyncMethodFlag *pAsyncMethodFlags) = 0;
+        
+        virtual HRESULT STDMETHODCALLTYPE GetAsyncDebugInfo( 
+            CLRDATA_ADDRESS methodDesc,
+            CLRDATA_ADDRESS addr,
+            unsigned int *pNumSuspensionPoints,
+            unsigned int **pAsyncSuspensionOffsets) = 0;
         
     };
     
@@ -3962,6 +3967,14 @@ EXTERN_C const IID IID_IAsyncDacInterface2;
             CLRDATA_ADDRESS pMethodDesc,
             ClrDataAsyncMethodFlag *pAsyncMethodFlags);
         
+        DECLSPEC_XFGVIRT(IAsyncDacInterface2, GetAsyncDebugInfo)
+        HRESULT ( STDMETHODCALLTYPE *GetAsyncDebugInfo )( 
+            IAsyncDacInterface2 * This,
+            CLRDATA_ADDRESS methodDesc,
+            CLRDATA_ADDRESS addr,
+            unsigned int *pNumSuspensionPoints,
+            unsigned int **pAsyncSuspensionOffsets);
+        
         END_INTERFACE
     } IAsyncDacInterface2Vtbl;
 
@@ -3987,6 +4000,9 @@ EXTERN_C const IID IID_IAsyncDacInterface2;
 
 #define IAsyncDacInterface2_GetAsyncMethodFlags(This,pMethodDesc,pAsyncMethodFlags)	\
     ( (This)->lpVtbl -> GetAsyncMethodFlags(This,pMethodDesc,pAsyncMethodFlags) ) 
+
+#define IAsyncDacInterface2_GetAsyncDebugInfo(This,methodDesc,addr,pNumSuspensionPoints,pAsyncSuspensionOffsets)	\
+    ( (This)->lpVtbl -> GetAsyncDebugInfo(This,methodDesc,addr,pNumSuspensionPoints,pAsyncSuspensionOffsets) ) 
 
 #endif /* COBJMACROS */
 

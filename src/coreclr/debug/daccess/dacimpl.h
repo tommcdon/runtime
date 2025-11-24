@@ -1230,6 +1230,7 @@ public:
 
     // IAsyncDacInterface2
     virtual HRESULT GetAsyncMethodFlags(CLRDATA_ADDRESS pMethodDesc, ClrDataAsyncMethodFlag *pAsyncMethodFlags);
+    virtual HRESULT GetAsyncDebugInfo(CLRDATA_ADDRESS methodDesc, CLRDATA_ADDRESS addr, unsigned int* pNumSuspensionPoints, unsigned int **pAsyncSuspensionOffsets);
 
     //
     // ClrDataAccess.

@@ -6961,6 +6961,56 @@ HRESULT ClrDataAccess::GetAsyncMethodFlags(CLRDATA_ADDRESS methodDesc, ClrDataAs
     return hr;
 }
 
+HRESULT ClrDataAccess::GetAsyncDebugInfo(CLRDATA_ADDRESS methodDesc, CLRDATA_ADDRESS addr, unsigned int* pNumSuspensionPoints, unsigned int** pAsyncSuspensionOffsets)
+{
+    DAC_ENTER();
+
+    HRESULT hr = S_OK;
+
+    *pNumSuspensionPoints = 0;
+    *pAsyncSuspensionOffsets = NULL;
+
+    MethodDesc* pMethodDesc = dac_cast<PTR_MethodDesc>(methodDesc);
+
+    DebugInfoRequest request;
+    request.InitFromStartingAddr(pMethodDesc, addr);
+    ICorDebugInfo::AsyncInfo asyncInfo = {};
+    NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
+    NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
+    ULONG32 cAsyncVars = 0;
+
+    BOOL success = DebugInfoManager::GetAsyncDebugInfo(
+        request, 
+        DebugInfoStoreNew, 
+        nullptr, 
+        &asyncInfo, 
+        &asyncSuspensionPoints, 
+        &asyncVars, 
+        &cAsyncVars);
+
+    if (success)
+    {
+        NewArrayHolder<unsigned int> suspensionOffsets(NULL);
+        suspensionOffsets = new (nothrow) unsigned int[asyncInfo.NumSuspensionPoints];
+        for (ULONG32 i = 0; i < asyncInfo.NumSuspensionPoints; i++)
+        {
+            suspensionOffsets[i] = asyncSuspensionPoints[i].DiagnosticNativeOffset;
+        }
+        *pAsyncSuspensionOffsets = suspensionOffsets;
+        suspensionOffsets.SuppressRelease();
+        *pNumSuspensionPoints = asyncInfo.NumSuspensionPoints;
+    }
+    else
+    {
+        hr = E_UNEXPECTED;
+    }
+
+
+    DAC_LEAVE();
+
+    return hr;
+}
+
 
 //----------------------------------------------------------------------------
 //

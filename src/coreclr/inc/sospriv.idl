@@ -605,4 +605,5 @@ interface IAsyncDacInterface1 : IUnknown
 interface IAsyncDacInterface2 : IUnknown
 {
     HRESULT GetAsyncMethodFlags(CLRDATA_ADDRESS pMethodDesc, ClrDataAsyncMethodFlag *pAsyncMethodFlags);
+    HRESULT GetAsyncDebugInfo(CLRDATA_ADDRESS methodDesc, CLRDATA_ADDRESS addr, unsigned int* pNumSuspensionPoints, unsigned int **pAsyncSuspensionOffsets);
 }
