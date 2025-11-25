@@ -6972,8 +6972,29 @@ HRESULT ClrDataAccess::GetAsyncDebugInfo(CLRDATA_ADDRESS methodDesc, CLRDATA_ADD
 
     MethodDesc* pMethodDesc = dac_cast<PTR_MethodDesc>(methodDesc);
 
+    if (pMethodDesc->IsAsyncThunkMethod())
+    {
+        DAC_LEAVE();
+        return E_INVALIDARG;
+    }
+
+    TADDR nativeCodeStartAddr;
+    if (addr != (TADDR)NULL)
+    {
+        NativeCodeVersion requestedNativeCodeVersion = ExecutionManager::GetNativeCodeVersion(addr);
+        if (requestedNativeCodeVersion.IsNull() || requestedNativeCodeVersion.GetNativeCode() == (PCODE)NULL)
+        {
+            return E_INVALIDARG;
+        }
+        nativeCodeStartAddr = PCODEToPINSTR(requestedNativeCodeVersion.GetNativeCode());
+    }
+    else
+    {
+        nativeCodeStartAddr = PCODEToPINSTR(pMethodDesc->GetNativeCode());
+    }
+
     DebugInfoRequest request;
-    request.InitFromStartingAddr(pMethodDesc, addr);
+    request.InitFromStartingAddr(pMethodDesc, nativeCodeStartAddr);
     ICorDebugInfo::AsyncInfo asyncInfo = {};
     NewArrayHolder<ICorDebugInfo::AsyncSuspensionPoint> asyncSuspensionPoints(NULL);
     NewArrayHolder<ICorDebugInfo::AsyncContinuationVarInfo> asyncVars(NULL);
