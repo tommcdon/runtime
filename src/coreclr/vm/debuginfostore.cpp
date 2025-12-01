@@ -1025,7 +1025,7 @@ BOOL DebugInfoManager::GetRichDebugInfo(
 }
 
 #ifdef DACCESS_COMPILE
-void DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD)
+void DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD, PCODE currentPC)
 {
     CONTRACTL
     {
@@ -1047,6 +1047,6 @@ void DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlag
         return; // no info available.
     }
 
-    pJitMan->EnumMemoryRegionsForMethodDebugInfo(flags, pMD);
+    pJitMan->EnumMemoryRegionsForMethodDebugInfo(flags, pMD, currentPC);
 }
 #endif

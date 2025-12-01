@@ -8218,6 +8218,10 @@ Thread::EnumMemoryRegionsWorker(CLRDataEnumMemoryFlags flags)
         if (pMD != NULL)
         {
             pMD->EnumMemoryRegions(flags);
+            if (frameIter.m_crawl.GetCodeInfo() != NULL && frameIter.m_crawl.GetCodeInfo()->GetCodeAddress() != (PCODE)NULL)
+            {
+                DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, pMD, frameIter.m_crawl.GetCodeInfo()->GetCodeAddress());
+            }
         }
 
         previousSP = currentSP;

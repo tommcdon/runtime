@@ -1597,7 +1597,7 @@ public:
     // DAC builds is compatible with the non-DAC one so that DAC virtual dispatch will work correctly.
 #if defined(DACCESS_COMPILE)
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
-    virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD) = 0;
+    virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD, PCODE currentPC) = 0;
 #if defined(FEATURE_EH_FUNCLETS)
     // Enumerate the memory necessary to retrieve the unwind info for a specific method
     virtual void EnumMemoryRegionsForMethodUnwindInfo(CLRDataEnumMemoryFlags flags, EECodeInfo * pCodeInfo) = 0;
@@ -1804,7 +1804,7 @@ public:
 
 #if defined(DACCESS_COMPILE)
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
-    virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD);
+    virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD, PCODE currentPC);
 #endif // DACCESS_COMPILE
 #if defined(FEATURE_EH_FUNCLETS)
     // Enumerate the memory necessary to retrieve the unwind info for a specific method
@@ -2400,7 +2400,7 @@ public:
 
 #if defined(DACCESS_COMPILE)
     virtual void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
-    virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD);
+    virtual void EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD, PCODE currentPC);
 #if defined(FEATURE_EH_FUNCLETS)
     // Enumerate the memory necessary to retrieve the unwind info for a specific method
     virtual void EnumMemoryRegionsForMethodUnwindInfo(CLRDataEnumMemoryFlags flags, EECodeInfo * pCodeInfo);

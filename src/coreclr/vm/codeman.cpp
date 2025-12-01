@@ -3845,7 +3845,7 @@ void CodeHeader::EnumMemoryRegions(CLRDataEnumMemoryFlags flags, IJitManager* pJ
 //-----------------------------------------------------------------------------
 // Enumerate for minidumps.
 //-----------------------------------------------------------------------------
-void EEJitManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD)
+void EEJitManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD, PCODE currentPC)
 {
     CONTRACTL
     {
@@ -3856,7 +3856,21 @@ void EEJitManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags fl
     CONTRACTL_END;
 
     DebugInfoRequest request;
-    PCODE addrCode = pMD->GetNativeCode();
+    PCODE addrCode = (PCODE)NULL;
+    if (currentPC != (PCODE)NULL)
+    {
+        NativeCodeVersion requestedNativeCodeVersion = ExecutionManager::GetNativeCodeVersion(currentPC);
+        if (!requestedNativeCodeVersion.IsNull() && 
+            requestedNativeCodeVersion.GetMethodDesc() == pMD)
+        {
+            addrCode = requestedNativeCodeVersion.GetNativeCode();
+        }
+    }
+    if (addrCode == (PCODE)NULL)
+    {
+        addrCode = pMD->GetNativeCode();
+    }
+
     request.InitFromStartingAddr(pMD, addrCode);
 
     CodeHeader * pHeader = GetCodeHeaderFromDebugInfoRequest(request);
@@ -5739,11 +5753,26 @@ BOOL ReadyToRunJitManager::GetRichDebugInfo(
 //
 // Need to write out debug info
 //
-void ReadyToRunJitManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD)
+void ReadyToRunJitManager::EnumMemoryRegionsForMethodDebugInfo(CLRDataEnumMemoryFlags flags, MethodDesc * pMD, PCODE currentPC)
 {
     SUPPORTS_DAC;
 
-    EECodeInfo codeInfo(pMD->GetNativeCode());
+    PCODE addrCode = (PCODE)NULL;
+    if (currentPC != (PCODE)NULL)
+    {
+        NativeCodeVersion requestedNativeCodeVersion = ExecutionManager::GetNativeCodeVersion(currentPC);
+        if (!requestedNativeCodeVersion.IsNull() && 
+            requestedNativeCodeVersion.GetMethodDesc() == pMD)
+        {
+            addrCode = requestedNativeCodeVersion.GetNativeCode();
+        }
+    }
+    if (addrCode == (PCODE)NULL)
+    {
+        addrCode = pMD->GetNativeCode();
+    }
+
+    EECodeInfo codeInfo(addrCode);
     if (!codeInfo.IsValid())
         return;
 

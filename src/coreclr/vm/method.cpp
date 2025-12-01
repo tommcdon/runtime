@@ -3654,7 +3654,7 @@ MethodDesc::EnumMemoryRegions(CLRDataEnumMemoryFlags flags)
     }
 
     // Need to save the Debug-Info for this method so that we can see it in a debugger later.
-    DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, this);
+    DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, this, (PCODE)NULL);
 
     if (!IsNoMetadata() ||IsILStub())
     {

@@ -588,7 +588,7 @@ HRESULT ClrDataAccess::DumpManagedExcepObject(CLRDataEnumMemoryFlags flags, OBJE
             FindLoadedMethodRefOrDef(pMD->GetMethodTable()->GetModule(), pMD->GetMemberDef());
 
             // Pulls in sequence points.
-            DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, pMD);
+            DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, pMD, stackTrace[i].ip);
             PCODE addr = pMD->GetNativeCode();
             if (addr != (PCODE)NULL)
             {
@@ -967,7 +967,7 @@ HRESULT ClrDataAccess::EnumMemWalkStackHelper(CLRDataEnumMemoryFlags flags,
                             // want to allow the function to fail for all targets.
 
                             // Pulls in sequence points and local variable info
-                            DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, pMethodDesc);
+                            DebugInfoManager::EnumMemoryRegionsForMethodDebugInfo(flags, pMethodDesc, addr);
 
 #if defined(FEATURE_EH_FUNCLETS) && defined(USE_GC_INFO_DECODER)
 
