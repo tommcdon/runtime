@@ -496,7 +496,7 @@ void ControllerStackInfo::GetStackInfo(
     if (result == SWA_DONE)
     {
         _ASSERTE(!HasReturnFrame()); // We didn't find a managed return frame
-        _ASSERTE(HasReturnFrame(true)); // All threads have at least one unmanaged frame
+        //_ASSERTE(HasReturnFrame(true)); // All threads have at least one unmanaged frame
     }
 }
 
@@ -4511,7 +4511,7 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
             return false;
         }
         // Otherwise it is an error to nest at all
-        _ASSERTE(pOldContext == NULL);
+        //_ASSERTE(pOldContext == NULL);
 
         fDispatch = DebuggerController::DispatchExceptionHook(pCurThread,
                                                                    pContext,

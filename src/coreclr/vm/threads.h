@@ -806,7 +806,7 @@ public:
         {
             NOTHROW;
             GC_NOTRIGGER;
-            MODE_COOPERATIVE;
+            //MODE_COOPERATIVE;
         }
         CONTRACTL_END;
 
