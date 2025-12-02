@@ -9295,8 +9295,55 @@ bool DebuggerContinuableExceptionBreakpoint::SendEvent(Thread *thread, bool fIpC
         }
         else
         {
-            CONTEXT contextToAdjust;
             BOOL adjustedContext = FALSE;
+#if defined(TARGET_WINDOWS) && defined(TARGET_AMD64)
+            DWORD contextFlags = pContext->ContextFlags;
+            DWORD contextSize = 0;
+
+            // determine the context size
+            BOOL success = InitializeContext(NULL, contextFlags, NULL, &contextSize);
+            if (success || GetLastError() != ERROR_INSUFFICIENT_BUFFER || contextSize == 0)
+            {
+                // The initialize call should fail but return contextSize
+                _ASSERTE(!"InitializeContext unexpectedly failed\n");
+                return false;
+            }
+
+            // allocate a temp buffer for the context
+            BYTE *pBuffer = (BYTE*)_alloca(contextSize);
+            if (pBuffer == NULL)
+            {
+                _ASSERTE(!"Failed to allocate context buffer");
+                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Failed to allocate context buffer\n"));
+                return false;
+            }
+
+            // make a copy of the context
+            PCONTEXT pContextToAdjust = NULL;
+            success = InitializeContext(pBuffer, contextFlags, &pContextToAdjust, &contextSize);
+            if (!success)
+            {
+                _ASSERTE(!"InitializeContext failed");
+                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
+                return false;
+            }
+
+            success = CopyContext(pContextToAdjust, contextFlags, pContext);
+            if (!success)
+            {
+                _ASSERTE(!"CopyContext failed");
+                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
+                return false;
+            }
+            adjustedContext = g_pEEInterface->AdjustContextForJITHelpersForDebugger(pContextToAdjust);
+            if (adjustedContext)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "D::DDBP: HIT DATA BREAKPOINT INSIDE WRITE BARRIER...\n"));
+                DebuggerDataBreakpoint *pDataBreakpoint = new (interopsafe) DebuggerDataBreakpoint(thread);
+                pDataBreakpoint->AddAndActivateNativePatchForAddress((CORDB_ADDRESS_TYPE*)GetIP(pContextToAdjust), FramePointer::MakeFramePointer(GetFP(pContextToAdjust)), true, DPT_DEFAULT_TRACE_TYPE);
+            }
+#else
+            CONTEXT contextToAdjust;
             memcpy(&contextToAdjust, pContext, sizeof(CONTEXT));
             adjustedContext = g_pEEInterface->AdjustContextForJITHelpersForDebugger(&contextToAdjust);
             if (adjustedContext)
@@ -9305,6 +9352,7 @@ bool DebuggerContinuableExceptionBreakpoint::SendEvent(Thread *thread, bool fIpC
                 DebuggerDataBreakpoint *pDataBreakpoint = new (interopsafe) DebuggerDataBreakpoint(thread);
                 pDataBreakpoint->AddAndActivateNativePatchForAddress((CORDB_ADDRESS_TYPE*)GetIP(&contextToAdjust), FramePointer::MakeFramePointer(GetFP(&contextToAdjust)), true, DPT_DEFAULT_TRACE_TYPE);
             }
+#endif
             else
             {
                 LOG((LF_CORDB, LL_INFO10000, "D::DDBP: HIT DATA BREAKPOINT BUT STILL NEED TO ROLL ...\n"));
