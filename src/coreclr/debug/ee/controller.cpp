@@ -9314,7 +9314,7 @@ bool DebuggerContinuableExceptionBreakpoint::SendEvent(Thread *thread, bool fIpC
             if (pBuffer == NULL)
             {
                 _ASSERTE(!"Failed to allocate context buffer");
-                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Failed to allocate context buffer\n"));
+                LOG((LF_CORDB, LL_INFO10000, "DDB::TDB Failed to allocate context buffer\n"));
                 return false;
             }
 
@@ -9324,7 +9324,7 @@ bool DebuggerContinuableExceptionBreakpoint::SendEvent(Thread *thread, bool fIpC
             if (!success)
             {
                 _ASSERTE(!"InitializeContext failed");
-                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
+                LOG((LF_CORDB, LL_INFO10000, "DDB::TDB Unexpected result from InitializeContext (error: %d).\n", GetLastError()));
                 return false;
             }
 
@@ -9332,7 +9332,7 @@ bool DebuggerContinuableExceptionBreakpoint::SendEvent(Thread *thread, bool fIpC
             if (!success)
             {
                 _ASSERTE(!"CopyContext failed");
-                LOG((LF_CORDB, LL_INFO10000, "D::SSTCN Unexpected result from CopyContext (error: %d).\n", GetLastError()));
+                LOG((LF_CORDB, LL_INFO10000, "DDB::TDB Unexpected result from CopyContext (error: %d).\n", GetLastError()));
                 return false;
             }
             adjustedContext = g_pEEInterface->AdjustContextForJITHelpersForDebugger(pContextToAdjust);

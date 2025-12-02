@@ -6332,6 +6332,33 @@ void CommonTripThread()
 #endif // #ifndef DACCESS_COMPILE
 }
 
+
+typedef struct _DR7 *PDR7;
+typedef struct _DR7 {
+    DWORD       L0 : 1;
+    DWORD       G0 : 1;
+    DWORD       L1 : 1;
+    DWORD       G1 : 1;
+    DWORD       L2 : 1;
+    DWORD       G2 : 1;
+    DWORD       L3 : 1;
+    DWORD       G3 : 1;
+    DWORD       LE : 1;
+    DWORD       GE : 1;
+    DWORD       Pad1 : 3;
+    DWORD       GD : 1;
+    DWORD       Pad2 : 1;
+    DWORD       Pad3 : 1;
+    DWORD       Rwe0 : 2;
+    DWORD       Len0 : 2;
+    DWORD       Rwe1 : 2;
+    DWORD       Len1 : 2;
+    DWORD       Rwe2 : 2;
+    DWORD       Len2 : 2;
+    DWORD       Rwe3 : 2;
+    DWORD       Len3 : 2;
+} DR7;
+
 #ifndef DACCESS_COMPILE
 
 void Thread::SetFilterContext(CONTEXT *pContext)
@@ -6344,6 +6371,17 @@ void Thread::SetFilterContext(CONTEXT *pContext)
         PRECONDITION(GetThread() == this); // must be on current thread.
     } CONTRACTL_END;
 
+    if (pContext != nullptr)
+    {
+        PDR7 pdr7 = (PDR7)&pContext->Dr7;
+        LOG((LF_CORDB, LL_INFO100, "T:SFC: %x 1=E%d:0x%x[L%x]_RWE%x 2=E%d:0x%x[L%x]_RWE%x 3=E%d:0x%x[L%x]_RWE%x 4=E%d:0x%x[L%x]_RWE%x\n", 
+            GetThreadId(),
+            pdr7->L0, pContext->Dr0, pdr7->Len0, pdr7->Rwe0,
+            pdr7->L1, pContext->Dr1, pdr7->Len1, pdr7->Rwe1,
+            pdr7->L2, pContext->Dr2, pdr7->Len2, pdr7->Rwe2,
+            pdr7->L3, pContext->Dr3, pdr7->Len3, pdr7->Rwe3));
+    }
+
     m_debuggerFilterContext = pContext;
 }
 
@@ -6352,6 +6390,19 @@ void Thread::SetFilterContext(CONTEXT *pContext)
 T_CONTEXT *Thread::GetFilterContext(void)
 {
     LIMITED_METHOD_DAC_CONTRACT;
+
+    {
+        T_CONTEXT *pContext = m_debuggerFilterContext;
+        if (pContext == NULL)
+            return NULL;
+        PDR7 pdr7 = (PDR7)&pContext->Dr7;
+        LOG((LF_CORDB, LL_INFO100, "T:GFC: %x 1=E%d:0x%x[L%x]_RWE%x 2=E%d:0x%x[L%x]_RWE%x 3=E%d:0x%x[L%x]_RWE%x 4=E%d:0x%x[L%x]_RWE%x\n", 
+            GetThreadId(),
+            pdr7->L0, pContext->Dr0, pdr7->Len0, pdr7->Rwe0,
+            pdr7->L1, pContext->Dr1, pdr7->Len1, pdr7->Rwe1,
+            pdr7->L2, pContext->Dr2, pdr7->Len2, pdr7->Rwe2,
+            pdr7->L3, pContext->Dr3, pdr7->Len3, pdr7->Rwe3));
+    }
 
    return m_debuggerFilterContext;
 }
