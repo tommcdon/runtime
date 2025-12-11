@@ -444,6 +444,11 @@ namespace System.Runtime.CompilerServices
                 asyncDispatcherInfo.NextContinuation = MoveContinuationState();
                 AsyncDispatcherInfo.t_current = &asyncDispatcherInfo;
 
+                if (TplEventSource.Log.IsEnabled())
+                {
+                    TplEventSource.Log.TraceSynchronousWorkBegin(this.Id, CausalitySynchronousWork.Execution);
+                }
+
                 while (true)
                 {
                     Debug.Assert(asyncDispatcherInfo.NextContinuation != null);
@@ -484,7 +489,7 @@ namespace System.Runtime.CompilerServices
                                 ThrowHelper.ThrowInvalidOperationException(ExceptionResource.TaskT_TransitionToFinal_AlreadyCompleted);
                             }
 
-                            return;
+                            break;
                         }
 
                         handlerContinuation.SetException(ex);
@@ -493,6 +498,11 @@ namespace System.Runtime.CompilerServices
 
                     if (asyncDispatcherInfo.NextContinuation == null)
                     {
+                        if (TplEventSource.Log.IsEnabled())
+                        {
+                            TplEventSource.Log.TraceOperationEnd(this.Id, AsyncCausalityStatus.Completed);
+                            Task.RemoveFromActiveTasks(this);
+                        }
                         bool successfullySet = TrySetResult(m_result);
 
                         contexts.Pop();
@@ -504,7 +514,7 @@ namespace System.Runtime.CompilerServices
                             ThrowHelper.ThrowInvalidOperationException(ExceptionResource.TaskT_TransitionToFinal_AlreadyCompleted);
                         }
 
-                        return;
+                        break;
                     }
 
                     if (QueueContinuationFollowUpActionIfNecessary(asyncDispatcherInfo.NextContinuation))
@@ -513,6 +523,10 @@ namespace System.Runtime.CompilerServices
                         AsyncDispatcherInfo.t_current = asyncDispatcherInfo.Next;
                         return;
                     }
+                }
+                if (TplEventSource.Log.IsEnabled())
+                {
+                    TplEventSource.Log.TraceSynchronousWorkEnd(CausalitySynchronousWork.Execution);
                 }
             }
 
@@ -612,6 +626,11 @@ namespace System.Runtime.CompilerServices
         private static Task<T?> FinalizeTaskReturningThunk<T>()
         {
             RuntimeAsyncTask<T?> result = new();
+            Task.AddToActiveTasks(result);
+            if (TplEventSource.Log.IsEnabled())
+            {
+                TplEventSource.Log.TraceOperationBegin(result.Id, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask", 0);
+            }
             result.HandleSuspended();
             return result;
         }
@@ -619,6 +638,11 @@ namespace System.Runtime.CompilerServices
         private static Task FinalizeTaskReturningThunk()
         {
             RuntimeAsyncTask<VoidTaskResult> result = new();
+            Task.AddToActiveTasks(result);
+            if (TplEventSource.Log.IsEnabled())
+            {
+                TplEventSource.Log.TraceOperationBegin(result.Id, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask", 0);
+            }
             result.HandleSuspended();
             return result;
         }
