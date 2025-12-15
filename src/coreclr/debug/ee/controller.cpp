@@ -2138,6 +2138,11 @@ BOOL DebuggerController::AddILPatch(AppDomain * pAppDomain, Module *module,
             {
                 DebuggerJitInfo *dji = it.Current();
                 _ASSERTE(dji->m_jitComplete);
+                if (dji->m_nativeCodeVersion.GetMethodDesc()->IsAsyncThunkMethod())
+                {
+                    it.Next();
+                    continue;
+                }
                 if (dji->m_encVersion == encVersion &&
                    (pMethodDescFilter == NULL || pMethodDescFilter == dji->m_nativeCodeVersion.GetMethodDesc()))
                 {
