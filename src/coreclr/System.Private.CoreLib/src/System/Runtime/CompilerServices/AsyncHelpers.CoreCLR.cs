@@ -436,6 +436,15 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
+#pragma warning disable IDE0060 // Remove unused parameter
+#pragma warning disable CA1822 // Mark members as static
+            [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
+            public void NotifyDebuggerOfRuntimeAsyncState()
+            {
+            }
+#pragma warning restore CA1822
+#pragma warning restore IDE0060
+
             private unsafe void DispatchContinuations()
             {
                 ExecutionAndSyncBlockStore contexts = default;
@@ -628,7 +637,11 @@ namespace System.Runtime.CompilerServices
         private static Task<T?> FinalizeTaskReturningThunk<T>()
         {
             RuntimeAsyncTask<T?> result = new();
-            Task.AddToActiveTasks(result);
+            if (Task.s_asyncDebuggingEnabled)
+            {
+                result.NotifyDebuggerOfRuntimeAsyncState();
+                Task.AddToActiveTasks(result);
+            }
             if (TplEventSource.Log.IsEnabled())
             {
                 TplEventSource.Log.TraceOperationBegin(result.Id, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask", 0);
@@ -640,7 +653,11 @@ namespace System.Runtime.CompilerServices
         private static Task FinalizeTaskReturningThunk()
         {
             RuntimeAsyncTask<VoidTaskResult> result = new();
-            Task.AddToActiveTasks(result);
+            if (Task.s_asyncDebuggingEnabled)
+            {
+                result.NotifyDebuggerOfRuntimeAsyncState();
+                Task.AddToActiveTasks(result);
+            }
             if (TplEventSource.Log.IsEnabled())
             {
                 TplEventSource.Log.TraceOperationBegin(result.Id, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask", 0);
