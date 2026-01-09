@@ -1123,6 +1123,33 @@ BOOL PrecodeStubManager::DoTraceStub(PCODE stubStartAddress,
     // MethodDesc. If, however, this is an IL method, then we are at risk to have another thread backpatch the call
     // here, so we'd miss if we patched the prestub. Therefore, we go right to the IL method and patch IL offset 0
     // by using TRACE_UNJITTED_METHOD.
+#if !defined(DACCESS_COMPILE)
+    EX_TRY
+    {
+        LOG((LF_CORDB, LL_INFO10000, "PrecodeStubManager::DoTraceStub - %p - IsAsyncThunkMethod %d - IsAsyncMethod %d\n", pMD, pMD->IsAsyncThunkMethod(), pMD->IsAsyncMethod()));        
+        if (pMD->IsAsyncThunkMethod())
+        {
+            MethodDesc* pMDVariant = pMD->GetAsyncVariantNoCreate();
+            if (pMDVariant)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "PrecodeStubManager::DoTraceStub - async method, tracing to underlying %p\n", pMD));
+                trace->InitForUnjittedMethod(pMDVariant);
+                return TRUE;
+            }
+            else
+            {
+                LOG((LF_CORDB, LL_INFO10000, "PrecodeStubManager::DoTraceStub - async method, but no underlying method found\n"));
+                trace->InitForUnjittedMethod(pMD);
+                return TRUE;
+            }
+        }
+    }
+    EX_CATCH
+    {
+        LOG((LF_CORDB, LL_INFO10000, "DoTraceStub - EX_CATCH\n"));
+    }
+    EX_END_CATCH
+#endif    
     if (!pMD->IsIL() && !pMD->IsILStub())
     {
         trace->InitForStub(GetPreStubEntryPoint());
