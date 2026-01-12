@@ -1411,9 +1411,6 @@ bool DebuggerController::BindPatch(DebuggerControllerPatch *patch,
         //We should never be calling this function with both a NULL startAddr and a DJI that doesn't have code.
         _ASSERTE(startAddr != NULL);
     }
-
-    _ASSERTE(!g_pEEInterface->IsStub((const BYTE *)startAddr));
-
     // If we've jitted, map to a native offset.
     DebuggerJitInfo *info = g_pDebugger->GetJitInfo(pMD, (const BYTE *)startAddr);
 
@@ -1425,6 +1422,7 @@ bool DebuggerController::BindPatch(DebuggerControllerPatch *patch,
 #endif //LOGGING
     if (info != NULL)
     {
+        _ASSERTE(!g_pEEInterface->IsStub((const BYTE *)startAddr) || info->m_nativeCodeVersion.GetMethodDesc()->IsAsyncThunkMethod());
         // There is a strange case with prejitted code and unjitted trace patches. We can enter this function
         // with no DebuggerJitInfo created, then have the call just above this actually create the
         // DebuggerJitInfo, which causes JitComplete to be called, which causes all patches to be bound! If this
