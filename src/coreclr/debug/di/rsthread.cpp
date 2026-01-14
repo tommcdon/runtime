@@ -11529,6 +11529,8 @@ CordbAsyncValueEnum::CordbAsyncValueEnum(CordbAsyncFrame *frame, ValueEnumMode m
     m_mode = mode;
     m_iCurrent = 0;
     m_iMax = 0;
+
+    GetProcess()->GetContinueNeuterList()->Add(GetProcess(), this);
 }
 
 /*
