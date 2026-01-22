@@ -755,17 +755,6 @@ HRESULT DacDbiInterfaceImpl::SetCompilerFlags(VMPTR_DomainAssembly vmDomainAssem
 } // DacDbiInterfaceImpl::SetCompilerFlags
 
 
-int DacDbiInterfaceImpl::GetIsAsyncV2(VMPTR_MethodDesc  vmMethodDesc)
-{
-    DD_ENTER_MAY_THROW;
-
-    _ASSERTE(!vmMethodDesc.IsNull());
-
-    MethodDesc * pMD = vmMethodDesc.GetDacPtr();
-    return pMD->IsAsyncMethod() ? 1 : 0;
-}
-
-
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // sequence points and var info
 //- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
