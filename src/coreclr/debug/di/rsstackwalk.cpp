@@ -895,42 +895,58 @@ HRESULT CordbAsyncStackWalk::PopulateFrame()
     if (m_pCurrentFrame != NULL)
         return S_OK;
 
-    // If we have reached the end of the stack, we can't populate any frame
-    if (m_continuationAddress == 0)
-        return CORDBG_E_PAST_END_OF_STACK;
-
-    HRESULT hr;
+        HRESULT hr;
     IDacDbiInterface* pDac = m_pProcess->GetDAC();
 
-    PCODE diagnosticIP;
-    CORDB_ADDRESS nextContinuation;
-    UINT32 state;
-    IfFailRet(pDac->ParseContinuation(
-        m_continuationAddress,
-        &diagnosticIP,
-        &nextContinuation,
-        &state));
+    while (true)
+    {
+        PCODE diagnosticIP;
+        CORDB_ADDRESS nextContinuation;
+        UINT32 state;
 
-    NativeCodeFunctionData codeData;
-    VMPTR_Module pModule;
-    mdMethodDef methodDef;
-    pDac->GetNativeCodeInfoForAddr(
-        diagnosticIP,
-        &codeData,
-        &pModule,
-        &methodDef);
-    CordbAsyncFrame * frame = new CordbAsyncFrame(
-        GetProcess(),
-        pModule,
-        methodDef,
-        codeData.vmNativeCodeMethodDescToken,
-        codeData.m_rgCodeRegions[kHot].pAddress,
-        diagnosticIP,
-        m_continuationAddress,
-        state);
-    
-    IfFailRet(frame->Init());
-    m_pCurrentFrame.Assign(frame);
+        // If we have reached the end of the stack, we can't populate any frame
+        if (m_continuationAddress == 0)
+            return CORDBG_E_PAST_END_OF_STACK;
+
+        IfFailRet(pDac->ParseContinuation(
+            m_continuationAddress,
+            &diagnosticIP,
+            &nextContinuation,
+            &state));
+
+        NativeCodeFunctionData codeData;
+        VMPTR_Module pModule;
+        mdMethodDef methodDef;
+        pDac->GetNativeCodeInfoForAddr(
+            diagnosticIP,
+            &codeData,
+            &pModule,
+            &methodDef);
+
+        IDacDbiInterface::DynamicMethodType dynMethodType = pDac->IsILStubOrLCGMethod(codeData.vmNativeCodeMethodDescToken);
+        if (dynMethodType == IDacDbiInterface::kILStub)
+        {
+            // Skipping async frame creation for IL stub/diagnostics-hidden method (e.g., async thunk)
+            m_continuationAddress = nextContinuation;
+
+            continue;
+        }
+
+        CordbAsyncFrame * frame = new CordbAsyncFrame(
+            GetProcess(),
+            pModule,
+            methodDef,
+            codeData.vmNativeCodeMethodDescToken,
+            codeData.m_rgCodeRegions[kHot].pAddress,
+            diagnosticIP,
+            m_continuationAddress,
+            state);
+
+        IfFailRet(frame->Init());
+        m_pCurrentFrame.Assign(frame);
+
+        break;
+    }
 
     return S_OK;
 }
