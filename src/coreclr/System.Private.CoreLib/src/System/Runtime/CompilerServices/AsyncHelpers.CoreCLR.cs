@@ -512,7 +512,7 @@ namespace System.Runtime.CompilerServices
 
                         if (newContinuation != null)
                         {
-                            Task.SetRuntimeAsyncContinuationTicks(newContinuation, tickCount);
+                            Task.UpdateRuntimeAsyncContinuationTicks(newContinuation, tickCount);
                             newContinuation.Next = nextContinuation;
                             HandleSuspended();
                             contexts.Pop();
