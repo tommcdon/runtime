@@ -349,6 +349,11 @@ namespace System.Runtime.CompilerServices
                 m_stateFlags |= (int)InternalTaskOptions.HiddenState;
             }
 
+            [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
+            static RuntimeAsyncTask()
+            {
+            }
+
             internal override void ExecuteFromThreadPool(Thread threadPoolThread)
             {
                 DispatchContinuations();
@@ -410,12 +415,13 @@ namespace System.Runtime.CompilerServices
                 SetContinuationState(headContinuation);
 
                 Continuation? nc = headContinuation;
+                long timestamp = Stopwatch.GetTimestamp();
                 if (Task.s_asyncDebuggingEnabled)
                 {
                     while (nc != null)
                     {
                         // On suspension we set timestamp for all continuations that have not yet had it set.
-                        Task.SetRuntimeAsyncContinuationTimestamp(nc, Stopwatch.GetTimestamp());
+                        Task.SetRuntimeAsyncContinuationTimestamp(nc, timestamp);
                         nc = nc.Next;
                     }
                 }
@@ -484,6 +490,15 @@ namespace System.Runtime.CompilerServices
                     Task.ThrowAsync(ex, targetContext: null);
                 }
             }
+
+#pragma warning disable IDE0060 // Remove unused parameter
+#pragma warning disable CA1822 // Mark members as static
+            [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
+            public void NotifyDebuggerOfRuntimeAsyncState()
+            {
+            }
+#pragma warning restore CA1822
+#pragma warning restore IDE0060
 
             [StackTraceHidden]
             private unsafe void DispatchContinuations()
@@ -726,6 +741,7 @@ namespace System.Runtime.CompilerServices
             RuntimeAsyncTask<T?> result = new();
             if (Task.s_asyncDebuggingEnabled)
             {
+                result.NotifyDebuggerOfRuntimeAsyncState();
                 Task.AddToActiveTasks(result);
             }
             if (TplEventSource.Log.IsEnabled())
@@ -741,6 +757,7 @@ namespace System.Runtime.CompilerServices
             RuntimeAsyncTask<VoidTaskResult> result = new();
             if (Task.s_asyncDebuggingEnabled)
             {
+                result.NotifyDebuggerOfRuntimeAsyncState();
                 Task.AddToActiveTasks(result);
             }
             if (TplEventSource.Log.IsEnabled())
