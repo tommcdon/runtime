@@ -157,7 +157,7 @@ namespace System.Runtime.CompilerServices
             return ReferenceEquals(x, y);
         }
 
-        public unsafe int GetHashCode([DisallowNull] Continuation obj)
+        public int GetHashCode([DisallowNull] Continuation obj)
         {
             object o = (object)obj;
             return RuntimeHelpers.GetHashCode(o);
@@ -494,8 +494,8 @@ namespace System.Runtime.CompilerServices
                 AsyncDispatcherInfo asyncDispatcherInfo;
                 asyncDispatcherInfo.Next = AsyncDispatcherInfo.t_current;
                 asyncDispatcherInfo.NextContinuation = MoveContinuationState();
-                AsyncDispatcherInfo.t_current = &asyncDispatcherInfo;
                 asyncDispatcherInfo.Task = this;
+                AsyncDispatcherInfo.t_current = &asyncDispatcherInfo;
                 bool isTplEnabled = TplEventSource.Log.IsEnabled();
 
                 if (isTplEnabled)
@@ -523,13 +523,17 @@ namespace System.Runtime.CompilerServices
                         Continuation? newContinuation = curContinuation.ResumeInfo->Resume(curContinuation, ref resultLoc);
 
                         if (Task.s_asyncDebuggingEnabled)
+                        {
                             Task.RemoveRuntimeAsyncContinuationTimestamp(curContinuation);
+                        }
 
                         if (newContinuation != null)
                         {
                             // we have a new Continuation that belongs to the same logical invocation as the previous; propagate debug info from previous continuation
                             if (Task.s_asyncDebuggingEnabled)
+                            {
                                 Task.SetRuntimeAsyncContinuationTimestamp(newContinuation, timestamp);
+                            }
                             newContinuation.Next = nextContinuation;
                             HandleSuspended();
                             contexts.Pop();
@@ -630,7 +634,9 @@ namespace System.Runtime.CompilerServices
                     if (continuation == null || (continuation.Flags & ContinuationFlags.HasException) != 0)
                         return continuation;
                     if (Task.s_asyncDebuggingEnabled)
+                    {
                         Task.RemoveRuntimeAsyncContinuationTimestamp(continuation);
+                    }
                     continuation = continuation.Next;
                 }
             }
@@ -719,7 +725,9 @@ namespace System.Runtime.CompilerServices
         {
             RuntimeAsyncTask<T?> result = new();
             if (Task.s_asyncDebuggingEnabled)
+            {
                 Task.AddToActiveTasks(result);
+            }
             if (TplEventSource.Log.IsEnabled())
             {
                 TplEventSource.Log.TraceOperationBegin(result.Id, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask", 0);
@@ -732,7 +740,9 @@ namespace System.Runtime.CompilerServices
         {
             RuntimeAsyncTask<VoidTaskResult> result = new();
             if (Task.s_asyncDebuggingEnabled)
+            {
                 Task.AddToActiveTasks(result);
+            }
             if (TplEventSource.Log.IsEnabled())
             {
                 TplEventSource.Log.TraceOperationBegin(result.Id, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask", 0);
