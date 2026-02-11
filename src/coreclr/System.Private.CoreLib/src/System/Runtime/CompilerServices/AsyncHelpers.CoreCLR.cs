@@ -11,7 +11,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Threading.Tasks.Sources;
 
 #if NATIVEAOT
@@ -329,11 +328,6 @@ namespace System.Runtime.CompilerServices
                 Debug.Assert(m_stateObject is null, "Expected to be able to use the state object field for Continuation.");
                 m_action = DispatchContinuations;
                 m_stateFlags |= (int)InternalTaskOptions.HiddenState;
-            }
-
-            [MethodImpl(MethodImplOptions.NoOptimization)]
-            static RuntimeAsyncTask()
-            {
             }
 
             internal override void ExecuteFromThreadPool(Thread threadPoolThread)
