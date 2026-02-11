@@ -347,11 +347,6 @@ namespace System.Runtime.CompilerServices
                 m_stateFlags |= (int)InternalTaskOptions.HiddenState;
             }
 
-            [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
-            static RuntimeAsyncTask()
-            {
-            }
-
             internal override void ExecuteFromThreadPool(Thread threadPoolThread)
             {
                 DispatchContinuations();
