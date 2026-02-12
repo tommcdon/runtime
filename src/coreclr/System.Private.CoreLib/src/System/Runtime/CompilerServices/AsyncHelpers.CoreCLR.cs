@@ -484,14 +484,12 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-#pragma warning disable IDE0060 // Remove unused parameter
 #pragma warning disable CA1822 // Mark members as static
             [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
             public void NotifyDebuggerOfRuntimeAsyncState()
             {
             }
 #pragma warning restore CA1822
-#pragma warning restore IDE0060
 
             [StackTraceHidden]
             private unsafe void DispatchContinuations()
