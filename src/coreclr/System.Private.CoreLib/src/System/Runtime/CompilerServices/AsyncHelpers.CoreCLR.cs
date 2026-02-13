@@ -390,18 +390,6 @@ namespace System.Runtime.CompilerServices
 
                 SetContinuationState(headContinuation);
 
-                Continuation? nc = headContinuation;
-                if (Task.s_asyncDebuggingEnabled)
-                {
-                    long timestamp = Stopwatch.GetTimestamp();
-                    while (nc != null)
-                    {
-                        // On suspension we set timestamp for all continuations that have not yet had it set.
-                        Task.SetRuntimeAsyncContinuationTimestamp(nc, timestamp);
-                        nc = nc.Next;
-                    }
-                }
-
                 try
                 {
                     if (critNotifier != null)
@@ -459,6 +447,17 @@ namespace System.Runtime.CompilerServices
                     {
                         Debug.Assert(notifier != null);
                         notifier.OnCompleted(GetContinuationAction());
+                    }
+                    Continuation? nc = headContinuation;
+                    if (Task.s_asyncDebuggingEnabled)
+                    {
+                        long timestamp = Stopwatch.GetTimestamp();
+                        while (nc != null)
+                        {
+                            // On suspension we set timestamp for all continuations that have not yet had it set.
+                            Task.SetRuntimeAsyncContinuationTimestamp(nc, timestamp);
+                            nc = nc.Next;
+                        }
                     }
                 }
                 catch (Exception ex)
