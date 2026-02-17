@@ -1201,24 +1201,22 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
         // For generic classes, the typical MT from FindLoadedMethodRefOrDef has no
         // native code. Find the loaded canonical instantiation (MyClass<__Canon>)
         // which has the shared compiled code.
+        // Following the LoadedMethodDescIterator pattern: iterate all loaded assemblies
+        // to find any loaded instantiation of this type, then get its canonical MT.
         MethodTable *pCanonMT = pExactMT;
         if (pExactMT->HasInstantiation())
         {
-            mdTypeDef targetCl = pExactMT->GetCl();
+            DWORD targetRid = pExactMT->GetTypeDefRid();
             Module *pDefModule = pExactMT->GetModule();
 
-            // Search each module's AvailableParamTypes for a loaded instantiation
-            // of this type that is shared by generic instantiations (i.e., the
-            // canonical MyClass<__Canon> form). We search the defining module and
-            // CoreLib (where __Canon lives) since ComputeLoaderModule may place it
-            // in either.
-            Module *pCoreLibModule = g_pCanonMethodTableClass->GetModule();
-            Module *modulesToSearch[] = { pDefModule, pCoreLibModule };
-            DWORD numModules = (pDefModule == pCoreLibModule) ? 1 : 2;
-
-            for (DWORD m = 0; m < numModules && pCanonMT == pExactMT; m++)
+            AppDomain *pAppDomain = AppDomain::GetCurrentDomain();
+            AppDomain::AssemblyIterator asmIter = pAppDomain->IterateAssembliesEx(
+                (AssemblyIterationFlags)(kIncludeLoaded | kIncludeExecution));
+            CollectibleAssemblyHolder<Assembly *> pAssembly;
+            while (asmIter.Next(pAssembly.This()) && pCanonMT == pExactMT)
             {
-                EETypeHashTable *pTypeTable = modulesToSearch[m]->GetAvailableParamTypes();
+                Module *pCurModule = pAssembly->GetModule();
+                EETypeHashTable *pTypeTable = pCurModule->GetAvailableParamTypes();
                 if (pTypeTable == NULL)
                     continue;
 
@@ -1231,11 +1229,10 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                         continue;
 
                     MethodTable *pMT = th.AsMethodTable();
-                    if (pMT->GetCl() == targetCl
-                        && pMT->IsSharedByGenericInstantiations()
+                    if (pMT->GetTypeDefRid() == targetRid
                         && pMT->GetModule() == pDefModule)
                     {
-                        pCanonMT = pMT;
+                        pCanonMT = pMT->GetCanonicalMethodTable();
                         break;
                     }
                 }
