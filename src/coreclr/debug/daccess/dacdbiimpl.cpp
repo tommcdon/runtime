@@ -23,6 +23,7 @@
 
 #include "dacdbiimpl.h"
 #include "instmethhash.h"
+#include "typehash.h"
 
 #ifdef FEATURE_COMINTEROP
 #include "runtimecallablewrapper.h"
@@ -1197,7 +1198,51 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
         MethodTable *pExactMT = pMethodDesc->GetMethodTable();
         Instantiation methodInst = pMethodDesc->GetMethodInstantiation();
 
-        MethodDesc *pMDescInCanonMT = pExactMT->GetCanonicalMethodTable()
+        // For generic classes, the typical MT from FindLoadedMethodRefOrDef has no
+        // native code. Find the loaded canonical instantiation (MyClass<__Canon>)
+        // which has the shared compiled code.
+        MethodTable *pCanonMT = pExactMT;
+        if (pExactMT->HasInstantiation())
+        {
+            mdTypeDef targetCl = pExactMT->GetCl();
+            Module *pDefModule = pExactMT->GetModule();
+
+            // Search each module's AvailableParamTypes for a loaded instantiation
+            // of this type that is shared by generic instantiations (i.e., the
+            // canonical MyClass<__Canon> form). We search the defining module and
+            // CoreLib (where __Canon lives) since ComputeLoaderModule may place it
+            // in either.
+            Module *pCoreLibModule = g_pCanonMethodTableClass->GetModule();
+            Module *modulesToSearch[] = { pDefModule, pCoreLibModule };
+            DWORD numModules = (pDefModule == pCoreLibModule) ? 1 : 2;
+
+            for (DWORD m = 0; m < numModules && pCanonMT == pExactMT; m++)
+            {
+                EETypeHashTable *pTypeTable = modulesToSearch[m]->GetAvailableParamTypes();
+                if (pTypeTable == NULL)
+                    continue;
+
+                EETypeHashTable::Iterator iter(pTypeTable);
+                EETypeHashEntry *pEntry;
+                while (pTypeTable->FindNext(&iter, &pEntry))
+                {
+                    TypeHandle th = pEntry->GetTypeHandle();
+                    if (th.IsTypeDesc())
+                        continue;
+
+                    MethodTable *pMT = th.AsMethodTable();
+                    if (pMT->GetCl() == targetCl
+                        && pMT->IsSharedByGenericInstantiations()
+                        && pMT->GetModule() == pDefModule)
+                    {
+                        pCanonMT = pMT;
+                        break;
+                    }
+                }
+            }
+        }
+
+        MethodDesc *pMDescInCanonMT = pCanonMT
             ->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
         if (pMDescInCanonMT != NULL)
         {
@@ -1214,7 +1259,6 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                 // Use the async variant's token (from pMDescInCanonMT), not the thunk's
                 // token, because the hash table entries store the variant's own GetMemberDef().
                 mdMethodDef methodDef = pMDescInCanonMT->GetMemberDef();
-                MethodTable *pCanonMT = pExactMT->GetCanonicalMethodTable();
 
                 // Build the canonical instantiation (__Canon for each type arg).
                 // We use g_pCanonMethodTableClass directly rather than
