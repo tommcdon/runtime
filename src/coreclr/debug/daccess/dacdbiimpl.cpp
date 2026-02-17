@@ -22,6 +22,7 @@
 #include "virtualcallstub.h"
 
 #include "dacdbiimpl.h"
+#include "instmethhash.h"
 
 #ifdef FEATURE_COMINTEROP
 #include "runtimecallablewrapper.h"
@@ -1191,13 +1192,66 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
     {
         // Find the async variant (the method that contains the actual IL/native code).
         // FindLoadedMethodRefOrDef returns the canonical/typical MethodDesc, so
-        // GetParallelMethodDesc on the canonical MethodTable is sufficient to find
-        // the async variant definition.
-        MethodDesc *pAsyncVariant = pMethodDesc->GetMethodTable()->GetCanonicalMethodTable()
+        // GetParallelMethodDesc on the canonical MethodTable finds the async variant
+        // definition.
+        MethodTable *pExactMT = pMethodDesc->GetMethodTable();
+        Instantiation methodInst = pMethodDesc->GetMethodInstantiation();
+
+        MethodDesc *pMDescInCanonMT = pExactMT->GetCanonicalMethodTable()
             ->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
-        if (pAsyncVariant != NULL)
+        if (pMDescInCanonMT != NULL)
         {
-            pMethodDesc = pAsyncVariant;
+            if (methodInst.IsEmpty())
+            {
+                // Non-generic methods (or generic class methods with no method-level type args)
+                // can be returned directly.
+                pMethodDesc = pMDescInCanonMT;
+            }
+            else
+            {
+                // For method-level generics, the typical definition has no native code.
+                // Find the shared compiled version (Foo<__Canon>) in InstMethodHashTable.
+                // Use the async variant's token (from pMDescInCanonMT), not the thunk's
+                // token, because the hash table entries store the variant's own GetMemberDef().
+                mdMethodDef methodDef = pMDescInCanonMT->GetMemberDef();
+                MethodTable *pCanonMT = pExactMT->GetCanonicalMethodTable();
+
+                // Build the canonical instantiation (__Canon for each type arg).
+                // We use g_pCanonMethodTableClass directly rather than
+                // CanonicalizeGenericArg because the typical definition has TypeVar
+                // args, and CanonicalizeGenericArg does not map TypeVars to __Canon.
+                CQuickBytes qbRepInst;
+                DWORD cbAllocaSize = 0;
+                if (ClrSafeInt<DWORD>::multiply(methodInst.GetNumArgs(), sizeof(TypeHandle), cbAllocaSize))
+                {
+                    TypeHandle *repInst = reinterpret_cast<TypeHandle *>(qbRepInst.AllocNoThrow(cbAllocaSize));
+                    if (repInst != NULL)
+                    {
+                        for (DWORD i = 0; i < methodInst.GetNumArgs(); i++)
+                        {
+                            repInst[i] = TypeHandle(g_pCanonMethodTableClass);
+                        }
+
+                        Instantiation canonInst(repInst, methodInst.GetNumArgs());
+                        Module *pLoaderModule = ClassLoader::ComputeLoaderModule(pCanonMT, methodDef, canonInst);
+                        InstMethodHashTable *pTable = pLoaderModule->GetInstMethodHashTable();
+                        if (pTable != NULL)
+                        {
+                            MethodDesc *pResultMD = pTable->FindMethodDesc(
+                                TypeHandle(pCanonMT),
+                                methodDef,
+                                FALSE /* not forceBoxedEntryPoint */,
+                                canonInst,
+                                TRUE /* getSharedNotStub */,
+                                pMDescInCanonMT->IsAsyncVariantMethod());
+                            if (pResultMD != NULL)
+                            {
+                                pMethodDesc = pResultMD;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
     pCodeInfo->vmNativeCodeMethodDescToken.SetHostPtr(pMethodDesc);
