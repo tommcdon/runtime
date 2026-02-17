@@ -1722,15 +1722,6 @@ public:
         return FindOrCreateAssociatedMethodDesc(this, GetMethodTable(), FALSE, GetMethodInstantiation(), allowInstParam, FALSE, FALSE, AsyncVariantLookup::AsyncOtherVariant);
     }
 
-    // DAC-friendly version that finds the other async variant (thunk↔variant) using only
-    // read-only method table iteration. Suitable for use in DAC/debugger context where
-    // FindOrCreateAssociatedMethodDesc is not safe to call.
-    MethodDesc* GetAsyncOtherVariantDac()
-    {
-        LIMITED_METHOD_DAC_CONTRACT;
-        return GetMethodTable()->GetParallelMethodDesc(this, AsyncVariantLookup::AsyncOtherVariant);
-    }
-
     // True if a MD is an funny BoxedEntryPointStub (not from the method table) or
     // an MD for a generic instantiation...In other words the MethodDescs and the
     // MethodTable are guaranteed to be "tightly-knit", i.e. if one is present in
