@@ -729,6 +729,7 @@ InstantiatedMethodDesc::FindLoadedInstantiatedMethodDesc(MethodTable *pExactOrRe
 // should already be in existence - thus preventing creation and GCs during
 // inappropriate times.
 /* static */
+#ifndef DACCESS_COMPILE
 MethodDesc*
 MethodDesc::FindOrCreateAssociatedMethodDesc(MethodDesc* pDefMD,
                                              MethodTable *pExactMT,
@@ -815,7 +816,9 @@ MethodDesc::FindOrCreateAssociatedMethodDesc(MethodDesc* pDefMD,
 
         pMDescInCanonMT = pExactMT->GetCanonicalMethodTable()->GetParallelMethodDesc(pDefMD, asyncVariantLookup);
 
-        if (!allowCreate && !pMDescInCanonMT->GetMethodTable()->IsFullyLoaded())
+        if (
+            !allowCreate && 
+            !pMDescInCanonMT->GetMethodTable()->IsFullyLoaded())
         {
             RETURN(NULL);
         }
@@ -1027,7 +1030,9 @@ MethodDesc::FindOrCreateAssociatedMethodDesc(MethodDesc* pDefMD,
         }
         _ASSERTE(pResultMD);
 
-        if (!allowCreate && !pResultMD->GetMethodTable()->IsFullyLoaded())
+        if (
+            !allowCreate && 
+            !pResultMD->GetMethodTable()->IsFullyLoaded())
         {
             RETURN(NULL);
         }
@@ -1218,7 +1223,9 @@ MethodDesc::FindOrCreateAssociatedMethodDesc(MethodDesc* pDefMD,
         }
         _ASSERTE(pInstMD);
 
-        if (!allowCreate && !pInstMD->GetMethodTable()->IsFullyLoaded())
+        if (
+            !allowCreate && 
+            !pInstMD->GetMethodTable()->IsFullyLoaded())
         {
             RETURN(NULL);
         }
@@ -1228,6 +1235,7 @@ MethodDesc::FindOrCreateAssociatedMethodDesc(MethodDesc* pDefMD,
         RETURN(pInstMD);
     }
 }
+#endif // !DACCESS_COMPILE
 
 // Normalize the methoddesc for reflection
 /*static*/ MethodDesc* MethodDesc::FindOrCreateAssociatedMethodDescForReflection(

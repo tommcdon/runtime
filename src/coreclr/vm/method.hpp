@@ -1683,6 +1683,7 @@ public:
     // should already be in existence - thus preventing creation and GCs during
     // inappropriate times.
     //
+#ifndef DACCESS_COMPILE
     static MethodDesc* FindOrCreateAssociatedMethodDesc(MethodDesc* pPrimaryMD,
                                                         MethodTable *pExactMT,
                                                         BOOL forceBoxedEntryPoint,
@@ -1692,12 +1693,24 @@ public:
                                                         BOOL allowCreate = TRUE,
                                                         AsyncVariantLookup variantLookup = AsyncVariantLookup::MatchingAsyncVariant,
                                                         ClassLoadLevel level = CLASS_LOADED);
+#else
+    static MethodDesc* MethodDesc::FindAssociatedMethodDesc(MethodDesc* pDefMD,
+                                                            MethodTable *pExactMT,
+                                                            BOOL forceBoxedEntryPoint,
+                                                            Instantiation methodInst,
+                                                            BOOL allowInstParam,
+                                                            BOOL forceRemotableMethod,
+                                                            AsyncVariantLookup asyncVariantLookup,
+                                                            ClassLoadLevel level = CLASS_LOADED);
+#endif // DACCESS_COMPILE
+
 
     // Normalize methoddesc for reflection
     static MethodDesc* FindOrCreateAssociatedMethodDescForReflection(MethodDesc *pMethod,
                                                                      TypeHandle instType,
                                                                      Instantiation methodInst);
 
+#ifndef DACCESS_COMPILE
     MethodDesc* GetAsyncOtherVariant(BOOL allowInstParam = TRUE)
     {
         return FindOrCreateAssociatedMethodDesc(this, GetMethodTable(), FALSE, GetMethodInstantiation(), allowInstParam, FALSE, TRUE, AsyncVariantLookup::AsyncOtherVariant);
@@ -1708,13 +1721,18 @@ public:
         _ASSERT(!IsAsyncVariantMethod());
         return FindOrCreateAssociatedMethodDesc(this, GetMethodTable(), FALSE, GetMethodInstantiation(), allowInstParam, FALSE, TRUE, AsyncVariantLookup::AsyncOtherVariant);
     }
+#endif
 
     // same as above, but with allowCreate = FALSE
     // for rare cases where we cannot allow GC, but we know that the other variant is already created.
     MethodDesc* GetAsyncVariantNoCreate(BOOL allowInstParam = TRUE)
     {
         _ASSERT(!IsAsyncVariantMethod());
+#ifndef DACCESS_COMPILE
         return FindOrCreateAssociatedMethodDesc(this, GetMethodTable(), FALSE, GetMethodInstantiation(), allowInstParam, FALSE, FALSE, AsyncVariantLookup::AsyncOtherVariant);
+#else
+        return FindAssociatedMethodDesc(this, GetMethodTable(), FALSE, GetMethodInstantiation(), allowInstParam, FALSE, AsyncVariantLookup::AsyncOtherVariant);
+#endif
     }
 
     // True if a MD is an funny BoxedEntryPointStub (not from the method table) or

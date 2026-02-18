@@ -30,6 +30,7 @@
 #include "fieldmarshaler.h"
 #include "versionresilienthashcode.h"
 #include "typehashingalgorithms.h"
+#include "instmethhash.h"
 
 #ifdef FEATURE_COMINTEROP
 #include "comcallablewrapper.h"
@@ -4155,3 +4156,351 @@ void MethodDesc::PrepareForUseAsAFunctionPointer()
     SetValueTypeParametersLoaded();
 }
 #endif //!DACCESS_COMPILE
+
+#ifdef DACCESS_COMPILE
+
+// DAC-friendly helper: find matching tightly-bound wrapped method desc
+static MethodDesc * FindTightlyBoundWrappedMethodDesc(MethodDesc * pMD)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        PRECONDITION(CheckPointer(pMD));
+    }
+    CONTRACTL_END
+
+    if (pMD->IsUnboxingStub() && pMD->GetClassification() == mcInstantiated)
+        pMD = pMD->AsInstantiatedMethodDesc()->IMD_GetWrappedMethodDesc();
+
+    if (!pMD->IsTightlyBoundToMethodTable())
+        pMD = pMD->GetCanonicalMethodTable()->GetParallelMethodDesc(pMD);
+    _ASSERTE(pMD->IsTightlyBoundToMethodTable());
+
+    if (pMD->IsUnboxingStub())
+        pMD = MethodTable::IntroducedMethodIterator::GetNext(pMD);
+    _ASSERTE(!pMD->IsUnboxingStub());
+
+    return pMD;
+}
+
+// DAC-friendly helper: find matching tightly-bound unboxing stub
+static MethodDesc * FindTightlyBoundUnboxingStub(MethodDesc * pMD)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        PRECONDITION(CheckPointer(pMD));
+    }
+    CONTRACTL_END
+
+    if (!pMD->IsTightlyBoundToMethodTable())
+        pMD = pMD->GetCanonicalMethodTable()->GetParallelMethodDesc(pMD);
+    _ASSERTE(pMD->IsTightlyBoundToMethodTable());
+
+    if (pMD->IsUnboxingStub())
+        return pMD;
+
+    MethodDesc * pCurMD = pMD->GetMethodDescChunk()->GetFirstMethodDesc();
+
+    if (pCurMD == pMD)
+        return NULL;
+
+    for (;;)
+    {
+        MethodDesc * pNextMD = MethodTable::IntroducedMethodIterator::GetNext(pCurMD);
+        if (pNextMD == pMD)
+            break;
+        pCurMD = pNextMD;
+    }
+
+    return pCurMD->IsUnboxingStub() ? pCurMD : NULL;
+}
+
+// DAC-friendly version of FindLoadedInstantiatedMethodDesc
+InstantiatedMethodDesc*
+InstantiatedMethodDesc::FindLoadedInstantiatedMethodDesc(MethodTable *pExactOrRepMT,
+                                                         mdMethodDef methodDef,
+                                                         Instantiation methodInst,
+                                                         BOOL getWrappedCode,
+                                                         BOOL asyncThunk)
+{
+    CONTRACT(InstantiatedMethodDesc *)
+    {
+        THROWS;
+        GC_NOTRIGGER;
+        FORBID_FAULT;
+        PRECONDITION(CheckPointer(pExactOrRepMT));
+        PRECONDITION(!getWrappedCode || pExactOrRepMT->IsCanonicalMethodTable());
+        PRECONDITION(!getWrappedCode || pExactOrRepMT->IsSharedByGenericInstantiations() || ClassLoader::IsSharableInstantiation(methodInst));
+        POSTCONDITION(!RETVAL || !RETVAL->IsUnboxingStub());
+        POSTCONDITION(!getWrappedCode || !RETVAL || RETVAL->RequiresInstArg());
+    }
+    CONTRACT_END
+
+    Module *pLoaderModule = ClassLoader::ComputeLoaderModule(pExactOrRepMT, methodDef, methodInst);
+
+    InstMethodHashTable* pTable = pLoaderModule->GetInstMethodHashTable();
+    MethodDesc *resultMD = pTable->FindMethodDesc(TypeHandle(pExactOrRepMT),
+                                                  methodDef,
+                                                  FALSE /* not forceBoxedEntryPoint */,
+                                                  methodInst,
+                                                  getWrappedCode,
+                                                  asyncThunk);
+
+    if (resultMD != NULL)
+       RETURN((InstantiatedMethodDesc*) resultMD);
+
+    RETURN(NULL);
+}
+
+// DAC-friendly version of FindOrCreateAssociatedMethodDesc that never creates new MethodDescs.
+// Returns NULL if the requested MethodDesc has not been loaded.
+/* static */
+MethodDesc*
+MethodDesc::FindAssociatedMethodDesc(MethodDesc* pDefMD,
+                                     MethodTable *pExactMT,
+                                     BOOL forceBoxedEntryPoint,
+                                     Instantiation methodInst,
+                                     BOOL allowInstParam,
+                                     BOOL forceRemotableMethod,
+                                     AsyncVariantLookup asyncVariantLookup,
+                                     ClassLoadLevel level)
+{
+    CONTRACT(MethodDesc*)
+    {
+        THROWS;
+        GC_NOTRIGGER;
+        INJECT_FAULT(COMPlusThrowOM(););
+
+        PRECONDITION(CheckPointer(pDefMD));
+        PRECONDITION(CheckPointer(pExactMT));
+        PRECONDITION(!forceBoxedEntryPoint || pExactMT->IsValueType());
+        PRECONDITION(!forceBoxedEntryPoint || !pDefMD->IsStatic());
+        PRECONDITION(!forceRemotableMethod || !allowInstParam);
+
+        POSTCONDITION((RETVAL == NULL) || CheckPointer(RETVAL));
+        POSTCONDITION((RETVAL == NULL) || forceBoxedEntryPoint || !RETVAL->IsUnboxingStub());
+        POSTCONDITION((RETVAL == NULL) || allowInstParam || !RETVAL->RequiresInstArg());
+    }
+    CONTRACT_END;
+
+    // Quick exit for the common cases where the result is the same as the primary MD we are given
+    if (!pDefMD->HasClassOrMethodInstantiation() &&
+        methodInst.IsEmpty() &&
+        !forceBoxedEntryPoint &&
+        !pDefMD->IsUnboxingStub() &&
+        asyncVariantLookup == AsyncVariantLookup::MatchingAsyncVariant)
+    {
+        _ASSERTE(pDefMD->IsArray() || pDefMD->GetExactDeclaringType(pExactMT) != NULL);
+        RETURN pDefMD;
+    }
+
+    MethodDesc * pMDescInCanonMT = pDefMD;
+
+    pExactMT = pDefMD->GetExactDeclaringType(pExactMT);
+    if (pExactMT == NULL)
+    {
+        _ASSERTE(false);
+        COMPlusThrowHR(COR_E_TYPELOAD);
+    }
+
+    if (pDefMD->HasClassOrMethodInstantiation() || !methodInst.IsEmpty() || asyncVariantLookup == AsyncVariantLookup::AsyncOtherVariant)
+    {
+        if (pDefMD->GetNumGenericMethodArgs() != methodInst.GetNumArgs())
+        {
+            COMPlusThrowHR(COR_E_BADIMAGEFORMAT);
+        }
+
+        pMDescInCanonMT = pExactMT->GetCanonicalMethodTable()->GetParallelMethodDesc(pDefMD, asyncVariantLookup);
+
+        if (!pMDescInCanonMT->GetMethodTable()->IsFullyLoaded())
+        {
+            RETURN(NULL);
+        }
+
+        pMDescInCanonMT->CheckRestore(level);
+    }
+
+    if (    methodInst.IsEmpty()
+        && (allowInstParam || !pMDescInCanonMT->RequiresInstArg())
+        && (forceBoxedEntryPoint == pMDescInCanonMT->IsUnboxingStub())
+        && (!forceRemotableMethod || !pMDescInCanonMT->IsInterface()
+                || !pMDescInCanonMT->GetMethodTable()->IsSharedByGenericInstantiations()) )
+    {
+        RETURN(pMDescInCanonMT);
+    }
+
+    else if (forceBoxedEntryPoint)
+    {
+        MethodDesc *pResultMD;
+        if (methodInst.IsEmpty())
+        {
+            pResultMD = FindTightlyBoundUnboxingStub(pMDescInCanonMT);
+
+            if (pResultMD != NULL)
+            {
+                _ASSERTE(pResultMD->GetMethodTable()->IsFullyLoaded());
+                RETURN(pResultMD);
+            }
+
+            MethodTable *pRepMT = pMDescInCanonMT->GetMethodTable();
+            mdMethodDef methodDef = pDefMD->GetMemberDef();
+
+            Module *pLoaderModule = ClassLoader::ComputeLoaderModule(pRepMT, methodDef, methodInst);
+
+            InstMethodHashTable* pTable = pLoaderModule->GetInstMethodHashTable();
+            pResultMD = pTable->FindMethodDesc(TypeHandle(pRepMT),
+                                               methodDef,
+                                               TRUE /* forceBoxedEntryPoint */,
+                                               Instantiation(),
+                                               FALSE /* no inst param */,
+                                               pMDescInCanonMT->IsAsyncVariantMethod());
+
+            if (!pResultMD)
+            {
+                RETURN(NULL);
+            }
+        }
+        else
+        {
+            mdMethodDef methodDef = pDefMD->GetMemberDef();
+
+            Module *pLoaderModule = ClassLoader::ComputeLoaderModule(pExactMT, methodDef, methodInst);
+
+            InstMethodHashTable* pTable = pLoaderModule->GetInstMethodHashTable();
+            pResultMD = pTable->FindMethodDesc(TypeHandle(pExactMT),
+                                               methodDef,
+                                               TRUE, /* forceBoxedEntryPoint */
+                                               methodInst,
+                                               FALSE /* no inst param */,
+                                               pMDescInCanonMT->IsAsyncVariantMethod());
+
+            if (!pResultMD)
+            {
+                RETURN(NULL);
+            }
+        }
+
+        if (!pResultMD->GetMethodTable()->IsFullyLoaded())
+        {
+            RETURN(NULL);
+        }
+
+        pResultMD->CheckRestore(level);
+        _ASSERTE(pResultMD->IsUnboxingStub());
+        _ASSERTE(!pResultMD->IsInstantiatingStub());
+        RETURN(pResultMD);
+    }
+
+    else
+    {
+        _ASSERTE(!forceBoxedEntryPoint);
+
+        mdMethodDef methodDef = pDefMD->GetMemberDef();
+        Module *pModule = pDefMD->GetModule();
+
+        if ((allowInstParam || pExactMT->IsCanonicalMethodTable()) &&
+            pExactMT->IsValueType() &&
+            ClassLoader::IsTypicalInstantiation(pModule, methodDef, methodInst))
+        {
+            MethodDesc * pResultMD = FindTightlyBoundWrappedMethodDesc(pMDescInCanonMT);
+
+            if (pResultMD != NULL)
+            {
+                _ASSERTE(pResultMD->GetMethodTable()->IsFullyLoaded());
+                if (allowInstParam || !pResultMD->RequiresInstArg())
+                {
+                    RETURN(pResultMD);
+                }
+            }
+        }
+
+        BOOL sharedInst =
+            pExactMT->GetCanonicalMethodTable()->IsSharedByGenericInstantiations()
+            || ClassLoader::IsSharableInstantiation(methodInst);
+
+        if (!sharedInst &&
+            pExactMT == pMDescInCanonMT->GetMethodTable() &&
+            ClassLoader::IsTypicalInstantiation(pModule, methodDef, methodInst))
+        {
+            _ASSERTE(!pMDescInCanonMT->IsUnboxingStub());
+            RETURN(pMDescInCanonMT);
+        }
+
+        BOOL getWrappedCode = allowInstParam && sharedInst;
+        BOOL getWrappedThenStub = !allowInstParam && sharedInst;
+
+        CQuickBytes qbRepInst;
+        TypeHandle *repInst = NULL;
+        if (getWrappedCode || getWrappedThenStub)
+        {
+            DWORD cbAllocaSize = 0;
+            if (!ClrSafeInt<DWORD>::multiply(methodInst.GetNumArgs(), sizeof(TypeHandle), cbAllocaSize))
+                ThrowHR(COR_E_OVERFLOW);
+
+            repInst = reinterpret_cast<TypeHandle *>(qbRepInst.AllocThrows(cbAllocaSize));
+
+            for (DWORD i = 0; i < methodInst.GetNumArgs(); i++)
+            {
+                repInst[i] = ClassLoader::CanonicalizeGenericArg(methodInst[i]);
+            }
+        }
+
+        InstantiatedMethodDesc *pInstMD;
+        if (getWrappedCode)
+        {
+            pInstMD =
+                InstantiatedMethodDesc::FindLoadedInstantiatedMethodDesc(pExactMT->GetCanonicalMethodTable(),
+                                                                         methodDef,
+                                                                         Instantiation(repInst, methodInst.GetNumArgs()),
+                                                                         TRUE,
+                                                                         pMDescInCanonMT->IsAsyncVariantMethod());
+
+            if (pInstMD == NULL)
+            {
+                RETURN(NULL);
+            }
+        }
+        else if (getWrappedThenStub)
+        {
+            pInstMD =
+                InstantiatedMethodDesc::FindLoadedInstantiatedMethodDesc(pExactMT,
+                                                                         methodDef,
+                                                                         methodInst,
+                                                                         FALSE,
+                                                                         pMDescInCanonMT->IsAsyncVariantMethod());
+
+            if (pInstMD == NULL)
+            {
+                RETURN(NULL);
+            }
+        }
+        else
+        {
+            pInstMD =
+                InstantiatedMethodDesc::FindLoadedInstantiatedMethodDesc(pExactMT,
+                                                                         methodDef,
+                                                                         methodInst,
+                                                                         FALSE,
+                                                                         pMDescInCanonMT->IsAsyncVariantMethod());
+
+            if (pInstMD == NULL)
+            {
+                RETURN(NULL);
+            }
+        }
+
+        if (!pInstMD->GetMethodTable()->IsFullyLoaded())
+        {
+            RETURN(NULL);
+        }
+
+        pInstMD->CheckRestore(level);
+
+        RETURN(pInstMD);
+    }
+}
+
+#endif // DACCESS_COMPILE

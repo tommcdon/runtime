@@ -1191,6 +1191,7 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
     MethodDesc* pMethodDesc = FindLoadedMethodRefOrDef(pModule, functionToken);
     if (pMethodDesc != NULL && pMethodDesc->IsAsyncThunkMethod())
     {
+#if 0
         // Find the async variant (the method that contains the actual IL/native code).
         // FindLoadedMethodRefOrDef returns the canonical/typical MethodDesc, so
         // GetParallelMethodDesc on the canonical MethodTable finds the async variant
@@ -1293,6 +1294,12 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                     }
                 }
             }
+        }
+#endif // #if 0
+        MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
+        if (pMD != NULL)
+        {
+            pMethodDesc = pMD;
         }
     }
     pCodeInfo->vmNativeCodeMethodDescToken.SetHostPtr(pMethodDesc);
