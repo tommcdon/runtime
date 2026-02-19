@@ -23,6 +23,7 @@
 
 #include "dacdbiimpl.h"
 #include "instmethhash.h"
+#include "typehash.h"
 
 #ifdef FEATURE_COMINTEROP
 #include "runtimecallablewrapper.h"
@@ -1208,11 +1209,44 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
         MethodTable *pExactMT = pMethodDesc->GetMethodTable();
         Instantiation methodInst = pMethodDesc->GetMethodInstantiation();
 
-        // For generic classes, the typical MT has no native code.
-        // Use GetCanonicalMethodTable() to get the shared canonical MT
-        // which has the compiled code (MyClass<__Canon> shares an EEClass
-        // with the concrete instantiations and is accessed via m_pCanonMT).
-        MethodTable *pCanonMT = pExactMT->GetCanonicalMethodTable();
+        // For generic classes, the typical MT (MyClass<T>) has no native code.
+        // GetCanonicalMethodTable() on the typical MT returns itself (since it
+        // has UNION_EECLASS). Find a concrete instantiation (e.g. MyClass<string>)
+        // in the type hash table, then call GetCanonicalMethodTable() on it to
+        // reach the shared MT (MyClass<__Canon>) which has compiled code.
+        MethodTable *pCanonMT = pExactMT;
+        if (pExactMT->HasInstantiation() && !pExactMT->IsSharedByGenericInstantiations())
+        {
+            mdTypeDef targetToken = pExactMT->GetCl();
+            PTR_Module pDefModule = pExactMT->GetModule();
+
+            EETypeHashTable *pTypeTable = pDefModule->GetAvailableParamTypes();
+            if (pTypeTable != NULL)
+            {
+                EETypeHashTable::Iterator it(pTypeTable);
+                EETypeHashEntry *pEntry;
+                while (pTypeTable->FindNext(&it, &pEntry))
+                {
+                    TypeHandle th = pEntry->GetTypeHandle();
+                    if (th.IsTypeDesc() || !th.HasInstantiation())
+                        continue;
+
+                    MethodTable *pCandidateMT = th.AsMethodTable();
+                    if (pCandidateMT->GetCl() != targetToken)
+                        continue;
+
+                    if (pCandidateMT->IsSharedByGenericInstantiations())
+                        continue;
+
+                    if (dac_cast<TADDR>(pCandidateMT->GetModule()) != dac_cast<TADDR>(pDefModule))
+                        continue;
+
+                    // Found a concrete instantiation — get the shared canonical MT from it.
+                    pCanonMT = pCandidateMT->GetCanonicalMethodTable();
+                    break;
+                }
+            }
+        }
 
         MethodDesc *pMDescInCanonMT = pCanonMT
             ->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
