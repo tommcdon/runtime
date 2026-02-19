@@ -1226,7 +1226,9 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                 {
                     for (DWORD i = 0; i < numClassArgs; i++)
                     {
-                        classInst[i] = TypeHandle(g_pCanonMethodTableClass);
+                        // Use FromTAddr with the target address directly to avoid
+                        // host pointer round-trip issues in DAC hash lookups.
+                        classInst[i] = TypeHandle::FromTAddr(g_pCanonMethodTableClass.GetAddr());
                     }
 
                     // Look up MyClass<__Canon> via TypeKey in the loader module's hash table.
@@ -1281,7 +1283,9 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                     {
                         for (DWORD i = 0; i < methodInst.GetNumArgs(); i++)
                         {
-                            repInst[i] = TypeHandle(g_pCanonMethodTableClass);
+                            // Use FromTAddr with the target address directly to avoid
+                            // host pointer round-trip issues in DAC hash lookups.
+                            repInst[i] = TypeHandle::FromTAddr(g_pCanonMethodTableClass.GetAddr());
                         }
 
                         Instantiation canonInst(repInst, methodInst.GetNumArgs());
