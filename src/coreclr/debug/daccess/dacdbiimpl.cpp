@@ -1191,7 +1191,17 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
     MethodDesc* pMethodDesc = FindLoadedMethodRefOrDef(pModule, functionToken);
     if (pMethodDesc != NULL && pMethodDesc->IsAsyncThunkMethod())
     {
-#if 0
+        
+        {
+            //MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
+            //LPCUTF8 foo = pMD->GetName();
+            // MethodTable *pMDescInCanonMT = pMD->GetMethodTable()->GetCanonicalMethodTable();
+            // MethodDesc *pParallel = pMDescInCanonMT->GetParallelMethodDesc(pMD, AsyncVariantLookup::AsyncOtherVariant);
+            // PCODE foo = pMD->GetCodeForInterpreterOrJitted();
+            // printf("MD: %p, CanonMT: %p, ParallelMD: %p, Code: %p\n", pMD, pMDescInCanonMT, pParallel, (void*)pMD->GetCodeForInterpreterOrJitted());
+            // fflush(stdout);
+        }
+//#if 0
         // Find the async variant (the method that contains the actual IL/native code).
         // FindLoadedMethodRefOrDef returns the canonical/typical MethodDesc, so
         // GetParallelMethodDesc on the canonical MethodTable finds the async variant
@@ -1202,39 +1212,36 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
         // For generic classes, the typical MT from FindLoadedMethodRefOrDef has no
         // native code. Find the loaded canonical instantiation (MyClass<__Canon>)
         // which has the shared compiled code.
-        // Following the LoadedMethodDescIterator pattern: iterate all loaded assemblies
-        // to find any loaded instantiation of this type, then get its canonical MT.
         MethodTable *pCanonMT = pExactMT;
         if (pExactMT->HasInstantiation())
         {
-            DWORD targetRid = pExactMT->GetTypeDefRid();
-            Module *pDefModule = pExactMT->GetModule();
-
-            AppDomain *pAppDomain = AppDomain::GetCurrentDomain();
-            AppDomain::AssemblyIterator asmIter = pAppDomain->IterateAssembliesEx(
-                (AssemblyIterationFlags)(kIncludeLoaded | kIncludeExecution));
-            CollectibleAssemblyHolder<Assembly *> pAssembly;
-            while (asmIter.Next(pAssembly.This()) && pCanonMT == pExactMT)
+            // Build the canonical instantiation (__Canon for each type arg).
+            DWORD numClassArgs = pExactMT->GetNumGenericArgs();
+            CQuickBytes qbClassInst;
+            DWORD cbClassAllocaSize = 0;
+            if (ClrSafeInt<DWORD>::multiply(numClassArgs, sizeof(TypeHandle), cbClassAllocaSize))
             {
-                Module *pCurModule = pAssembly->GetModule();
-                EETypeHashTable *pTypeTable = pCurModule->GetAvailableParamTypes();
-                if (pTypeTable == NULL)
-                    continue;
-
-                EETypeHashTable::Iterator iter(pTypeTable);
-                EETypeHashEntry *pEntry;
-                while (pTypeTable->FindNext(&iter, &pEntry))
+                TypeHandle *classInst = reinterpret_cast<TypeHandle *>(qbClassInst.AllocNoThrow(cbClassAllocaSize));
+                if (classInst != NULL)
                 {
-                    TypeHandle th = pEntry->GetTypeHandle();
-                    if (th.IsTypeDesc())
-                        continue;
-
-                    MethodTable *pMT = th.AsMethodTable();
-                    if (pMT->GetTypeDefRid() == targetRid
-                        && pMT->GetModule() == pDefModule)
+                    for (DWORD i = 0; i < numClassArgs; i++)
                     {
-                        pCanonMT = pMT->GetCanonicalMethodTable();
-                        break;
+                        classInst[i] = TypeHandle(g_pCanonMethodTableClass);
+                    }
+
+                    // Look up MyClass<__Canon> via TypeKey in the loader module's hash table.
+                    Instantiation canonClassInst(classInst, numClassArgs);
+                    TypeKey typeKey(pExactMT->GetModule(), pExactMT->GetCl(), canonClassInst);
+
+                    Module *pLoaderModule = ClassLoader::ComputeLoaderModule(&typeKey);
+                    EETypeHashTable *pTypeTable = pLoaderModule->GetAvailableParamTypes();
+                    if (pTypeTable != NULL)
+                    {
+                        TypeHandle thCanon = pTypeTable->GetValue(&typeKey);
+                        if (!thCanon.IsNull() && !thCanon.IsTypeDesc())
+                        {
+                            pCanonMT = thCanon.AsMethodTable();
+                        }
                     }
                 }
             }
@@ -1249,6 +1256,9 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                 // Non-generic methods (or generic class methods with no method-level type args)
                 // can be returned directly.
                 pMethodDesc = pMDescInCanonMT;
+
+
+                //LPCUTF8 foo = pMethodDesc->GetName();
             }
             else
             {
@@ -1295,12 +1305,24 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                 }
             }
         }
-#endif // #if 0
-        MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
-        if (pMD != NULL)
-        {
-            pMethodDesc = pMD;
-        }
+//#endif // #if 0
+        // MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
+        // if (pMD != NULL)
+        // {
+        //     if (pMD->GetCodeForInterpreterOrJitted() == NULL)
+        //     {
+        //         MethodDesc *pMDescInCanonMT = pMD->GetMethodTable()->GetCanonicalMethodTable()->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
+        //         if (pMDescInCanonMT != NULL)
+        //         {
+        //             pMD = pMDescInCanonMT;
+        //             if (pMD->GetCodeForInterpreterOrJitted() == NULL)
+        //             {
+        //                 /// ????
+        //             }
+        //         }
+        //     }
+        //     pMethodDesc = pMD;
+        // }
     }
     pCodeInfo->vmNativeCodeMethodDescToken.SetHostPtr(pMethodDesc);
 
