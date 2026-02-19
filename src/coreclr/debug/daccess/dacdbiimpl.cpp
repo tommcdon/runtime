@@ -23,7 +23,6 @@
 
 #include "dacdbiimpl.h"
 #include "instmethhash.h"
-#include "typehash.h"
 
 #ifdef FEATURE_COMINTEROP
 #include "runtimecallablewrapper.h"
@@ -1209,45 +1208,11 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
         MethodTable *pExactMT = pMethodDesc->GetMethodTable();
         Instantiation methodInst = pMethodDesc->GetMethodInstantiation();
 
-        // For generic classes, the typical MT from FindLoadedMethodRefOrDef has no
-        // native code. Find the loaded canonical instantiation (MyClass<__Canon>)
-        // which has the shared compiled code.
-        MethodTable *pCanonMT = pExactMT;
-        if (pExactMT->HasInstantiation())
-        {
-            // Build the canonical instantiation (__Canon for each type arg).
-            DWORD numClassArgs = pExactMT->GetNumGenericArgs();
-            CQuickBytes qbClassInst;
-            DWORD cbClassAllocaSize = 0;
-            if (ClrSafeInt<DWORD>::multiply(numClassArgs, sizeof(TypeHandle), cbClassAllocaSize))
-            {
-                TypeHandle *classInst = reinterpret_cast<TypeHandle *>(qbClassInst.AllocNoThrow(cbClassAllocaSize));
-                if (classInst != NULL)
-                {
-                    for (DWORD i = 0; i < numClassArgs; i++)
-                    {
-                        // Use FromTAddr with the target address directly to avoid
-                        // host pointer round-trip issues in DAC hash lookups.
-                        classInst[i] = TypeHandle::FromTAddr(g_pCanonMethodTableClass.GetAddr());
-                    }
-
-                    // Look up MyClass<__Canon> via TypeKey in the loader module's hash table.
-                    Instantiation canonClassInst(classInst, numClassArgs);
-                    TypeKey typeKey(pExactMT->GetModule(), pExactMT->GetCl(), canonClassInst);
-
-                    Module *pLoaderModule = ClassLoader::ComputeLoaderModule(&typeKey);
-                    EETypeHashTable *pTypeTable = pLoaderModule->GetAvailableParamTypes();
-                    if (pTypeTable != NULL)
-                    {
-                        TypeHandle thCanon = pTypeTable->GetValue(&typeKey);
-                        if (!thCanon.IsNull() && !thCanon.IsTypeDesc())
-                        {
-                            pCanonMT = thCanon.AsMethodTable();
-                        }
-                    }
-                }
-            }
-        }
+        // For generic classes, the typical MT has no native code.
+        // Use GetCanonicalMethodTable() to get the shared canonical MT
+        // which has the compiled code (MyClass<__Canon> shares an EEClass
+        // with the concrete instantiations and is accessed via m_pCanonMT).
+        MethodTable *pCanonMT = pExactMT->GetCanonicalMethodTable();
 
         MethodDesc *pMDescInCanonMT = pCanonMT
             ->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
