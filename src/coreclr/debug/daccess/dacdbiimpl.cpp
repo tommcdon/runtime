@@ -1185,13 +1185,15 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
     // pre-initialize:
     pCodeInfo->Clear();
 
+    FILE * f = fopen("c:\\temp\\GetNativeCodeInfo.log", "a");
+
     DomainAssembly * pDomainAssembly = vmDomainAssembly.GetDacPtr();
     Module *     pModule     = pDomainAssembly->GetAssembly()->GetModule();
 
     MethodDesc* pMethodDesc = FindLoadedMethodRefOrDef(pModule, functionToken);
     if (pMethodDesc != NULL && pMethodDesc->IsAsyncThunkMethod())
     {
-        
+        //MethodDesc * pAsyncVariant = pMethodDesc->GetAsyncVariantNoCreate();
         {
             //MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
             //LPCUTF8 foo = pMD->GetName();
@@ -1242,14 +1244,32 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                         continue;
 
                     // Found a concrete instantiation — get the shared canonical MT from it.
-                    pCanonMT = pCandidateMT->GetCanonicalMethodTable();
-                    break;
+                    
+                    fprintf(f, "D::GNCI: MD=%p MT=%p Found candidate MT %p for async variant's canonical MT %p\n", 
+                        (void*)dac_cast<TADDR>(pMethodDesc), (void*)dac_cast<TADDR>(pExactMT), 
+                        (void*)dac_cast<TADDR>(pCandidateMT),
+                        (void*)dac_cast<TADDR>(pCandidateMT->GetCanonicalMethodTable()));
+                    fflush(f);
+                    if (pCandidateMT->GetCanonicalMethodTable() != pCandidateMT)
+                    {
+                        pCanonMT = pCandidateMT->GetCanonicalMethodTable();
+                        break;
+                    }
                 }
             }
         }
 
+        MethodDesc * pAsyncVariant = pMethodDesc->GetAsyncVariantNoCreate();
+        MethodTable * pAsyncVariantMT = (pAsyncVariant != NULL) ? pAsyncVariant->GetMethodTable() : NULL;
+
         MethodDesc *pMDescInCanonMT = pCanonMT
             ->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
+
+
+        fprintf(f, "D::GNCI: pAsyncVariant=%p pAsyncVariantMT=%p pMDescInCanonMT=%p\n", (void*)dac_cast<TADDR>(pAsyncVariant), (void*)dac_cast<TADDR>(pAsyncVariantMT), (void*)dac_cast<TADDR>(pMDescInCanonMT));
+        fflush(f);
+
+
         if (pMDescInCanonMT != NULL)
         {
             if (methodInst.IsEmpty())
@@ -1344,6 +1364,8 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                               &(pCodeInfo->encVersion));
         }
     }
+
+    fclose(f);
 } // GetNativeCodeInfo
 
 // Gets the following information about a native code blob:
