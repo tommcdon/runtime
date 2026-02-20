@@ -1185,37 +1185,23 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
     // pre-initialize:
     pCodeInfo->Clear();
 
-    FILE * f = fopen("c:\\temp\\GetNativeCodeInfo.log", "a");
-
     DomainAssembly * pDomainAssembly = vmDomainAssembly.GetDacPtr();
     Module *     pModule     = pDomainAssembly->GetAssembly()->GetModule();
 
     MethodDesc* pMethodDesc = FindLoadedMethodRefOrDef(pModule, functionToken);
     if (pMethodDesc != NULL && pMethodDesc->IsAsyncThunkMethod())
     {
-        //MethodDesc * pAsyncVariant = pMethodDesc->GetAsyncVariantNoCreate();
-        {
-            //MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
-            //LPCUTF8 foo = pMD->GetName();
-            // MethodTable *pMDescInCanonMT = pMD->GetMethodTable()->GetCanonicalMethodTable();
-            // MethodDesc *pParallel = pMDescInCanonMT->GetParallelMethodDesc(pMD, AsyncVariantLookup::AsyncOtherVariant);
-            // PCODE foo = pMD->GetCodeForInterpreterOrJitted();
-            // printf("MD: %p, CanonMT: %p, ParallelMD: %p, Code: %p\n", pMD, pMDescInCanonMT, pParallel, (void*)pMD->GetCodeForInterpreterOrJitted());
-            // fflush(stdout);
-        }
-//#if 0
         // Find the async variant (the method that contains the actual IL/native code).
-        // FindLoadedMethodRefOrDef returns the canonical/typical MethodDesc, so
-        // GetParallelMethodDesc on the canonical MethodTable finds the async variant
-        // definition.
+        // FindLoadedMethodRefOrDef returns the typical MethodDesc, so
+        // GetParallelMethodDesc on the appropriate MethodTable finds the async variant.
         MethodTable *pExactMT = pMethodDesc->GetMethodTable();
         Instantiation methodInst = pMethodDesc->GetMethodInstantiation();
 
         // For generic classes, the typical MT (MyClass<T>) has no native code.
         // GetCanonicalMethodTable() on the typical MT returns itself (since it
-        // has UNION_EECLASS). Find a concrete instantiation (e.g. MyClass<string>)
-        // in the type hash table, then call GetCanonicalMethodTable() on it to
-        // reach the shared MT (MyClass<__Canon>) which has compiled code.
+        // has UNION_EECLASS). Find a concrete instantiation (e.g. MyClass<Foo>)
+        // in the type hash table, then use GetCanonicalMethodTable() on it to
+        // reach the shared MT which has compiled code.
         MethodTable *pCanonMT = pExactMT;
         if (pExactMT->HasInstantiation() && !pExactMT->IsSharedByGenericInstantiations())
         {
@@ -1243,32 +1229,19 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                     if (dac_cast<TADDR>(pCandidateMT->GetModule()) != dac_cast<TADDR>(pDefModule))
                         continue;
 
-                    // Found a concrete instantiation — get the shared canonical MT from it.
-                    
-                    fprintf(f, "D::GNCI: MD=%p MT=%p Found candidate MT %p for async variant's canonical MT %p\n", 
-                        (void*)dac_cast<TADDR>(pMethodDesc), (void*)dac_cast<TADDR>(pExactMT), 
-                        (void*)dac_cast<TADDR>(pCandidateMT),
-                        (void*)dac_cast<TADDR>(pCandidateMT->GetCanonicalMethodTable()));
-                    fflush(f);
-                    if (pCandidateMT->GetCanonicalMethodTable() != pCandidateMT)
-                    {
-                        pCanonMT = pCandidateMT->GetCanonicalMethodTable();
-                        break;
-                    }
+                    if (pCandidateMT->IsGenericTypeDefinition())
+                        continue;
+
+                    // Found a concrete instantiation — use GetCanonicalMethodTable()
+                    // to get the shared MT whose MethodDescs have native code.
+                    pCanonMT = pCandidateMT->GetCanonicalMethodTable();
+                    break;
                 }
             }
         }
 
-        MethodDesc * pAsyncVariant = pMethodDesc->GetAsyncVariantNoCreate();
-        MethodTable * pAsyncVariantMT = (pAsyncVariant != NULL) ? pAsyncVariant->GetMethodTable() : NULL;
-
         MethodDesc *pMDescInCanonMT = pCanonMT
             ->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
-
-
-        fprintf(f, "D::GNCI: pAsyncVariant=%p pAsyncVariantMT=%p pMDescInCanonMT=%p\n", (void*)dac_cast<TADDR>(pAsyncVariant), (void*)dac_cast<TADDR>(pAsyncVariantMT), (void*)dac_cast<TADDR>(pMDescInCanonMT));
-        fflush(f);
-
 
         if (pMDescInCanonMT != NULL)
         {
@@ -1277,9 +1250,6 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                 // Non-generic methods (or generic class methods with no method-level type args)
                 // can be returned directly.
                 pMethodDesc = pMDescInCanonMT;
-
-
-                //LPCUTF8 foo = pMethodDesc->GetName();
             }
             else
             {
@@ -1328,24 +1298,6 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                 }
             }
         }
-//#endif // #if 0
-        // MethodDesc * pMD = pMethodDesc->GetAsyncVariantNoCreate();
-        // if (pMD != NULL)
-        // {
-        //     if (pMD->GetCodeForInterpreterOrJitted() == NULL)
-        //     {
-        //         MethodDesc *pMDescInCanonMT = pMD->GetMethodTable()->GetCanonicalMethodTable()->GetParallelMethodDesc(pMethodDesc, AsyncVariantLookup::AsyncOtherVariant);
-        //         if (pMDescInCanonMT != NULL)
-        //         {
-        //             pMD = pMDescInCanonMT;
-        //             if (pMD->GetCodeForInterpreterOrJitted() == NULL)
-        //             {
-        //                 /// ????
-        //             }
-        //         }
-        //     }
-        //     pMethodDesc = pMD;
-        // }
     }
     pCodeInfo->vmNativeCodeMethodDescToken.SetHostPtr(pMethodDesc);
 
@@ -1364,8 +1316,6 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
                               &(pCodeInfo->encVersion));
         }
     }
-
-    fclose(f);
 } // GetNativeCodeInfo
 
 // Gets the following information about a native code blob:
