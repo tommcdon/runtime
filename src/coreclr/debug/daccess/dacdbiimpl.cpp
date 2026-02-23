@@ -1189,6 +1189,7 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
     Module *     pModule     = pDomainAssembly->GetAssembly()->GetModule();
 
     MethodDesc* pMethodDesc = FindLoadedMethodRefOrDef(pModule, functionToken);
+#if 0
     if (pMethodDesc != NULL && pMethodDesc->IsAsyncThunkMethod())
     {
         // Find the async variant (the method that contains the actual IL/native code).
@@ -1299,6 +1300,8 @@ void DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_DomainAssembly         vmDomai
             }
         }
     }
+#endif
+
     pCodeInfo->vmNativeCodeMethodDescToken.SetHostPtr(pMethodDesc);
 
     // if we are loading a module and trying to bind a previously set breakpoint, we may not have
