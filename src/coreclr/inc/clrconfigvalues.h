@@ -354,18 +354,18 @@ RETAIL_CONFIG_DWORD_INFO(INTERNAL_BreakOnOutOfMemoryWithinRange, W("BreakOnOutOf
 ///
 /// Log
 ///
-RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogEnable, W("LogEnable"), 0, "Turns on the traditional CLR log.")
-RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogFacility,  W("LogFacility"), 0, "Specifies a facility mask for CLR log. (See 'loglf.h'; VM interprets string value as hex number.) Also used by stresslog.")
+RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogEnable, W("LogEnable"), 1, "Turns on the traditional CLR log.")
+RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogFacility,  W("LogFacility"), 0x240, "Specifies a facility mask for CLR log. (See 'loglf.h'; VM interprets string value as hex number.) Also used by stresslog.")
 RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogFacility2, W("LogFacility2"), 0, "Specifies a facility mask for CLR log. (See 'loglf.h'; VM interprets string value as hex number.) Also used by stresslog.")
 RETAIL_CONFIG_DWORD_INFO(EXTERNAL_logFatalError, W("logFatalError"), 1, "Specifies whether EventReporter logs fatal errors in the Windows event log.")
 CONFIG_STRING_INFO(INTERNAL_LogFile, W("LogFile"), "Specifies a file name for the CLR log.")
 CONFIG_DWORD_INFO(INTERNAL_LogFileAppend, W("LogFileAppend"), 0 , "Specifies whether to append to or replace the CLR log file.")
-CONFIG_DWORD_INFO(INTERNAL_LogFlushFile, W("LogFlushFile"), 0 , "Specifies whether to flush the CLR log file on each write.")
-RETAIL_CONFIG_DWORD_INFO(EXTERNAL_LogLevel, W("LogLevel"), 0 , "4=10 msgs, 9=1000000, 10=everything")
+CONFIG_DWORD_INFO(INTERNAL_LogFlushFile, W("LogFlushFile"), 1 , "Specifies whether to flush the CLR log file on each write.")
+RETAIL_CONFIG_DWORD_INFO(EXTERNAL_LogLevel, W("LogLevel"), 10, "4=10 msgs, 9=1000000, 10=everything")
 RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogToConsole, W("LogToConsole"), 0 , "Writes the CLR log to console.")
 CONFIG_DWORD_INFO(INTERNAL_LogToDebugger, W("LogToDebugger"), 0 , "Writes the CLR log to debugger (OutputDebugStringA).")
-CONFIG_DWORD_INFO(INTERNAL_LogToFile, W("LogToFile"), 0 , "Writes the CLR log to a file.")
-CONFIG_DWORD_INFO(INTERNAL_LogWithPid, W("LogWithPid"), FALSE, "Appends pid to filename for the CLR log.")
+CONFIG_DWORD_INFO(INTERNAL_LogToFile, W("LogToFile"), 1 , "Writes the CLR log to a file.")
+CONFIG_DWORD_INFO(INTERNAL_LogWithPid, W("LogWithPid"), TRUE, "Appends pid to filename for the CLR log.")
 
 ///
 /// MetaData
@@ -435,7 +435,7 @@ RETAIL_CONFIG_STRING_INFO(EXTERNAL_StartupDelayMS, W("StartupDelayMS"), "")
 ///
 /// Stress
 ///
-RETAIL_CONFIG_DWORD_INFO(UNSUPPORTED_StressLog, W("StressLog"), 0, "Turns on the stress log.")
+RETAIL_CONFIG_DWORD_INFO(UNSUPPORTED_StressLog, W("StressLog"), 1, "Turns on the stress log.")
 RETAIL_CONFIG_DWORD_INFO(UNSUPPORTED_ForceEnc, W("ForceEnc"), 0, "Forces Edit and Continue to be on for all eligible modules.")
 RETAIL_CONFIG_DWORD_INFO(UNSUPPORTED_StressLogSize, W("StressLogSize"), 0, "Stress log size in bytes per thread.")
 RETAIL_CONFIG_STRING_INFO(UNSUPPORTED_StressLogFilename, W("StressLogFilename"), "Stress log filename for memory mapped stress log.")
