@@ -52,6 +52,34 @@ static DWORD s_PalInitializeFlags = 0;
 
 static const char * PAL_MACH_EXCEPTION_MODE = "PAL_MachExceptionMode";
 
+// Log file for EXC_BREAKPOINT diagnostic logging.
+// Path is read from DOTNET_MachExceptionLogFile env var; defaults to $TMPDIR/mach_exception.log.
+static FILE* s_machExceptionLogFile = nullptr;
+
+void MachExceptionInitializeLogFile()
+{
+    const char *path = getenv("DOTNET_MachExceptionLogFile");
+    char buffer[PATH_MAX];
+    if (path == nullptr)
+    {
+        const char *tmpDir = getenv("TMPDIR");
+        sprintf_s(buffer, sizeof(buffer), "%s/mach_exception_%d.log", tmpDir ? tmpDir : "/tmp", getpid());
+        path = buffer;
+    }
+    s_machExceptionLogFile = fopen(path, "a");
+    if (s_machExceptionLogFile != nullptr)
+        setvbuf(s_machExceptionLogFile, nullptr, _IONBF, 0); // unbuffered
+}
+
+void MachExceptionCleanupLogFile()
+{
+    if (s_machExceptionLogFile != nullptr)
+    {
+        fclose(s_machExceptionLogFile);
+        s_machExceptionLogFile = nullptr;
+    }
+}
+
 // This struct is used to track the threads that need to have an exception forwarded
 // to the next thread level port in the chain (if exists). An entry is added by the
 // faulting sending a special message to the exception thread which saves it on an
@@ -390,6 +418,14 @@ static void PAL_DispatchExceptionInner(PCONTEXT pContext, PEXCEPTION_RECORD pExR
             // Make a copy of the exception records so that we can free them before restoring the context
             *pContext = *exception.ExceptionPointers.ContextRecord;
             *pExRecord = *exception.ExceptionPointers.ExceptionRecord;
+        }
+        else if (pExRecord->ExceptionCode == EXCEPTION_BREAKPOINT)
+        {
+            if (s_machExceptionLogFile != nullptr)
+            {
+                fprintf(s_machExceptionLogFile, "PAL_DispatchExceptionInner: EXCEPTION_BREAKPOINT at %p was NOT handled — will forward to previous handler\n",
+                    pExRecord->ExceptionAddress);
+            }
         }
 
         // The exception records are destroyed by the PAL_SEHException destructor now.
@@ -1059,6 +1095,54 @@ SEHExceptionThread(void *args)
             exception_type_t exceptionType = sMessage.GetException();
             thread = sMessage.GetThread();
 
+            // Always log EXC_BREAKPOINT exceptions to help diagnose unhandled breakpoint crashes.
+            // The Mach exception thread is a dedicated thread (not a signal handler), so fprintf is safe here.
+            // Output goes to file specified by DOTNET_MachExceptionLogFile (default: /tmp/mach_exception.log).
+            if (exceptionType == EXC_BREAKPOINT)
+            {
+                if (s_machExceptionLogFile != nullptr)
+                {
+#if defined(HOST_ARM64)
+                    arm_thread_state64_t threadStateBP;
+                    unsigned int countBP = sizeof(threadStateBP) / sizeof(unsigned);
+                    machret = thread_get_state(thread, ARM_THREAD_STATE64, (thread_state_t)&threadStateBP, &countBP);
+                    if (machret == KERN_SUCCESS)
+                    {
+                        fprintf(s_machExceptionLogFile, "MACH EXC_BREAKPOINT: thread %08x pc %p lr %p sp %016llx fp %016llx cpsr %08x\n",
+                            thread,
+                            arm_thread_state64_get_pc_fptr(threadStateBP),
+                            arm_thread_state64_get_lr_fptr(threadStateBP),
+                            arm_thread_state64_get_sp(threadStateBP),
+                            arm_thread_state64_get_fp(threadStateBP),
+                            threadStateBP.__cpsr);
+
+                        arm_exception_state64_t threadExStateBP;
+                        unsigned int ehCountBP = sizeof(threadExStateBP) / sizeof(unsigned);
+                        machret = thread_get_state(thread, ARM_EXCEPTION_STATE64, (thread_state_t)&threadExStateBP, &ehCountBP);
+                        if (machret == KERN_SUCCESS)
+                        {
+                            fprintf(s_machExceptionLogFile, "MACH EXC_BREAKPOINT: far %016llx esr %08x exception %08x\n",
+                                threadExStateBP.__far,
+                                threadExStateBP.__esr,
+                                threadExStateBP.__exception);
+                        }
+                    }
+#elif defined(HOST_AMD64)
+                    x86_thread_state64_t threadStateBP;
+                    unsigned int countBP = sizeof(threadStateBP) / sizeof(unsigned);
+                    machret = thread_get_state(thread, x86_THREAD_STATE64, (thread_state_t)&threadStateBP, &countBP);
+                    if (machret == KERN_SUCCESS)
+                    {
+                        fprintf(s_machExceptionLogFile, "MACH EXC_BREAKPOINT: thread %08x rip %016llx rsp %016llx rbp %016llx\n",
+                            thread,
+                            threadStateBP.__rip,
+                            threadStateBP.__rsp,
+                            threadStateBP.__rbp);
+                    }
+#endif
+                }
+            }
+
 #ifdef _DEBUG
             if (NONPAL_TRACE_ENABLED)
             {
@@ -1392,6 +1476,8 @@ SEHInitializeMachExceptions(DWORD flags)
     kern_return_t machret;
 
     s_PalInitializeFlags = flags;
+
+    MachExceptionInitializeLogFile();
 
     if (flags & PAL_INITIALIZE_REGISTER_SIGNALS)
     {

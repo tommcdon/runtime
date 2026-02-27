@@ -107,6 +107,10 @@ SEHCleanup()
 {
     TRACE("Cleaning up SEH\n");
 
+#if HAVE_MACH_EXCEPTIONS
+    MachExceptionCleanupLogFile();
+#endif
+
     SEHCleanupSignals(false /* isChildProcess */);
 }
 
