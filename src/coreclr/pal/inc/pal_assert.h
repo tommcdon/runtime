@@ -43,7 +43,7 @@ extern "C" {
                      "\tProcess:    %d\n",                      \
                      #e, __LINE__, __FILE__, __FUNCTION__,      \
                      GetCurrentProcessId());                    \
-            DebugBreak();                                       \
+            /* DebugBreak(); */                                 \
         }                                                       \
     }while (0)
 #else // !DEBUG

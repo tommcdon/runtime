@@ -76,7 +76,7 @@ extern "C" void QCALLTYPE DebugDebugger_Break()
         _ASSERTE(!GetThread()->PreemptiveGCDisabled());
 
         // This becomes an unmanaged breakpoint, such as int 3.
-        DebugBreak();
+        //DebugBreak();
     }
 
     END_QCALL;

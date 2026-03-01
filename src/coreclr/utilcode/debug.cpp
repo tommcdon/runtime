@@ -374,8 +374,8 @@ VOID DbgAssertDialog(const char *szFile, int iLine, const char *szExpr)
     // or we have a recursion in the Assert logic (usually the latter).  At least with this
     // code in place, we don't get stack overflow (and the process torn down).
     // the correct fix is to avoid calling asserting when allocating memory with an assert.
-    if (g_DbgSuppressAllocationAsserts > 16)
-        DebugBreak();
+    // if (g_DbgSuppressAllocationAsserts > 16)
+    //     DebugBreak();
 
     SUPPRESS_ALLOCATION_ASSERTS_IN_THIS_SCOPE;
 
