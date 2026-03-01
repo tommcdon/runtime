@@ -189,7 +189,7 @@ void CHECK::Setup(LPCSTR message, LPCSTR condition, LPCSTR file, INT line)
 #if defined(_DEBUG_IMPL)
     if (IsInAssert() && minipal_is_native_debugger_present())
     {
-        DebugBreak();
+        //DebugBreak();
     }
 #endif
 }

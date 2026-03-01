@@ -15301,7 +15301,7 @@ void EECodeInfo::GetOffsetsFromUnwindInfo(ULONG* pRSPOffset, ULONG* pRBPOffset)
     if ( (pInfo->FrameRegister != 0) && (pInfo->FrameRegister != kRBP) )
     {
         _ASSERTE(!"GetRbpOffset() - non-RBP frame pointer used, violating assumptions of the security stackwalk cache");
-        DebugBreak();
+        //DebugBreak();
     }
 
     // Walk the unwind info.

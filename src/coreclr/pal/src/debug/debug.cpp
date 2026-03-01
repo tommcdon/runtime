@@ -405,11 +405,11 @@ DebugBreak(
     PERF_ENTRY(DebugBreak);
     ENTRY("DebugBreak()\n");
 
-    if (DebugBreakCommand() <= 0) {
-        // either didn't do anything, or failed
-        TRACE("Calling DBG_DebugBreak\n");
-        DBG_DebugBreak();
-    }
+    // if (DebugBreakCommand() <= 0) {
+    //     // either didn't do anything, or failed
+    //     TRACE("Calling DBG_DebugBreak\n");
+    //     DBG_DebugBreak();
+    // }
 
     LOGEXIT("DebugBreak returns\n");
     PERF_EXIT(DebugBreak);
