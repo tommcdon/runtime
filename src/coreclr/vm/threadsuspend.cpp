@@ -4233,6 +4233,8 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
             {
                 if (thread->IsInForbidSuspendForDebuggerRegion())
                 {
+                    LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x preemptive but in ForbidSuspendForDebugger region — skipping\n",
+                        thread->GetThreadId()));
                     continue;
                 }
 
@@ -4243,7 +4245,11 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
 
 #if defined(FEATURE_THREAD_ACTIVATION)
             // Inject an activation that will interrupt the thread and try to bring it to a safe point
-            thread->InjectActivation(Thread::ActivationReason::SuspendForDebugger);
+            {
+                bool injected = thread->InjectActivation(Thread::ActivationReason::SuspendForDebugger);
+                LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x coop mode, InjectActivation=%s, hasPending=%d\n",
+                    thread->GetThreadId(), injected ? "true" : "false", (int)thread->m_hasPendingActivation));
+            }
 #endif // FEATURE_THREAD_ACTIVATION && TARGET_WINDOWS
 
             continue;
@@ -4352,6 +4358,23 @@ Label_MarkThreadAsSynced:
     if (m_DebugWillSyncCount < 0)
     {
         RETURN true;
+    }
+
+    // The CLR is not yet synced. Log which threads are still outstanding.
+    {
+        Thread *dbgThread = NULL;
+        while ((dbgThread = ThreadStore::GetThreadList(dbgThread)) != NULL)
+        {
+            if (dbgThread->m_State & TS_DebugWillSync)
+            {
+                InterlockedOr((LONG*)&dbgThread->m_fPreemptiveGCDisabled, 0);
+                LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x STILL not synced — coop=%d forbidDbg=%d hasPending=%d\n",
+                    dbgThread->GetThreadId(),
+                    (int)dbgThread->m_fPreemptiveGCDisabled,
+                    (int)dbgThread->IsInForbidSuspendForDebuggerRegion(),
+                    (int)dbgThread->m_hasPendingActivation));
+            }
+        }
     }
 
     // The CLR is not yet synced. We release the threadstore lock and return false.
@@ -5745,6 +5768,13 @@ BOOL CheckActivationSafePoint(SIZE_T ip)
     if (!isActivationSafePoint && pThread != NULL)
     {
         pThread->m_hasPendingActivation = false;
+        LOG((LF_CORDB, LL_INFO1000, "CheckActivationSafePoint: REJECTED ip=%p thread=0x%x coop=%d stepping=%d scanLock=%d managed=%d\n",
+            (void*)ip,
+            pThread->GetThreadId(),
+            (int)pThread->PreemptiveGCDisabled(),
+            (int)((pThread->m_StateNC & Thread::TSNC_DebuggerIsStepping) != 0),
+            (int)(ExecutionManager::GetScanFlags(pThread) == ExecutionManager::ScanReaderLock),
+            (int)ExecutionManager::IsManagedCodeNoLock(ip)));
     }
 
     return isActivationSafePoint;
@@ -5927,6 +5957,7 @@ bool Thread::InjectActivation(ActivationReason reason)
     // wrong resume because it's running a native code.
     if ((m_StateNC & Thread::TSNC_DebuggerIsStepping) != 0)
     {
+        LOG((LF_CORDB, LL_INFO1000, "InjectActivation: thread 0x%x skipped — debugger is stepping\n", GetThreadId()));
         return false;
     }
 #ifdef FEATURE_SPECIAL_USER_MODE_APC
