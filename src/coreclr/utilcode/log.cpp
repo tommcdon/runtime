@@ -48,13 +48,18 @@ VOID InitLogging()
         // registry and if there, turn on file logging VPM</TODO>
 
     LogFlags |= (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogEnable) != 0) ? LOG_ENABLE : 0;
-    LogFacilityMask = CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogFacility, LogFacilityMask) | LF_ALWAYS;
-    LogVMLevel = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_LogLevel, LogVMLevel);
+    LogFacilityMask = CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogFacility) | LF_ALWAYS;
+    LogVMLevel = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_LogLevel);
     LogFlags |= (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogFileAppend) != 0) ? LOG_ENABLE_APPEND_FILE : 0;
     LogFlags |= (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogFlushFile) != 0) ? LOG_ENABLE_FLUSH_FILE : 0;
     LogFlags |= (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogToDebugger) != 0) ? LOG_ENABLE_DEBUGGER_LOGGING : 0;
     LogFlags |= (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogToFile) != 0) ? LOG_ENABLE_FILE_LOGGING : 0;
     LogFlags |= (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogToConsole) != 0) ? LOG_ENABLE_CONSOLE_LOGGING : 0;
+
+    // LOG_ENABLE | LOG_ENABLE_FILE_LOGGING
+    // LogFlags: 0x00000041, LogFacilityMask: 0x80000240, LogFacilityMask2: 0x00000000, LogVMLevel: 10
+    //printf("LogFlags: 0x%08x, LogFacilityMask: 0x%08x, LogFacilityMask2: 0x%08x, LogVMLevel: %d\n", LogFlags, LogFacilityMask, LogFacilityMask2, LogVMLevel);
+    //fflush(stdout);
 
     LogFacilityMask2 = CLRConfig::GetConfigValue(CLRConfig::INTERNAL_LogFacility2, LogFacilityMask2) | LF_ALWAYS;
 
