@@ -4218,6 +4218,18 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
         if ((thread->m_State & TS_DebugWillSync) == 0)
             continue;
 
+        // A thread that has been reported dead and whose handle has been invalidated
+        // (e.g., a thread that exited while in cooperative mode and went through
+        // DetachThread) will never be able to sync on its own — InjectActivation
+        // will always fail because the handle is INVALID_HANDLE_VALUE and the OS
+        // thread is gone.  Treat it as synced to avoid a permanent deadlock.
+        if (thread->HasThreadState(TS_ReportDead) && !thread->HasValidThreadHandle())
+        {
+            LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x is TS_ReportDead with invalid handle — treating as synced\n",
+                thread->GetThreadId()));
+            goto Label_MarkThreadAsSynced;
+        }
+
         if (!UseContextBasedThreadRedirection())
         {
             // On platforms that do not support safe thread suspension we either
@@ -5996,6 +6008,11 @@ bool Thread::InjectActivation(ActivationReason reason)
 
             return success;
         }
+        LOG((LF_CORDB, LL_INFO100, "InjectActivation: thread 0x%x failed — handle is INVALID_HANDLE_VALUE\n", GetThreadId()));
+    }
+    else
+    {
+        LOG((LF_CORDB, LL_INFO100, "InjectActivation: thread 0x%x failed — ThreadSuspendInjection disabled\n", GetThreadId()));
     }
 
     return false;

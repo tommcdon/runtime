@@ -1095,6 +1095,12 @@ SEHExceptionThread(void *args)
             exception_type_t exceptionType = sMessage.GetException();
             thread = sMessage.GetThread();
 
+            if (s_machExceptionLogFile != nullptr)
+            {
+                fprintf(s_machExceptionLogFile, "MACH exception: type %d (%s) thread %08x\n",
+                    exceptionType, GetExceptionString(exceptionType), thread);
+            }
+
             // Always log EXC_BREAKPOINT exceptions to help diagnose unhandled breakpoint crashes.
             // The Mach exception thread is a dedicated thread (not a signal handler), so fprintf is safe here.
             // Output goes to file specified by DOTNET_MachExceptionLogFile (default: /tmp/mach_exception.log).
