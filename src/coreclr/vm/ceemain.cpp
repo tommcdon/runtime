@@ -1631,6 +1631,9 @@ static void RuntimeThreadShutdown(void* thread)
 
     if (pThread)
     {
+        LOG((LF_CORDB, LL_INFO1000, "RuntimeThreadShutdown: thread %p OSID %x coop=%d state=0x%x\n",
+            pThread, ::GetCurrentThreadId(), (int)pThread->PreemptiveGCDisabled(),
+            (ULONG)pThread->GetSnapshotState()));
 #ifdef FEATURE_COMINTEROP
         // reset the CoInitialize state
         // so we don't call CoUninitialize during thread detach
