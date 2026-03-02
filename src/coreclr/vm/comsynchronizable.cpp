@@ -130,6 +130,9 @@ static void KickOffThread_Worker(LPVOID ptr)
     }
     CONTRACTL_END;
 
+    LOG((LF_CORDB, LL_INFO1000, "KickOffThread_Worker: entering managed StartCallback (OSID %x)\n",
+        ::GetCurrentThreadId()));
+
     PREPARE_NONVIRTUAL_CALLSITE(METHOD__THREAD__START_CALLBACK);
     DECLARE_ARGHOLDER_ARRAY(args, 1);
     args[ARGNUM_0] = OBJECTREF_TO_ARGHOLDER(GetThread()->GetExposedObjectRaw());
@@ -178,6 +181,9 @@ static ULONG WINAPI KickOffThread(void* pass)
     Thread* pThread = (Thread*)pass;
     _ASSERTE(pThread != NULL);
 
+    LOG((LF_CORDB, LL_INFO1000, "KickOffThread: calling HasStarted for thread %p (OSID %x)\n",
+        pThread, ::GetCurrentThreadId()));
+
     if (pThread->HasStarted())
     {
         // Do not swallow the unhandled exception here
@@ -201,7 +207,13 @@ static ULONG WINAPI KickOffThread(void* pass)
 
         _ASSERTE(GetThread() == pThread);        // Now that it's started
 
+        LOG((LF_CORDB, LL_INFO1000, "KickOffThread: calling KickOff for thread %p (OSID %x)\n",
+            pThread, ::GetCurrentThreadId()));
+
         ManagedThreadBase::KickOff(KickOffThread_Worker, NULL);
+
+        LOG((LF_CORDB, LL_INFO1000, "KickOffThread: KickOff returned for thread %p (OSID %x), calling DestroyThread\n",
+            pThread, ::GetCurrentThreadId()));
 
         PulseAllHelper(pThread);
 
@@ -210,6 +222,11 @@ static ULONG WINAPI KickOffThread(void* pass)
         pThread->ClearThreadCPUGroupAffinity();
 
         DestroyThread(pThread);
+    }
+    else
+    {
+        LOG((LF_CORDB, LL_INFO1000, "KickOffThread: HasStarted FAILED for thread %p (OSID %x)\n",
+            pThread, ::GetCurrentThreadId()));
     }
 
     return 0;
