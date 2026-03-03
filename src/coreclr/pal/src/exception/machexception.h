@@ -38,7 +38,8 @@ void MachExceptionCleanupLogFile(void);
 // Returns the current Mach exception mode value and computed exception mask for logging.
 // mode: raw MachExceptionMode enum value (0=default, 1=suppress illegal, 2=suppress debug, 4=suppress managed)
 // mask: the resulting exception_mask_t registered for each thread
-void MachExceptionGetModeInfo(int *mode, unsigned int *mask);
+// source: human-readable string describing why the mode was set
+void MachExceptionGetModeInfo(int *mode, unsigned int *mask, const char **source);
 PAL_NORETURN void MachSetThreadContext(CONTEXT *lpContext);
 
 #ifdef __cplusplus

@@ -593,7 +593,7 @@ void FatalErrorHandler(UINT errorCode, LPCWSTR pszMessage)
 }
 
 #if defined(TARGET_OSX)
-extern "C" void MachExceptionGetModeInfo(int *mode, unsigned int *mask);
+extern "C" void MachExceptionGetModeInfo(int *mode, unsigned int *mask, const char **source);
 #endif
 
 void EEStartupHelper()
@@ -751,10 +751,11 @@ void EEStartupHelper()
         {
             int machExMode = 0;
             unsigned int machExMask = 0;
-            MachExceptionGetModeInfo(&machExMode, &machExMask);
-            LOG((LF_CORDB, LL_INFO10, "MachExceptionMode: mode=%d mask=0x%08x "
+            const char *machExSource = nullptr;
+            MachExceptionGetModeInfo(&machExMode, &machExMask, &machExSource);
+            LOG((LF_CORDB, LL_INFO10, "MachExceptionMode: mode=%d mask=0x%08x source=\"%s\" "
                 "(SuppressIllegal=%d SuppressDebugging=%d SuppressManaged=%d)\n",
-                machExMode, machExMask,
+                machExMode, machExMask, machExSource,
                 (machExMode & 1) != 0, (machExMode & 2) != 0, (machExMode & 4) != 0));
         }
 #endif
