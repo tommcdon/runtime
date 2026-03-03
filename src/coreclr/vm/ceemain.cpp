@@ -592,6 +592,10 @@ void FatalErrorHandler(UINT errorCode, LPCWSTR pszMessage)
     EEPOLICY_HANDLE_FATAL_ERROR_WITH_MESSAGE(errorCode, pszMessage);
 }
 
+#if defined(TARGET_OSX)
+extern "C" void MachExceptionGetModeInfo(int *mode, unsigned int *mask);
+#endif
+
 void EEStartupHelper()
 {
     CONTRACTL
@@ -741,6 +745,18 @@ void EEStartupHelper()
 
 #ifdef LOGGING
         InitializeLogging();
+#endif
+
+#if defined(TARGET_OSX) && defined(LOGGING)
+        {
+            int machExMode = 0;
+            unsigned int machExMask = 0;
+            MachExceptionGetModeInfo(&machExMode, &machExMask);
+            LOG((LF_CORDB, LL_INFO10, "MachExceptionMode: mode=%d mask=0x%08x "
+                "(SuppressIllegal=%d SuppressDebugging=%d SuppressManaged=%d)\n",
+                machExMode, machExMask,
+                (machExMode & 1) != 0, (machExMode & 2) != 0, (machExMode & 4) != 0));
+        }
 #endif
 
 #ifdef FEATURE_PERFMAP

@@ -190,27 +190,27 @@ Function :
 Return value :
     mach exception mask
 --*/
+static MachExceptionMode s_exMode = MachException_Uninitialized;
+
 static
 exception_mask_t
 GetExceptionMask()
 {
-    static MachExceptionMode exMode = MachException_Uninitialized;
-
-    if (exMode == MachException_Uninitialized)
+    if (s_exMode == MachException_Uninitialized)
     {
-        exMode = MachException_Default;
+        s_exMode = MachException_Default;
 
         char* exceptionSettings = EnvironGetenv(PAL_MACH_EXCEPTION_MODE);
         if (exceptionSettings)
         {
-            exMode = (MachExceptionMode)atoi(exceptionSettings);
+            s_exMode = (MachExceptionMode)atoi(exceptionSettings);
             free(exceptionSettings);
         }
         else
         {
             if (minipal_is_native_debugger_present())
             {
-                exMode = MachException_SuppressDebugging;
+                s_exMode = MachException_SuppressDebugging;
             }
         }
     }
@@ -219,11 +219,11 @@ GetExceptionMask()
 
     if (s_PalInitializeFlags & PAL_INITIALIZE_REGISTER_SIGNALS)
     {
-        if (!(exMode & MachException_SuppressIllegal))
+        if (!(s_exMode & MachException_SuppressIllegal))
         {
             machExceptionMask |= PAL_EXC_ILLEGAL_MASK;
         }
-        if (!(exMode & MachException_SuppressDebugging) && (s_PalInitializeFlags & PAL_INITIALIZE_DEBUGGER_EXCEPTIONS))
+        if (!(s_exMode & MachException_SuppressDebugging) && (s_PalInitializeFlags & PAL_INITIALIZE_DEBUGGER_EXCEPTIONS))
         {
             // Always hook exception ports for breakpoint exceptions.
             // The reason is that we don't know when a managed debugger
@@ -233,13 +233,20 @@ GetExceptionMask()
             // this PAL.
             machExceptionMask |= PAL_EXC_DEBUGGING_MASK;
         }
-        if (!(exMode & MachException_SuppressManaged))
+        if (!(s_exMode & MachException_SuppressManaged))
         {
             machExceptionMask |= PAL_EXC_MANAGED_MASK;
         }
     }
 
     return machExceptionMask;
+}
+
+void MachExceptionGetModeInfo(int *mode, unsigned int *mask)
+{
+    exception_mask_t m = GetExceptionMask();
+    *mode = (int)s_exMode;
+    *mask = (unsigned int)m;
 }
 
 /*++
