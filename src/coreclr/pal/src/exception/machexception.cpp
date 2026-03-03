@@ -191,6 +191,7 @@ Return value :
     mach exception mask
 --*/
 static MachExceptionMode s_exMode = MachException_Uninitialized;
+static const char *s_exModeSource = "uninitialized";
 
 static
 exception_mask_t
@@ -204,6 +205,7 @@ GetExceptionMask()
         if (exceptionSettings)
         {
             s_exMode = (MachExceptionMode)atoi(exceptionSettings);
+            s_exModeSource = "PAL_MachExceptionMode env var";
             free(exceptionSettings);
         }
         else
@@ -211,7 +213,18 @@ GetExceptionMask()
             if (minipal_is_native_debugger_present())
             {
                 s_exMode = MachException_SuppressDebugging;
+                s_exModeSource = "P_TRACED (native debugger detected)";
             }
+            else
+            {
+                s_exModeSource = "default (no native debugger)";
+            }
+        }
+
+        if (s_machExceptionLogFile != nullptr)
+        {
+            fprintf(s_machExceptionLogFile, "MachExceptionMode: mode=%d source=\"%s\" ppid=%d\n",
+                (int)s_exMode, s_exModeSource, (int)getppid());
         }
     }
 
@@ -242,11 +255,12 @@ GetExceptionMask()
     return machExceptionMask;
 }
 
-void MachExceptionGetModeInfo(int *mode, unsigned int *mask)
+void MachExceptionGetModeInfo(int *mode, unsigned int *mask, const char **source)
 {
     exception_mask_t m = GetExceptionMask();
     *mode = (int)s_exMode;
     *mask = (unsigned int)m;
+    *source = s_exModeSource;
 }
 
 /*++
