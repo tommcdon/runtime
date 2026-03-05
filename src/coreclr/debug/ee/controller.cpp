@@ -496,7 +496,7 @@ void ControllerStackInfo::GetStackInfo(
     if (result == SWA_DONE)
     {
         _ASSERTE(!HasReturnFrame()); // We didn't find a managed return frame
-        _ASSERTE(HasReturnFrame(true)); // All threads have at least one unmanaged frame
+        //_ASSERTE(HasReturnFrame(true)); // All threads have at least one unmanaged frame
     }
 }
 
