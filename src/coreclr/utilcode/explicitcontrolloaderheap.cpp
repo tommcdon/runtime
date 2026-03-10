@@ -149,6 +149,10 @@ BOOL ExplicitControlLoaderHeap::CommitPages(void* pData, size_t dwSizeToCommitPa
         return FALSE;
     }
 
+    printf("ExplicitControlLoaderHeap::CommitPages: pData=%p size=0x%zx executable=%d\n",
+           pData, dwSizeToCommitPart, (int)m_fExecutableHeap);
+    fflush(stdout);
+
     return TRUE;
 }
 

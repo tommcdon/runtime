@@ -164,6 +164,8 @@ struct PerfJitDumpState
 
     int FatalError()
     {
+        printf("PerfJitDump: Fatal error occurred. Disabling JIT dump for the process.\n");
+        fflush(stdout);
         enabled = false;
 
         if (mmapAddr != MAP_FAILED)
@@ -247,7 +249,7 @@ exit:
         return 0;
     }
 
-    int LogMethod(void* pCode, size_t codeSize, const char* symbol, void* debugInfo, void* unwindInfo, bool reportCodeBlock)
+    int LogMethod(void* pCode, size_t codeSize, const char* symbol, void* debugInfo, void* unwindInfo)
     {
         int result = 0;
 
@@ -257,7 +259,7 @@ exit:
 
             JitCodeLoadRecord record;
 
-            size_t reportedCodeSize = reportCodeBlock ? codeSize : 0;
+            size_t reportedCodeSize = codeSize;
 
             size_t bytesRemaining = sizeof(JitCodeLoadRecord) + symbolLen + 1 + reportedCodeSize;
 
@@ -389,9 +391,9 @@ PAL_PerfJitDump_IsStarted()
 
 int
 PALAPI
-PAL_PerfJitDump_LogMethod(void* pCode, size_t codeSize, const char* symbol, void* debugInfo, void* unwindInfo, bool reportCodeBlock)
+PAL_PerfJitDump_LogMethod(void* pCode, size_t codeSize, const char* symbol, void* debugInfo, void* unwindInfo)
 {
-    return GetState().LogMethod(pCode, codeSize, symbol, debugInfo, unwindInfo, reportCodeBlock);
+    return GetState().LogMethod(pCode, codeSize, symbol, debugInfo, unwindInfo);
 }
 
 int
@@ -419,7 +421,7 @@ PAL_PerfJitDump_IsStarted()
 
 int
 PALAPI
-PAL_PerfJitDump_LogMethod(void* pCode, size_t codeSize, const char* symbol, void* debugInfo, void* unwindInfo, bool reportCodeBlock)
+PAL_PerfJitDump_LogMethod(void* pCode, size_t codeSize, const char* symbol, void* debugInfo, void* unwindInfo)
 {
     return 0;
 }

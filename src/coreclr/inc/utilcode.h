@@ -2830,7 +2830,14 @@ class RangeList
         return this->IsInRangeWorker(address);
     }
 
+
 #ifndef DACCESS_COMPILE
+
+    virtual int GetRangeListType()
+    {
+        LIMITED_METHOD_CONTRACT;
+        return -1;
+    }
 
     // You can overload these two for synchronization (as LockedRangeList does)
     virtual BOOL AddRangeWorker(const BYTE *start, const BYTE *end, void *id);

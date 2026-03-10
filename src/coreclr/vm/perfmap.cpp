@@ -339,7 +339,7 @@ void PerfMap::LogJITCompiledMethod(MethodDesc * pMethod, PCODE pCode, size_t cod
                 s_Current->WriteLine(line);
             }
 
-            PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr, /*reportCodeBlock*/true);
+            PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr);
         }
     }
     EX_CATCH{} EX_END_CATCH
@@ -380,7 +380,7 @@ void PerfMap::LogPreCompiledMethod(MethodDesc * pMethod, PCODE pCode)
         if (methodRegionInfo.hotSize > 0)
         {
             CrstHolder ch(&(s_csPerfMap));
-            PAL_PerfJitDump_LogMethod((void*)methodRegionInfo.hotStartAddress, methodRegionInfo.hotSize, name.GetUTF8(), nullptr, nullptr, /*reportCodeBlock*/true);
+            PAL_PerfJitDump_LogMethod((void*)methodRegionInfo.hotStartAddress, methodRegionInfo.hotSize, name.GetUTF8(), nullptr, nullptr);
         }
 
         if (methodRegionInfo.coldSize > 0)
@@ -393,7 +393,7 @@ void PerfMap::LogPreCompiledMethod(MethodDesc * pMethod, PCODE pCode)
                 name.Append(W("[PreJit-cold]"));
             }
 
-            PAL_PerfJitDump_LogMethod((void*)methodRegionInfo.coldStartAddress, methodRegionInfo.coldSize, name.GetUTF8(), nullptr, nullptr, /*reportCodeBlock*/true);
+            PAL_PerfJitDump_LogMethod((void*)methodRegionInfo.coldStartAddress, methodRegionInfo.coldSize, name.GetUTF8(), nullptr, nullptr);
         }
     }
     EX_CATCH{} EX_END_CATCH
@@ -453,7 +453,7 @@ void PerfMap::LogStubs(const char* stubType, const char* stubOwner, PCODE pCode,
             // For block-level stub allocations, the memory may be reserved but not yet committed.
             // Emitting code bytes in that case can cause jitdump logging to fail, and the bytes
             // are optional in the jitdump specification.
-            PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr, /*reportCodeBlock*/ stubAllocationType != PerfMapStubType::Block);
+            PAL_PerfJitDump_LogMethod((void*)pCode, codeSize, name.GetUTF8(), nullptr, nullptr);
         }
     }
     EX_CATCH{} EX_END_CATCH
@@ -474,11 +474,14 @@ void PerfMap::GetNativeImageSignature(PEAssembly * pPEAssembly, CHAR * pszSig, u
     minipal_guid_as_string(mvid, pszSig, nSigSize);
 }
 
-void ReportStubBlock(void* start, size_t size, StubCodeBlockKind kind)
+void ReportStubBlock(void* start, size_t size, int kind)
 {
     WRAPPER_NO_CONTRACT;
 
-    PerfMap::LogStubs(__FUNCTION__, GetStubCodeBlockKindString(kind), (PCODE)start, size, PerfMapStubType::Block);
+    printf("ReportStubBlock: " FMT_CODE_ADDR " - " FMT_CODE_ADDR " (size 0x%zx) kind %d\n", start, (BYTE*)start + size, size, kind);
+    fflush(stdout);
+
+    PerfMap::LogStubs(__FUNCTION__, GetStubCodeBlockKindString((StubCodeBlockKind)kind), (PCODE)start, size, PerfMapStubType::Block);
 }
 
 #endif // FEATURE_PERFMAP && !DACCESS_COMPILE

@@ -11,6 +11,13 @@
 
 #ifndef DACCESS_COMPILE
 
+void ReportStubBlock(void* start, size_t size, int kind);
+#ifndef FEATURE_PERFMAP
+inline void ReportStubBlock(void* start, size_t size, int kind)
+{
+}
+#endif
+
 namespace
 {
 #if !defined(SELF_NO_HOST) // ETW available only in the runtime
@@ -125,6 +132,15 @@ BOOL UnlockedInterleavedLoaderHeap::CommitPages(void* pData, size_t dwSizeToComm
         {
             return FALSE;
         }
+    }
+
+    printf("UnlockedInterleavedLoaderHeap::CommitPages: pData=%p size=0x%zx executable=%d\n",
+           pData, dwSizeToCommitPart, (int)IsExecutable());
+    fflush(stdout);
+
+    if (m_pRangeList != NULL && m_pRangeList->GetRangeListType() > 0)
+    {
+        ReportStubBlock(pData, dwSizeToCommitPart, m_pRangeList->GetRangeListType());
     }
 
     _ASSERTE(dwSizeToCommitPart == GetStubCodePageSize());

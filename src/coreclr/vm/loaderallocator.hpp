@@ -77,11 +77,22 @@ public:
         return _rangeListType;
     }
 
+#ifndef DACCESS_COMPILE
+    virtual int GetRangeListType()
+    {
+        LIMITED_METHOD_CONTRACT;
+        return (int)_rangeListType;
+    }
+#endif
+
 private:
 #ifndef DACCESS_COMPILE
     void AddRangeWorkerHelper(TADDR start, TADDR end, void* id)
     {
-        ReportStubBlock((void*)start, (size_t)(end - start), _rangeListType);
+        //ReportStubBlock((void*)start, (size_t)(end - start), _rangeListType);
+        printf("Adding range %p - %p (size 0x%zx) to range list of type %d\n", (void*)start, (void*)end, end - start, (int)_rangeListType);
+        fflush(stdout);
+
         SimpleWriteLockHolder lh(&_RangeListRWLock);
 
         _ASSERTE(id == _id || _id == NULL);

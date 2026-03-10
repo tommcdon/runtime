@@ -2097,7 +2097,9 @@ TaggedMemAllocPtr CodeFragmentHeap::RealAllocAlignedMem(size_t  dwRequestedSize
         if (dwSize < SMALL_BLOCK_THRESHOLD)
             dwSize = 4 * SMALL_BLOCK_THRESHOLD;
         pMem = ExecutionManager::GetEEJitManager()->AllocCodeFragmentBlock(dwSize, dwAlignment, m_pAllocator, m_kind);
-        ReportStubBlock(pMem, dwSize, m_kind);
+        printf("CodeFragmentHeap::RealAllocAlignedMem: pMem=%p dwSize=0x%zx m_kind=%d\n", pMem, dwSize, (int)m_kind);
+        fflush(stdout);
+        ReportStubBlock(pMem, dwSize, (int)m_kind);
     }
 
     SIZE_T dwExtra = (BYTE *)ALIGN_UP(pMem, dwAlignment) - (BYTE *)pMem;
@@ -3240,7 +3242,9 @@ JumpStubBlockHeader *  EEJitManager::AllocJumpStubBlock(MethodDesc* pMD, DWORD n
         _ASSERTE(IS_ALIGNED(blockWriterHolder.GetRW(), CODE_SIZE_ALIGN));
     }
 
-    ReportStubBlock((void*)mem, blockSize, STUB_CODE_BLOCK_JUMPSTUB);
+    printf("AllocJumpStubBlock: mem=0x%llx blockSize=0x%zx kind=%d\n", (unsigned long long)mem, blockSize, (int)STUB_CODE_BLOCK_JUMPSTUB);
+    fflush(stdout);
+    ReportStubBlock((void*)mem, blockSize, (int)STUB_CODE_BLOCK_JUMPSTUB);
 
     blockWriterHolder.GetRW()->m_next            = NULL;
     blockWriterHolder.GetRW()->m_used            = 0;

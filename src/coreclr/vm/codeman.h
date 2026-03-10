@@ -148,9 +148,9 @@ inline const char *GetStubCodeBlockKindString(StubCodeBlockKind kind)
     }
 }
 
-void ReportStubBlock(void* start, size_t size, StubCodeBlockKind kind);
+void ReportStubBlock(void* start, size_t size, int kind);
 #ifndef FEATURE_PERFMAP
-inline void ReportStubBlock(void* start, size_t size, StubCodeBlockKind kind)
+inline void ReportStubBlock(void* start, size_t size, int kind)
 {
 }
 #endif

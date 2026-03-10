@@ -771,6 +771,10 @@ HostCodeHeap::TrackAllocation* HostCodeHeap::AllocMemory_NoThrow(size_t header, 
                 return NULL;
             }
 
+            printf("HostCodeHeap::AllocMemory_NoThrow commit: addr=%p size=0x%zx executable=%d\n",
+                   (void*)m_pLastAvailableCommittedAddr, sizeToCommit, (int)m_isExecutable);
+            fflush(stdout);
+
             TrackAllocation *pBlockToInsert = (TrackAllocation*)(void*)m_pLastAvailableCommittedAddr;
             ExecutableWriterHolder<TrackAllocation> blockToInsertWriterHolder(pBlockToInsert, sizeof(TrackAllocation));
 

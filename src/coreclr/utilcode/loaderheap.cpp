@@ -144,6 +144,13 @@ size_t UnlockedLoaderHeap::GetBytesAvailReservedRegion()
 
 #ifndef DACCESS_COMPILE
 
+void ReportStubBlock(void* start, size_t size, int kind);
+#ifndef FEATURE_PERFMAP
+inline void ReportStubBlock(void* start, size_t size, int kind)
+{
+}
+#endif
+
 BOOL UnlockedLoaderHeap::CommitPages(void* pData, size_t dwSizeToCommitPart)
 {
     // Commit first set of pages, since it will contain the LoaderHeapBlock
@@ -153,12 +160,31 @@ BOOL UnlockedLoaderHeap::CommitPages(void* pData, size_t dwSizeToCommitPart)
         return FALSE;
     }
 
+    if (m_pRangeList != NULL)
+    {
+        int rangeListType = m_pRangeList->GetRangeListType();
+        printf("UnlockedLoaderHeap::CommitPages: pData=%p size=0x%zx executable=%d rangeListType=%d\n",
+               pData, dwSizeToCommitPart, (int)IsExecutable(), rangeListType);
+        fflush(stdout);
+        if (rangeListType > 0)
+        {
+            ReportStubBlock(pData, dwSizeToCommitPart, rangeListType);
+        }
+    }
+    else
+    {
+        printf("UnlockedLoaderHeap::CommitPages: pData=%p size=0x%zx executable=%d rangeList=NULL\n",
+               pData, dwSizeToCommitPart, (int)IsExecutable());
+        fflush(stdout);
+    }
+
     return TRUE;
 }
 
 #ifdef FEATURE_PERFMAP
 bool PerfMapLowGranularityStubs();
 #endif // FEATURE_PERFMAP
+
 BOOL UnlockedLoaderHeap::UnlockedReservePages(size_t dwSizeToCommit)
 {
     CONTRACTL
