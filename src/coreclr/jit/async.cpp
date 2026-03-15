@@ -2365,15 +2365,19 @@ BasicBlock* AsyncTransformation::CreateResumption(BasicBlock*               bloc
 
     JITDUMP("  Creating resumption " FMT_BB " for state %u\n", resumeBB->bbNum, stateNum);
 
-    GenTreeILOffset* ilOffsetNode =
-        m_compiler->gtNewILOffsetNode(call->GetAsyncInfo().CallAsyncDebugInfo DEBUGARG(BAD_IL_OFFSET));
-
-    LIR::AsRange(resumeBB).InsertAtEnd(LIR::SeqTree(m_compiler, ilOffsetNode));
-
+    // Restore locals from the continuation data BEFORE emitting the IL offset node.
+    // The IL offset node is the sequence point where EnC remap breakpoints fire.
+    // By restoring first, an EnC remap will find locals already materialized in the
+    // frame, allowing GVFO/SVAO to map them to the new version correctly.
     if (layout.Size > 0)
     {
         RestoreFromDataOnResumption(layout, resumeBB);
     }
+
+    GenTreeILOffset* ilOffsetNode =
+        m_compiler->gtNewILOffsetNode(call->GetAsyncInfo().CallAsyncDebugInfo DEBUGARG(BAD_IL_OFFSET));
+
+    LIR::AsRange(resumeBB).InsertAtEnd(LIR::SeqTree(m_compiler, ilOffsetNode));
 
     BasicBlock* storeResultBB = resumeBB;
 
