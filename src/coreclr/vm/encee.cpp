@@ -352,6 +352,26 @@ HRESULT EditAndContinueModule::UpdateMethod(MethodDesc *pMethod)
         {
             return hr;
         }
+
+        // For runtime-async methods, also notify the debugger about the async variant.
+        // The JIT creates two MethodDescs for async methods: an entry variant (runs
+        // pre-await code) and an async variant (runs on resumption after await).
+        // Each has its own JIT info with different sequence points, so EnC remap
+        // breakpoints must be planted on BOTH variants' sequence maps.
+        // Without this, remap during async resumption uses the entry variant's
+        // sequence points which don't cover the resumption code path.
+        if (pMethod->HasAsyncOtherVariant())
+        {
+            MethodDesc* pAsyncOther = pMethod->GetAsyncOtherVariant();
+            if (pAsyncOther != NULL)
+            {
+                hr = g_pDebugInterface->UpdateFunction(pAsyncOther, m_applyChangesCount);
+                if (FAILED(hr))
+                {
+                    return hr;
+                }
+            }
+        }
     }
 
     // Notify the JIT that we've got new IL for this method
@@ -376,7 +396,7 @@ HRESULT EditAndContinueModule::UpdateMethod(MethodDesc *pMethod)
         // its async counterpart also needs to be re-JITted with the new IL.
         if (pMethod->HasAsyncOtherVariant())
         {
-            MethodDesc* pAsyncOther = pMethod->GetAsyncOtherVariantNoCreate();
+            MethodDesc* pAsyncOther = pMethod->GetAsyncOtherVariant();
             if (pAsyncOther != NULL)
             {
                 pAsyncOther->ResetCodeEntryPointForEnC();
