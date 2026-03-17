@@ -2129,6 +2129,12 @@ class ContinuationObject : public Object
         return ResumeInfo;
     }
 
+    CONTINUATIONREF GetNext() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return Next;
+    }
+
     void SetState(int32_t state)
     {
         LIMITED_METHOD_CONTRACT;
