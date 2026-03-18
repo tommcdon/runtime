@@ -23,6 +23,7 @@ namespace System.Diagnostics
         [FeatureSwitchDefinition("System.Diagnostics.StackTrace.IsLineNumberSupported")]
         internal static bool IsLineNumberSupported { get; } = AppContext.TryGetSwitch("System.Diagnostics.StackTrace.IsLineNumberSupported", out bool isSupported) ? isSupported : true;
 
+        [FeatureSwitchDefinition("System.Diagnostics.StackTrace.ShowAsyncContinuations")]
         internal static bool ShowAsyncContinuations { get; } = AppContext.TryGetSwitch("System.Diagnostics.StackTrace.ShowAsyncContinuations", out bool isEnabled) ? isEnabled : true;
 
         public const int METHODS_TO_SKIP = 0;

@@ -178,7 +178,7 @@ extern "C" void QCALLTYPE DebugDebugger_Log(INT32 Level, PCWSTR pwzModule, PCWST
 #endif // DEBUGGING_SUPPORTED
 }
 
-bool DebugStackTrace::ExtractContinuationData(MethodTable* pContinuationMT, SArray<ResumeData>* pContinuationResumeList)
+bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList)
 {
     CONTRACTL
     {
@@ -312,7 +312,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             !strcmp(pFunc->GetName(), "DispatchContinuations"))
         {
             // capture async v2 continuations
-            DebugStackTrace::ExtractContinuationData(pFunc->GetMethodTable(), &pData->continuationResumeList);
+            DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
         }
     }
 
