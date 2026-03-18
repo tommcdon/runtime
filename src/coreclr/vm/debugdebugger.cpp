@@ -26,6 +26,7 @@
 #include "corsym.h"
 #include "generics.h"
 #include "stackwalk.h"
+#include "configuration.h"
 
 #define PORTABLE_PDB_MINOR_VERSION              20557
 #define IMAGE_DEBUG_TYPE_EMBEDDED_PORTABLE_PDB  17
@@ -299,7 +300,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pCf != NULL && pCf->GetFunction() != NULL && pCf->GetFunction()->IsAsyncMethod())
+    if (pData->fShowAsyncContinuations && pCf != NULL && pCf->GetFunction() != NULL && pCf->GetFunction()->IsAsyncMethod())
     {
         pData->fAsyncFramesPresent = TRUE;
     }
@@ -493,6 +494,9 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     data.pDomain = GetAppDomain();
 
     data.NumFramesRequested = gc.pStackFrameHelper->iFrameCount;
+
+    data.fShowAsyncContinuations = Configuration::GetKnobBooleanValue(
+        W("System.Diagnostics.StackTrace.ShowAsyncContinuations"), true);
 
     if (gc.pException == NULL)
     {

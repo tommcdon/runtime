@@ -115,6 +115,7 @@ public:
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
         BOOL fAsyncFramesPresent; // True if async frames were present in the stack
+        BOOL fShowAsyncContinuations; // Whether to augment traces with async continuation frames
         SArray<ResumeData> continuationResumeList; // Used to capture async v2 continuation resume point
 
         GetStackFramesData()
@@ -125,6 +126,7 @@ public:
             , TargetThread((THREADBASEREF)(TADDR)NULL)
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
             , fAsyncFramesPresent(FALSE)
+            , fShowAsyncContinuations(FALSE)
         {
             LIMITED_METHOD_CONTRACT;
         }

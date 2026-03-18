@@ -39,6 +39,9 @@ namespace System.Diagnostics
         /// </summary>
         private static unsafe IntPtr[] TryAugmentWithAsyncContinuations(IntPtr[] stackTrace, int skipFrames, ref int frameCount)
         {
+            if (!ShowAsyncContinuations)
+                return stackTrace;
+
             AsyncDispatcherInfo* pInfo = AsyncDispatcherInfo.t_current;
             if (pInfo is null)
                 return stackTrace;
