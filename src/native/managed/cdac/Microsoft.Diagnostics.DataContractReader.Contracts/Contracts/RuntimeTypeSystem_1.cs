@@ -606,6 +606,12 @@ internal partial struct RuntimeTypeSystem_1 : IRuntimeTypeSystem
 
     public TargetPointer GetGCStaticsBasePointer(TypeHandle typeHandle)
     {
+        // If the class has not been initialized yet (static constructor hasn't run),
+        // return null so the debugger shows fields as unavailable rather than
+        // showing misleading zero/default values from pre-allocated memory.
+        if (!IsClassInited(typeHandle))
+            return TargetPointer.Null;
+
         TargetPointer dynamicStaticsInfoAddr = GetDynamicStaticsInfo(typeHandle);
         if (dynamicStaticsInfoAddr == TargetPointer.Null)
             return TargetPointer.Null;
@@ -615,6 +621,12 @@ internal partial struct RuntimeTypeSystem_1 : IRuntimeTypeSystem
 
     public TargetPointer GetNonGCStaticsBasePointer(TypeHandle typeHandle)
     {
+        // If the class has not been initialized yet (static constructor hasn't run),
+        // return null so the debugger shows fields as unavailable rather than
+        // showing misleading zero/default values from pre-allocated memory.
+        if (!IsClassInited(typeHandle))
+            return TargetPointer.Null;
+
         TargetPointer dynamicStaticsInfoAddr = GetDynamicStaticsInfo(typeHandle);
         if (dynamicStaticsInfoAddr == TargetPointer.Null)
             return TargetPointer.Null;

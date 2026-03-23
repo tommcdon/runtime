@@ -1521,6 +1521,17 @@ void DacDbiInterfaceImpl::GetStaticsBases(TypeHandle thExact,
                                          PTR_BYTE *  ppNonGCStaticsBase)
  {
     MethodTable * pMT = thExact.GetMethodTable();
+
+    // If the class has not been initialized yet (static constructor hasn't run),
+    // report NULL bases so the debugger shows fields as unavailable rather than
+    // showing misleading zero/default values from pre-allocated memory.
+    if (!pMT->IsClassInited())
+    {
+        *ppGCStaticsBase = NULL;
+        *ppNonGCStaticsBase = NULL;
+        return;
+    }
+
     *ppGCStaticsBase = pMT->GetGCStaticsBasePointer();
     *ppNonGCStaticsBase = pMT->GetNonGCStaticsBasePointer();
 } // DacDbiInterfaceImpl::GetStaticsBases
