@@ -191,6 +191,7 @@ struct JitInterfaceCallbacks
     uint32_t (* getJitFlags)(void * thisHandle, CorInfoExceptionClass** ppException, CORJIT_FLAGS* flags, uint32_t sizeInBytes);
     CORINFO_WASM_TYPE_SYMBOL_HANDLE (* getWasmTypeSymbol)(void * thisHandle, CorInfoExceptionClass** ppException, CorInfoWasmType* types, size_t typesSize);
     CORINFO_METHOD_HANDLE (* getSpecialCopyHelper)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_CLASS_HANDLE type);
+    bool (* getAsyncStateMapping)(void * thisHandle, CorInfoExceptionClass** ppException, CORINFO_METHOD_HANDLE ftn, const int32_t** pMapping, uint32_t* pCount);
 
 };
 
@@ -1964,6 +1965,17 @@ public:
 {
     CorInfoExceptionClass* pException = nullptr;
     CORINFO_METHOD_HANDLE temp = _callbacks->getSpecialCopyHelper(_thisHandle, &pException, type);
+    if (pException != nullptr) throw pException;
+    return temp;
+}
+
+    virtual bool getAsyncStateMapping(
+          CORINFO_METHOD_HANDLE ftn,
+          const int32_t** pMapping,
+          uint32_t* pCount)
+{
+    CorInfoExceptionClass* pException = nullptr;
+    bool temp = _callbacks->getAsyncStateMapping(_thisHandle, &pException, ftn, pMapping, pCount);
     if (pException != nullptr) throw pException;
     return temp;
 }

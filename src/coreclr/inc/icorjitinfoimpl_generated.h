@@ -765,6 +765,11 @@ CORINFO_WASM_TYPE_SYMBOL_HANDLE getWasmTypeSymbol(
 CORINFO_METHOD_HANDLE getSpecialCopyHelper(
           CORINFO_CLASS_HANDLE type) override;
 
+bool getAsyncStateMapping(
+          CORINFO_METHOD_HANDLE ftn,
+          const int32_t** pMapping,
+          uint32_t* pCount) override;
+
 /**********************************************************************************/
 // clang-format on
 /**********************************************************************************/

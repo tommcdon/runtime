@@ -369,17 +369,61 @@ HRESULT EditAndContinueModule::UpdateMethod(MethodDesc *pMethod)
     if (!pMethod->HasClassOrMethodInstantiation())
     {
         // Not a method impacted by generics, so this is the MethodDesc to use.
-        pMethod->ResetCodeEntryPointForEnC();
 
-        // For runtime-async methods, also reset the async variant's entry point.
-        // The task-returning variant is stored in the module's method lookup, but
-        // its async counterpart also needs to be re-JITted with the new IL.
+        // For runtime-async methods, we need to capture the async variant's old native
+        // code BEFORE calling ResetCodeEntryPointForEnC(). The task-returning method is
+        // the thunk when MethodImpl.Async is set, and ResetCodeEntryPointForEnC() on the
+        // thunk internally resets the async variant's entry point + clears its native code
+        // slot. After that point, GetNativeCode() returns NULL even though the method was
+        // JIT'd. So we must capture the address first.
+        PCODE oldAsyncNativeCode = (PCODE)NULL;
+        MethodDesc* pAsyncOther = NULL;
         if (pMethod->HasAsyncOtherVariant())
         {
-            MethodDesc* pAsyncOther = pMethod->GetAsyncOtherVariantNoCreate();
+            pAsyncOther = pMethod->GetAsyncOtherVariantNoCreate();
             if (pAsyncOther != NULL)
             {
-                pAsyncOther->ResetCodeEntryPointForEnC();
+                // Try the native code slot first (set by SetNativeCodeInterlocked after JIT).
+                oldAsyncNativeCode = pAsyncOther->GetNativeCode();
+
+                // If the native code slot is empty but the method has a precode that's been
+                // patched to point to real code (not the prestub), use the precode target.
+                // This handles cases where the async variant was JIT'd but the native code
+                // was stored only via the precode and m_finalCodeAddressSlot.
+                if (oldAsyncNativeCode == (PCODE)NULL && pAsyncOther->HasPrecode())
+                {
+                    Precode* pPrecode = pAsyncOther->GetPrecode();
+                    if (!pPrecode->IsPointingToPrestub())
+                    {
+                        oldAsyncNativeCode = pPrecode->GetTarget();
+                    }
+                }
+            }
+        }
+
+        // Reset the entry point — for thunk methods this internally resets the
+        // async variant as well.
+        pMethod->ResetCodeEntryPointForEnC();
+
+        // For runtime-async methods, patch the old async variant's native code
+        // with a jump stamp so that in-flight continuations resume with new code.
+        if (pAsyncOther != NULL)
+        {
+            // The thunk's ResetCodeEntryPointForEnC already reset the async variant,
+            // so we don't need a redundant call here.
+
+            // Hot Reload (no debugger): For in-flight async methods,
+            // the Continuation holds a code address (via m_finalCodeAddressSlot)
+            // pointing to the old async variant's native code. Without a debugger
+            // there is no FunctionRemapOpportunity to redirect execution. We write
+            // a jump stamp at the old native code so that when any Continuation
+            // resumes, it hits the stamp and gets redirected to the new code.
+            //
+            // This is only needed when no debugger is attached — with a debugger,
+            // the remap breakpoint mechanism handles redirection.
+            if (!CORDebuggerAttached() && oldAsyncNativeCode != (PCODE)NULL)
+            {
+                PatchAsyncVariantForHotReload(pMethod, pAsyncOther, oldAsyncNativeCode);
             }
         }
     }
@@ -403,6 +447,89 @@ HRESULT EditAndContinueModule::UpdateMethod(MethodDesc *pMethod)
     }
 
     return S_OK;
+}
+
+//---------------------------------------------------------------------------------------
+//
+// PatchAsyncVariantForHotReload
+//
+// For hot reload (no debugger), patch the old async variant's native code entry
+// with a jump stamp redirecting to the newly JIT'd async variant.
+// This ensures in-flight Continuations resume with updated code.
+//
+// The old code address is captured in the continuation's resumption stub via
+// m_finalCodeAddressSlot at JIT time. That slot points to oldNativeCode.
+// By writing a jump instruction at that address, any resume through the old code
+// is transparently redirected to the new version.
+//
+void EditAndContinueModule::PatchAsyncVariantForHotReload(
+    MethodDesc* pEntryMethod,
+    MethodDesc* pOldAsyncVariant,
+    PCODE oldNativeCode)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_NOTRIGGER;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    _ASSERTE(oldNativeCode != (PCODE)NULL);
+
+    // After ResetCodeEntryPointForEnC() (called by our caller), the async variant's
+    // precode has been reset to point to the prestub. Get the method's current entry
+    // point — this is the precode entry that will trigger a fresh JIT compilation
+    // when called.
+    //
+    // By writing a jump from the old native code to this entry point, any in-flight
+    // Continuation that resumes through the stale code address will be transparently
+    // redirected:
+    //
+    //   First resume after hot reload:
+    //     old native code → jump → precode → prestub → JIT new IL → new native code
+    //
+    //   Subsequent resumes (precode now points to new code):
+    //     old native code → jump → precode → new native code
+    //
+    PCODE resetEntryPoint = pOldAsyncVariant->GetMethodEntryPoint();
+    _ASSERTE(resetEntryPoint != (PCODE)NULL);
+    _ASSERTE(resetEntryPoint != oldNativeCode);
+
+    LOG((LF_ENC, LL_INFO100000,
+        "EACM::PAVFHR: Patching async variant for hot reload: %s::%s\n"
+        "  old native code at %p, redirecting to entry point %p\n",
+        pEntryMethod->m_pszDebugClassName, pEntryMethod->m_pszDebugMethodName,
+        (void*)oldNativeCode, (void*)resetEntryPoint));
+
+    // Use ExecutableWriterHolder to get writable access to the old native code.
+    // This handles W^X (write XOR execute) protection on platforms that require it
+    // (e.g., Apple ARM64). On x64 Windows this maps to the same address.
+    ExecutableWriterHolder<BYTE> codeWriterHolder(
+        (BYTE*)oldNativeCode, BACK_TO_BACK_JUMP_ALLOCATE_SIZE);
+
+    // Write the jump stamp: overwrites the first BACK_TO_BACK_JUMP_ALLOCATE_SIZE
+    // bytes of the old native code with an unconditional jump to the reset entry.
+    //
+    // Platform sizes: x64=12 bytes (mov rax,imm64; jmp rax),
+    //                 ARM64=16 bytes (ldr x16,#8; br x16; <8-byte addr>),
+    //                 x86=5 bytes (jmp rel32)
+    //
+    // Any JIT'd async method's prolog is larger than this, so the overwrite is safe.
+    emitBackToBackJump(
+        (LPBYTE)oldNativeCode,       // RX address (execute)
+        codeWriterHolder.GetRW(),    // RW address (write)
+        (LPVOID)resetEntryPoint);    // jump target
+
+    // Flush the instruction cache so all processors see the modified code.
+    // On x64 this is a no-op for non-previously-executed code; we pass true
+    // since this code has definitely executed before.
+    ClrFlushInstructionCache((LPCVOID)oldNativeCode, BACK_TO_BACK_JUMP_ALLOCATE_SIZE,
+        true /* hasCodeExecutedBefore */);
+
+    LOG((LF_ENC, LL_INFO100000,
+        "EACM::PAVFHR: Successfully patched %d-byte jump stamp at %p\n",
+        (int)BACK_TO_BACK_JUMP_ALLOCATE_SIZE, (void*)oldNativeCode));
 }
 
 //---------------------------------------------------------------------------------------

@@ -10220,6 +10220,82 @@ CORINFO_METHOD_HANDLE CEEInfo::getSpecialCopyHelper(CORINFO_CLASS_HANDLE type)
 }
 
 /*********************************************************************/
+// Get the async state mapping for a runtime-async method that has been edited.
+// Returns true if the method has an [AsyncStateMappingAttribute] containing
+// (oldState, newState) pairs for mapping in-flight continuations.
+bool CEEInfo::getAsyncStateMapping(
+        CORINFO_METHOD_HANDLE   ftn,
+        const int32_t**         pMapping,
+        uint32_t*               pCount)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+    } CONTRACTL_END;
+
+    bool result = false;
+
+    JIT_TO_EE_TRANSITION();
+
+    MethodDesc* pMD = GetMethod(ftn);
+
+    const void* pData = nullptr;
+    ULONG cbData = 0;
+    HRESULT hr = pMD->GetCustomAttribute(
+        WellKnownAttribute::AsyncStateMappingAttribute,
+        &pData,
+        &cbData);
+
+    if (hr == S_OK && pData != nullptr && cbData > 0)
+    {
+        // Custom attribute blob format (ECMA-335 §II.23.3):
+        //   WORD   prolog (0x0001)
+        //   DWORD  numElements (array length)
+        //   INT32[numElements]  elements
+        //
+        // The array contains flattened (oldState, newState) pairs.
+        const BYTE* pBlob = (const BYTE*)pData;
+        ULONG pos = 0;
+
+        // Validate prolog
+        if (cbData >= 2 && pBlob[0] == 0x01 && pBlob[1] == 0x00)
+        {
+            pos = 2;
+
+            // Read array element count (DWORD)
+            if (pos + 4 <= cbData)
+            {
+                ULONG numElements = *(UNALIGNED DWORD*)(pBlob + pos);
+                pos += 4;
+
+                if (numElements > 0 && (numElements % 2) == 0 &&
+                    pos + numElements * sizeof(INT32) <= cbData)
+                {
+                    int32_t* pMappingArray = new (nothrow) int32_t[numElements];
+                    if (pMappingArray != nullptr)
+                    {
+                        for (ULONG i = 0; i < numElements; i++)
+                        {
+                            pMappingArray[i] = *(UNALIGNED INT32*)(pBlob + pos);
+                            pos += sizeof(INT32);
+                        }
+
+                        *pMapping = pMappingArray;
+                        *pCount = numElements / 2;
+                        result = true;
+                    }
+                }
+            }
+        }
+    }
+
+    EE_TO_JIT_TRANSITION();
+
+    return result;
+}
+
+/*********************************************************************/
 CORINFO_JUST_MY_CODE_HANDLE CEEInfo::getJustMyCodeHandle(
                 CORINFO_METHOD_HANDLE       method,
                 CORINFO_JUST_MY_CODE_HANDLE**ppIndirection)

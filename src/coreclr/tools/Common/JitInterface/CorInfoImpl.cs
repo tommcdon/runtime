@@ -4739,5 +4739,13 @@ namespace Internal.JitInterface
         {
             throw new NotImplementedException("getSpecialCopyHelper");
         }
+
+        private unsafe bool getAsyncStateMapping(CORINFO_METHOD_STRUCT_* ftn, int** pMapping, uint* pCount)
+        {
+            // AOT does not support hot reload async state mapping
+            *pMapping = null;
+            *pCount = 0;
+            return false;
+        }
     }
 }

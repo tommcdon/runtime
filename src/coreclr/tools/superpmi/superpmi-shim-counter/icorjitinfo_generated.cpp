@@ -1476,3 +1476,12 @@ CORINFO_METHOD_HANDLE interceptor_ICJI::getSpecialCopyHelper(
     return original_ICorJitInfo->getSpecialCopyHelper(type);
 }
 
+bool interceptor_ICJI::getAsyncStateMapping(
+          CORINFO_METHOD_HANDLE ftn,
+          const int32_t** pMapping,
+          uint32_t* pCount)
+{
+    mcs->AddCall("getAsyncStateMapping");
+    return original_ICorJitInfo->getAsyncStateMapping(ftn, pMapping, pCount);
+}
+

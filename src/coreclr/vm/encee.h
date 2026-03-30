@@ -233,6 +233,9 @@ private:
     // Called when a method has been modified (new IL)
     HRESULT UpdateMethod(MethodDesc *pMethod);
 
+    // Patch old async variant entry point with jump to new code (hot reload only)
+    void PatchAsyncVariantForHotReload(MethodDesc *pEntryMethod, MethodDesc *pOldAsyncVariant, PCODE oldNativeCode);
+
     // Called when a new method has been added to the module's metadata
     HRESULT AddMethod(mdMethodDef token);
 

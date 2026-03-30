@@ -1872,3 +1872,15 @@ CORINFO_METHOD_HANDLE MyICJI::getSpecialCopyHelper(CORINFO_CLASS_HANDLE type)
     CORINFO_METHOD_HANDLE result = jitInstance->mc->repGetSpecialCopyHelper(type);
     return result;
 }
+
+bool MyICJI::getAsyncStateMapping(
+        CORINFO_METHOD_HANDLE ftn,
+        const int32_t** pMapping,
+        uint32_t* pCount)
+{
+    jitInstance->mc->cr->AddCall("getAsyncStateMapping");
+    // SuperPMI replay stub — no mapping available in replay
+    *pMapping = nullptr;
+    *pCount = 0;
+    return false;
+}

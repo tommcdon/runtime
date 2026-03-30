@@ -2062,3 +2062,14 @@ CORINFO_METHOD_HANDLE interceptor_ICJI::getSpecialCopyHelper(CORINFO_CLASS_HANDL
     mc->recGetSpecialCopyHelper(type, temp);
     return temp;
 }
+
+bool interceptor_ICJI::getAsyncStateMapping(
+        CORINFO_METHOD_HANDLE ftn,
+        const int32_t** pMapping,
+        uint32_t* pCount)
+{
+    mc->cr->AddCall("getAsyncStateMapping");
+    bool temp = original_ICorJitInfo->getAsyncStateMapping(ftn, pMapping, pCount);
+    // TODO: Record for SuperPMI replay (recGetAsyncStateMapping / repGetAsyncStateMapping)
+    return temp;
+}

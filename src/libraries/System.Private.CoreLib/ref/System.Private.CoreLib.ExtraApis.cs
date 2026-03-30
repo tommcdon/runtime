@@ -54,3 +54,13 @@ namespace System.Threading
     }
 }
 #endif
+namespace System.Runtime.CompilerServices
+{
+    [System.AttributeUsageAttribute(System.AttributeTargets.Method, Inherited=false, AllowMultiple=false)]
+    [System.CLSCompliantAttribute(false)]
+    public sealed class AsyncStateMappingAttribute : System.Attribute
+    {
+        public AsyncStateMappingAttribute(int[] mapping) { }
+        public int[] Mapping { get { throw null; } }
+    }
+}

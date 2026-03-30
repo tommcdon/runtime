@@ -38,6 +38,7 @@ enum class WellKnownAttribute : DWORD
     UnsafeAccessorAttribute,
     UnsafeAccessorTypeAttribute,
     ExtendedLayoutAttribute,
+    AsyncStateMappingAttribute,
 
     CountOfWellKnownAttributes
 };
@@ -144,6 +145,9 @@ inline const char *GetWellKnownAttributeName(WellKnownAttribute attribute)
             break;
         case WellKnownAttribute::ExtendedLayoutAttribute:
             ret = "System.Runtime.InteropServices.ExtendedLayoutAttribute";
+            break;
+        case WellKnownAttribute::AsyncStateMappingAttribute:
+            ret = "System.Runtime.CompilerServices.AsyncStateMappingAttribute";
             break;
         case WellKnownAttribute::CountOfWellKnownAttributes:
         default:

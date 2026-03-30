@@ -1786,6 +1786,17 @@ CORINFO_METHOD_HANDLE WrapICorJitInfo::getSpecialCopyHelper(
     return temp;
 }
 
+bool WrapICorJitInfo::getAsyncStateMapping(
+          CORINFO_METHOD_HANDLE ftn,
+          const int32_t** pMapping,
+          uint32_t* pCount)
+{
+    API_ENTER(getAsyncStateMapping);
+    bool temp = wrapHnd->getAsyncStateMapping(ftn, pMapping, pCount);
+    API_LEAVE(getAsyncStateMapping);
+    return temp;
+}
+
 /**********************************************************************************/
 // clang-format on
 /**********************************************************************************/
