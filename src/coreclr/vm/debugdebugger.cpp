@@ -178,7 +178,7 @@ extern "C" void QCALLTYPE DebugDebugger_Log(INT32 Level, PCWSTR pwzModule, PCWST
 #endif // DEBUGGING_SUPPORTED
 }
 
-bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList)
+bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList, Thread** ppBlockedThread)
 {
     CONTRACTL
     {
@@ -187,6 +187,8 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
+
+    *ppBlockedThread = NULL;
 
     // Use the CoreLib binder to get AsyncDispatcherInfo and its t_current field.
     FieldDesc* pTCurrentField = CoreLibBinder::GetField(FIELD__ASYNC_DISPATCHER_INFO__T_CURRENT);
@@ -212,6 +214,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     {
         void*     pNext;
         OBJECTREF pContinuation;
+        OBJECTREF pCurrentTask;
     };
 
     // ResumeInfo is an unmanaged struct:
@@ -232,14 +235,34 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     {
         CONTINUATIONREF continuation;
         CONTINUATIONREF pNext;
+        OBJECTREF       currentTask;
+        OBJECTREF       blockingThread;
     } gc{};
     gc.continuation = NULL;
     gc.pNext = NULL;
+    gc.currentTask = NULL;
+    gc.blockingThread = NULL;
     GCPROTECT_BEGIN(gc)
     {
         DispatcherInfoLayout* pDispatcherInfo = *ppDispatcherInfo;
+        FieldDesc* pSyncBlockingField = CoreLibBinder::GetField(FIELD__TASK__SYNC_BLOCKING_THREAD);
+
         while (pDispatcherInfo != NULL)
         {
+            // Check if any thread is synchronously blocked on this dispatcher's task.
+            if (*ppBlockedThread == NULL && pSyncBlockingField != NULL && pDispatcherInfo->pCurrentTask != NULL)
+            {
+                gc.currentTask = pDispatcherInfo->pCurrentTask;
+                void* pFieldAddr = pSyncBlockingField->GetInstanceAddress(gc.currentTask);
+                gc.blockingThread = ObjectToOBJECTREF(*(Object**)pFieldAddr);
+
+                if (gc.blockingThread != NULL)
+                {
+                    ThreadBaseObject* pThreadObj = (ThreadBaseObject*)OBJECTREFToObject(gc.blockingThread);
+                    *ppBlockedThread = pThreadObj->GetInternal();
+                }
+            }
+
             if (pDispatcherInfo->pContinuation == NULL)
             {
                 pDispatcherInfo = (DispatcherInfoLayout*)pDispatcherInfo->pNext;
@@ -312,7 +335,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             !strcmp(pFunc->GetName(), "DispatchContinuations"))
         {
             // capture async v2 continuations
-            DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
+            DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList, &pData->pBlockedThread);
         }
     }
 
@@ -429,6 +452,23 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
     // Allocate memory for the initial 'n' frames
     pData->pElements = new DebugStackTrace::Element[pData->cElementsAllocated];
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
+
+    // If we found a blocked thread, walk its stack too and append those frames.
+    // Ensure it's not the current thread (to avoid self-suspension deadlock).
+    if (pData->pBlockedThread != NULL && pData->pBlockedThread != GetThread())
+    {
+        // The blocked thread is waiting in SpinThenBlockingWait.
+        // Suspend it so we can safely walk its stack.
+        Thread* pBlockedThread = pData->pBlockedThread;
+        Thread::SuspendThreadResult str = pBlockedThread->SuspendThread();
+        if (str == Thread::STR_Success)
+        {
+            pData->fAsyncFramesPresent = FALSE;
+            pBlockedThread->StackWalkFrames(GetStackFramesCallback, pData,
+                FUNCTIONSONLY | QUICKUNWIND | ALLOW_ASYNC_STACK_WALK | THREAD_IS_SUSPENDED, NULL);
+            pBlockedThread->ResumeThread();
+        }
+    }
 
     // Do a 2nd pass outside of any locks.
     // This will compute IL offsets.

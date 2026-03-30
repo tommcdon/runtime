@@ -166,6 +166,11 @@ namespace System.Threading.Tasks
         // in that order. The logic arround this object assumes it will never regress to a previous state.
         private volatile object? m_continuationObject; // SOS DumpAsync command depends on this name
 
+        // When a thread is synchronously blocking on this Task (via .Wait(), .Result,
+        // or .GetAwaiter().GetResult()), this records that thread so that
+        // Environment.StackTrace can stitch the blocked thread's stack into the trace.
+        internal volatile Thread? m_syncBlockingThread;
+
         // m_continuationObject is set to this when the task completes.
         private static readonly object s_taskCompletionSentinel = new object();
 
@@ -3160,6 +3165,7 @@ namespace System.Threading.Tasks
                 try
                 {
                     AddCompletionAction(mres, addBeforeOthers: true);
+                    m_syncBlockingThread = Thread.CurrentThread;
 #pragma warning disable CA1416 // Validate platform compatibility, issue: https://github.com/dotnet/runtime/issues/44622
                     if (infiniteWait)
                     {
@@ -3199,6 +3205,7 @@ namespace System.Threading.Tasks
                 }
                 finally
                 {
+                    m_syncBlockingThread = null;
                     if (!IsCompleted) RemoveContinuation(mres);
                     // Don't Dispose of the MRES, because the continuation off of this task may
                     // still be running.  This is ok, however, as we never access the MRES' WaitHandle,

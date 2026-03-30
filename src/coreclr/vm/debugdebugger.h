@@ -116,6 +116,7 @@ public:
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
         BOOL fAsyncFramesPresent; // True if async frames were present in the stack
         BOOL fShowAsyncContinuations; // Whether to augment traces with async continuation frames
+        Thread* pBlockedThread; // Thread synchronously blocked on the current async task
         SArray<ResumeData> continuationResumeList; // Used to capture async v2 continuation resume point
 
         GetStackFramesData()
@@ -127,6 +128,7 @@ public:
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
             , fAsyncFramesPresent(FALSE)
             , fShowAsyncContinuations(FALSE)
+            , pBlockedThread(NULL)
         {
             LIMITED_METHOD_CONTRACT;
         }
@@ -138,7 +140,7 @@ public:
     };
 
     static void GetStackFramesFromException(OBJECTREF * e, GetStackFramesData *pData, PTRARRAYREF * pDynamicMethodArray = NULL);
-    static bool ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList);
+    static bool ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList, Thread** ppBlockedThread);
 };
 
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
