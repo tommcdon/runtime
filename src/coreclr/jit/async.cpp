@@ -1883,6 +1883,14 @@ ContinuationLayout* ContinuationLayoutBuilder::Create()
     }
 
     jitstd::sort(layout->Locals.begin(), layout->Locals.end(), [=](const LiveLocalInfo& lhs, const LiveLocalInfo& rhs) {
+        // For EnC, use local number ordering only so that existing locals maintain stable
+        // offsets across hot reload edits. New locals are appended at the end, and in-flight
+        // continuations can resume without offset mismatches.
+        if (m_compiler->opts.compDbgEnC)
+        {
+            return lhs.LclNum < rhs.LclNum;
+        }
+
         bool lhsIsRef = m_compiler->lvaGetDesc(lhs.LclNum)->TypeIs(TYP_REF);
         bool rhsIsRef = m_compiler->lvaGetDesc(rhs.LclNum)->TypeIs(TYP_REF);
 
