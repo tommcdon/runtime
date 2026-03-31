@@ -1165,6 +1165,25 @@ PhaseStatus AsyncTransformation::Run()
 
     m_asyncInfo = m_compiler->eeGetAsyncInfo();
 
+    // Query the hot reload state ID mapping. If present, the JIT will use
+    // Roslyn-assigned state IDs instead of sequential numbering to keep
+    // in-flight continuations compatible across method edits.
+    if (m_compiler->info.compCompHnd->getAsyncStateMapping(
+            m_compiler->info.compMethodHnd, &m_stateIdMapping, &m_stateIdCount))
+    {
+        JITDUMP("Hot reload: got async state ID mapping with %u entries:", m_stateIdCount);
+        m_maxStateId = 0;
+        for (uint32_t i = 0; i < m_stateIdCount; i++)
+        {
+            JITDUMP(" %d", m_stateIdMapping[i]);
+            if ((unsigned)m_stateIdMapping[i] > m_maxStateId)
+            {
+                m_maxStateId = (unsigned)m_stateIdMapping[i];
+            }
+        }
+        JITDUMP("\n");
+    }
+
     // Create the shared return BB now to put it in the right place in the block order.
     GetSharedReturnBB();
 
@@ -1259,6 +1278,17 @@ PhaseStatus AsyncTransformation::Run()
         {
             m_reuseContinuationVar = m_compiler->lvaAsyncContinuationArg;
         }
+    }
+
+    // Compute the resume info table size. When hot reload state ID mapping is present,
+    // we need to size the table to accommodate the max state ID (not just numStates).
+    if (m_stateIdMapping != nullptr)
+    {
+        m_compiler->compAsyncResumeTableSize = m_maxStateId + 1;
+    }
+    else
+    {
+        m_compiler->compAsyncResumeTableSize = (unsigned)m_states.size();
     }
 
     CreateResumptionsAndSuspensions();
@@ -1406,8 +1436,18 @@ void AsyncTransformation::Transform(
 
     CallDefinitionInfo callDefInfo = CanonicalizeCallDefinition(block, call, &life);
 
-    unsigned stateNum = (unsigned)m_states.size();
-    JITDUMP("  Assigned state %u\n", stateNum);
+    unsigned stateIndex = (unsigned)m_states.size();
+    unsigned stateNum;
+    if (m_stateIdMapping != nullptr && stateIndex < m_stateIdCount)
+    {
+        stateNum = (unsigned)m_stateIdMapping[stateIndex];
+        JITDUMP("  Assigned state %u (from hot reload mapping, index %u)\n", stateNum, stateIndex);
+    }
+    else
+    {
+        stateNum = stateIndex;
+        JITDUMP("  Assigned state %u\n", stateNum);
+    }
 
     BasicBlock* suspendBB = CreateSuspensionBlock(block, stateNum);
 
@@ -3324,13 +3364,18 @@ void AsyncTransformation::CreateResumptionSwitch()
 
     FlowEdge* resumingEdge;
 
-    if (m_states.size() == 1)
+    // Determine if state numbers are non-sequential (hot reload mapping present).
+    // When non-sequential, we must always use a switch even for 1 or 2 states,
+    // because the state number in the continuation may not match the ordinal index.
+    bool hasNonSequentialStates = (m_stateIdMapping != nullptr);
+
+    if (m_states.size() == 1 && !hasNonSequentialStates)
     {
         JITDUMP("  Redirecting entry " FMT_BB " directly to " FMT_BB " as it is the only resumption block\n",
                 newEntryBB->bbNum, m_states[0].ResumptionBB->bbNum);
         resumingEdge = m_compiler->fgAddRefPred(m_states[0].ResumptionBB, newEntryBB);
     }
-    else if (m_states.size() == 2)
+    else if (m_states.size() == 2 && !hasNonSequentialStates)
     {
         BasicBlock* condBB = m_compiler->fgNewBBbefore(BBJ_COND, m_states[0].ResumptionBB, true);
         condBB->inheritWeightPercentage(newEntryBB, 0);
@@ -3365,9 +3410,6 @@ void AsyncTransformation::CreateResumptionSwitch()
 
         resumingEdge = m_compiler->fgAddRefPred(switchBB, newEntryBB);
 
-        JITDUMP("  Redirecting entry " FMT_BB " to BBJ_SWITCH " FMT_BB " for resumption with %zu states\n",
-                newEntryBB->bbNum, switchBB->bbNum, m_states.size());
-
         continuationArg          = m_compiler->gtNewLclvNode(m_compiler->lvaAsyncContinuationArg, TYP_REF);
         unsigned stateOffset     = m_compiler->info.compCompHnd->getFieldOffset(m_asyncInfo->continuationStateFldHnd);
         GenTree* stateOffsetNode = m_compiler->gtNewIconNode((ssize_t)stateOffset, TYP_I_IMPL);
@@ -3379,18 +3421,42 @@ void AsyncTransformation::CreateResumptionSwitch()
 
         m_compiler->fgHasSwitch = true;
 
+        // Determine the number of switch cases. When we have a state ID mapping,
+        // the switch must cover 0..maxStateId to handle old continuations.
+        unsigned maxStateNum = hasNonSequentialStates ? m_maxStateId : (unsigned)(m_states.size() - 1);
+
         // Add 1 for default case
-        const size_t     numCases       = m_states.size() + 1;
+        const size_t     numCases       = (size_t)maxStateNum + 2;
         FlowEdge** const cases          = new (m_compiler, CMK_FlowEdge) FlowEdge*[numCases * 2];
         FlowEdge** const succs          = cases + numCases;
         unsigned         numUniqueSuccs = 0;
 
+        JITDUMP("  Redirecting entry " FMT_BB " to BBJ_SWITCH " FMT_BB " for resumption with %zu states, %zu cases\n",
+                newEntryBB->bbNum, switchBB->bbNum, m_states.size(), numCases);
+
         const weight_t stateLikelihood = 1.0 / numCases;
+
+        // Build a state-number-to-ResumptionBB lookup for non-sequential states.
+        BasicBlock* defaultResumptionBB = m_states[0].ResumptionBB;
+
         for (size_t i = 0; i < numCases; i++)
         {
-            // Wrap around and use first resumption BB as default case
-            BasicBlock*     resumptionBB = m_states[i % m_states.size()].ResumptionBB;
-            FlowEdge* const edge         = m_compiler->fgAddRefPred(resumptionBB, switchBB);
+            BasicBlock* resumptionBB = defaultResumptionBB;
+
+            if (i <= maxStateNum)
+            {
+                // Find the state with this number
+                for (size_t j = 0; j < m_states.size(); j++)
+                {
+                    if (m_states[j].Number == (unsigned)i)
+                    {
+                        resumptionBB = m_states[j].ResumptionBB;
+                        break;
+                    }
+                }
+            }
+
+            FlowEdge* const edge = m_compiler->fgAddRefPred(resumptionBB, switchBB);
             edge->setLikelihood(stateLikelihood);
             cases[i] = edge;
 

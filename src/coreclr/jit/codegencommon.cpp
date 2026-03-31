@@ -5839,7 +5839,12 @@ UNATIVE_OFFSET CodeGen::genEmitAsyncResumeInfoTable(emitter::dataSection** dataS
 
     if (genAsyncResumeInfoTable == nullptr)
     {
-        GetEmitter()->emitAsyncResumeTable((unsigned)m_compiler->compSuspensionPoints->size(),
+        // Use the computed table size which accounts for non-sequential state IDs
+        // from hot reload. Falls back to compSuspensionPoints->size() when no mapping.
+        unsigned tableSize = m_compiler->compAsyncResumeTableSize > 0
+            ? m_compiler->compAsyncResumeTableSize
+            : (unsigned)m_compiler->compSuspensionPoints->size();
+        GetEmitter()->emitAsyncResumeTable(tableSize,
                                            &genAsyncResumeInfoTableOffset, &genAsyncResumeInfoTable);
     }
 
@@ -5862,7 +5867,10 @@ UNATIVE_OFFSET CodeGen::genEmitAsyncResumeInfoTable(emitter::dataSection** dataS
 CORINFO_FIELD_HANDLE CodeGen::genEmitAsyncResumeInfo(unsigned stateNum)
 {
     assert(m_compiler->compSuspensionPoints != nullptr);
-    assert(stateNum < m_compiler->compSuspensionPoints->size());
+    unsigned tableSize = m_compiler->compAsyncResumeTableSize > 0
+        ? m_compiler->compAsyncResumeTableSize
+        : (unsigned)m_compiler->compSuspensionPoints->size();
+    assert(stateNum < tableSize);
 
     emitter::dataSection* dataSection;
     UNATIVE_OFFSET        baseOffs = genEmitAsyncResumeInfoTable(&dataSection);

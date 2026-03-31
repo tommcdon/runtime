@@ -204,6 +204,13 @@ class AsyncTransformation
     BasicBlock*                m_lastResumptionBB        = nullptr;
     BasicBlock*                m_sharedReturnBB          = nullptr;
 
+    // Hot reload state ID mapping: ordered Roslyn state IDs for each await.
+    // When present, m_stateIdMapping[i] is the state number to use for the
+    // i-th await the JIT encounters (instead of sequential 0, 1, 2, ...).
+    const int32_t*             m_stateIdMapping          = nullptr;
+    uint32_t                   m_stateIdCount            = 0;
+    unsigned                   m_maxStateId              = 0;
+
     void        TransformTailAwait(BasicBlock* block, GenTreeCall* call, BasicBlock** remainder);
     BasicBlock* CreateTailAwaitSuspension(BasicBlock* block, GenTreeCall* call);
 

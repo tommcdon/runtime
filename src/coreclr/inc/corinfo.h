@@ -3503,10 +3503,11 @@ public:
 
     virtual CORINFO_METHOD_HANDLE getSpecialCopyHelper(CORINFO_CLASS_HANDLE type) = 0;
 
-    // Get the async state mapping for a runtime-async method that has been edited.
+    // Get the async state ID mapping for a runtime-async method that has been edited.
     // Returns true if a mapping exists (method was edited and has [AsyncStateMappingAttribute]).
-    // pMapping receives a pointer to an array of (oldState, newState) pairs.
-    // pCount receives the number of pairs (array length / 2).
+    // pMapping receives a pointer to an array of Roslyn state IDs in IL order.
+    // stateIds[i] is the state number the JIT should use for the i-th await it encounters.
+    // pCount receives the number of entries in the array.
     // The memory is owned by the EE and valid for the lifetime of the JIT compilation.
     virtual bool getAsyncStateMapping(
             CORINFO_METHOD_HANDLE   ftn,            /* IN  */

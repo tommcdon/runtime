@@ -10269,7 +10269,10 @@ bool CEEInfo::getAsyncStateMapping(
                 ULONG numElements = *(UNALIGNED DWORD*)(pBlob + pos);
                 pos += 4;
 
-                if (numElements > 0 && (numElements % 2) == 0 &&
+                // The attribute carries an ordered array of Roslyn state IDs,
+                // one per await point in IL order. The JIT uses stateIds[i] as
+                // the state number for its i-th await instead of sequential 0,1,2,...
+                if (numElements > 0 &&
                     pos + numElements * sizeof(INT32) <= cbData)
                 {
                     int32_t* pMappingArray = new (nothrow) int32_t[numElements];
@@ -10282,7 +10285,7 @@ bool CEEInfo::getAsyncStateMapping(
                         }
 
                         *pMapping = pMappingArray;
-                        *pCount = numElements / 2;
+                        *pCount = numElements;
                         result = true;
                     }
                 }

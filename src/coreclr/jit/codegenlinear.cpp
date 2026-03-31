@@ -977,7 +977,10 @@ void CodeGen::genRecordAsyncResume(GenTreeVal* asyncResume)
 {
     size_t index = asyncResume->gtVal1;
     assert(m_compiler->compSuspensionPoints != nullptr);
-    assert(index < m_compiler->compSuspensionPoints->size());
+    unsigned tableSize = m_compiler->compAsyncResumeTableSize > 0
+        ? m_compiler->compAsyncResumeTableSize
+        : (unsigned)m_compiler->compSuspensionPoints->size();
+    assert(index < tableSize);
 
     emitter::dataSection* asyncResumeInfo;
     genEmitAsyncResumeInfoTable(&asyncResumeInfo);
