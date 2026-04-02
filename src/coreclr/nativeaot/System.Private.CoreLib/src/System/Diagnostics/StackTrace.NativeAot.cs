@@ -125,12 +125,13 @@ namespace System.Diagnostics
                     continue;
 
                 int nativeOffset = (int)((nint)ip - (nint)methodStart);
-                callbacks.TryGetMethodStackFrameInfo(
+                string? methodName = callbacks.TryGetMethodStackFrameInfo(
                     methodStart, nativeOffset, false,
                     out string? owningType, out _, out _, out bool isHidden, out _, out _);
 
                 if (isHidden && owningType is not null &&
-                    owningType.Contains("AsyncHelpers+RuntimeAsyncTask", StringComparison.Ordinal))
+                    owningType.Contains("AsyncHelpers+RuntimeAsyncTask", StringComparison.Ordinal) &&
+                    methodName is "DispatchContinuations")
                 {
                     return i;
                 }
