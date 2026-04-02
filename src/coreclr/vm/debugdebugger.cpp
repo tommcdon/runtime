@@ -187,14 +187,9 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     }
     CONTRACTL_END;
 
-    // Use the CoreLib binder to get AsyncDispatcherInfo and its fields.
+    // Use the CoreLib binder to get AsyncDispatcherInfo and its t_current field.
     FieldDesc* pTCurrentField = CoreLibBinder::GetField(FIELD__ASYNC_DISPATCHER_INFO__T_CURRENT);
     if (pTCurrentField == NULL)
-        return false;
-
-    FieldDesc* pNextField = CoreLibBinder::GetField(FIELD__ASYNC_DISPATCHER_INFO__NEXT);
-    FieldDesc* pNextContinuationField = CoreLibBinder::GetField(FIELD__ASYNC_DISPATCHER_INFO__NEXT_CONTINUATION);
-    if (pNextField == NULL || pNextContinuationField == NULL)
         return false;
 
     MethodTable* pDispatcherInfoMT = CoreLibBinder::GetClass(CLASS__ASYNC_DISPATCHER_INFO);
@@ -208,10 +203,6 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     if (base == NULL)
         return false;
 
-    // Field offsets into the AsyncDispatcherInfo ref struct, verified by the CoreLib binder.
-    DWORD nextOffset = pNextField->GetOffset();
-    DWORD continuationOffset = pNextContinuationField->GetOffset();
-
     // ResumeInfo is an unmanaged struct:
     //   [0]             delegate*  Resume       (function pointer)
     //   [sizeof(void*)] void*      DiagnosticIP (code pointer)
@@ -222,7 +213,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     };
 
     SIZE_T offset = pTCurrentField->GetOffset();
-    PTR_BYTE* ppDispatcherInfo = (PTR_BYTE*)((PTR_BYTE)base + (DWORD)offset);
+    AsyncDispatcherInfoLayout** ppDispatcherInfo = (AsyncDispatcherInfoLayout**)((PTR_BYTE)base + (DWORD)offset);
     if (ppDispatcherInfo == NULL || *ppDispatcherInfo == NULL)
         return false;
 
@@ -235,18 +226,16 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     gc.pNext = NULL;
     GCPROTECT_BEGIN(gc)
     {
-        PTR_BYTE pDispatcherInfo = *ppDispatcherInfo;
+        AsyncDispatcherInfoLayout* pDispatcherInfo = *ppDispatcherInfo;
         while (pDispatcherInfo != NULL)
         {
-            // Read NextContinuation field using binder-verified offset.
-            OBJECTREF pContinuationRef = ObjectToOBJECTREF(*(Object**)(pDispatcherInfo + continuationOffset));
-            if (pContinuationRef == NULL)
+            if (pDispatcherInfo->NextContinuation == NULL)
             {
-                pDispatcherInfo = *(PTR_BYTE*)(pDispatcherInfo + nextOffset);
+                pDispatcherInfo = (AsyncDispatcherInfoLayout*)pDispatcherInfo->Next;
                 continue;
             }
 
-            gc.continuation = (CONTINUATIONREF)(Object*)OBJECTREFToObject(pContinuationRef);
+            gc.continuation = (CONTINUATIONREF)(Object*)OBJECTREFToObject(pDispatcherInfo->NextContinuation);
             while (gc.continuation != NULL)
             {
                 // Use ContinuationObject accessors — these match the binder-verified layout.
@@ -274,7 +263,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                 gc.continuation = gc.pNext;
             }
 
-            pDispatcherInfo = *(PTR_BYTE*)(pDispatcherInfo + nextOffset);
+            pDispatcherInfo = (AsyncDispatcherInfoLayout*)pDispatcherInfo->Next;
         }
     }
     GCPROTECT_END();
