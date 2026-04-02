@@ -136,7 +136,7 @@ public:
     };
 
     static void GetStackFramesFromException(OBJECTREF * e, GetStackFramesData *pData, PTRARRAYREF * pDynamicMethodArray = NULL);
-    static bool ExtractContinuationData(MethodTable* pContinuationMT, SArray<ResumeData>* pContinuationResumeList);
+    static bool ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList);
 };
 
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
