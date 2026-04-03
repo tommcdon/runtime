@@ -18,6 +18,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AsyncStackTrace.cs" />
     <Compile Include="BasicThreading.cs" />
     <Compile Include="Delegates.cs" />
     <Compile Include="Devirtualization.cs" />

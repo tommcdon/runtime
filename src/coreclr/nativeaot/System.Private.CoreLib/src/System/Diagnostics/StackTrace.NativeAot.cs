@@ -129,9 +129,11 @@ namespace System.Diagnostics
                     methodStart, nativeOffset, false,
                     out string? owningType, out _, out _, out bool isHidden, out _, out _);
 
-                if (isHidden && owningType is not null &&
-                    owningType.Contains("AsyncHelpers+RuntimeAsyncTask", StringComparison.Ordinal) &&
-                    methodName is "DispatchContinuations")
+                // NativeAOT metadata uses '.' as nested type separator and includes
+                // the full namespace, producing e.g.:
+                // "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1"
+                if (isHidden && methodName is "DispatchContinuations" &&
+                    owningType is "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1")
                 {
                     return i;
                 }
