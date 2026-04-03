@@ -252,7 +252,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                         if (pILResolver != nullptr)
                         {
                             MethodDesc* pTargetMD = pILResolver->GetStubTargetMethodDesc();
-                            if (pTargetMD != nullptr)
+                            if (pTargetMD != nullptr && pResumeInfo->DiagnosticIP != NULL)
                             {
                                 pContinuationResumeList->Append({ pTargetMD, pResumeInfo->DiagnosticIP });
                             }
@@ -298,11 +298,11 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     {
         pData->fAsyncFramesPresent = TRUE;
     }
-    else if (pData->fAsyncFramesPresent)
+    else if (pFunc != NULL && pData->fAsyncFramesPresent)
     {
         DefineFullyQualifiedNameForClass();
         LPCUTF8 pClassName = GetFullyQualifiedNameForClassNestedAware(pFunc->GetMethodTable());
-        if (strstr(pClassName, "AsyncHelpers+RuntimeAsyncTask") != nullptr &&
+        if (strcmp(pClassName, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask`1") == 0 &&
             !strcmp(pFunc->GetName(), "DispatchContinuations"))
         {
             // capture async v2 continuations
@@ -365,7 +365,10 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
             MethodDesc* pResumeMd = resumeData.pResumeMd;
             PCODE pResumeIp = resumeData.pResumeIp;
-            
+
+            if (pResumeIp == NULL)
+                continue;
+
             DWORD dwNativeOffset = 0;
             EECodeInfo codeInfo(pResumeIp);
             if (codeInfo.IsValid())
