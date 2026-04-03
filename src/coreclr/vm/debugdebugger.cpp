@@ -213,7 +213,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     };
 
     SIZE_T offset = pTCurrentField->GetOffset();
-    AsyncDispatcherInfoLayout** ppDispatcherInfo = (AsyncDispatcherInfoLayout**)((PTR_BYTE)base + (DWORD)offset);
+    AsyncDispatcherInfoLayout** ppDispatcherInfo = (AsyncDispatcherInfoLayout**)((PTR_BYTE)base + offset);
     if (ppDispatcherInfo == NULL || *ppDispatcherInfo == NULL)
         return false;
 
@@ -294,7 +294,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pCf != NULL && pCf->GetFunction() != NULL && pCf->GetFunction()->IsAsyncMethod())
+    if (pFunc != NULL && pFunc->IsAsyncMethod())
     {
         pData->fAsyncFramesPresent = TRUE;
     }
