@@ -27,25 +27,23 @@ namespace System.Diagnostics
             Debug.Assert(trueFrameCount == frameCount);
 
             int adjustedSkip = skipFrames + SystemDiagnosticsStackDepth;
-            stackTrace = TryAugmentWithAsyncContinuations(stackTrace, adjustedSkip, ref trueFrameCount);
-
-            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo);
+            IntPtr[]? continuationIPs = CollectAsyncContinuationIPs();
+            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs);
         }
 
         /// <summary>
-        /// When executing inside a runtime async (v2) continuation dispatch, augment the
-        /// collected IP array by truncating internal dispatch frames and appending
-        /// continuation DiagnosticIP values from the async continuation chain.
+        /// When executing inside a runtime async (v2) continuation dispatch, collect
+        /// the DiagnosticIP values from the async continuation chain.
+        /// Returns null if not inside a dispatch or no valid continuation IPs exist.
         /// </summary>
-        private static unsafe IntPtr[] TryAugmentWithAsyncContinuations(IntPtr[] stackTrace, int skipFrames, ref int frameCount)
+        private static unsafe IntPtr[]? CollectAsyncContinuationIPs()
         {
             AsyncDispatcherInfo* pInfo = AsyncDispatcherInfo.t_current;
             if (pInfo is null)
-                return stackTrace;
+                return null;
 
-            // Walk the continuation chain and collect DiagnosticIPs.
-            int continuationCount = 0;
-            Span<IntPtr> continuationIPs = stackalloc IntPtr[64];
+            IntPtr[] buffer = new IntPtr[16];
+            int count = 0;
 
             for (AsyncDispatcherInfo* pCurrent = pInfo; pCurrent is not null; pCurrent = pCurrent->Next)
             {
@@ -54,92 +52,22 @@ namespace System.Diagnostics
                 {
                     if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
                     {
-                        if (continuationCount < continuationIPs.Length)
-                        {
-                            continuationIPs[continuationCount] = (IntPtr)cont.ResumeInfo->DiagnosticIP;
-                        }
-                        continuationCount++;
+                        if (count == buffer.Length)
+                            Array.Resize(ref buffer, buffer.Length * 2);
+
+                        buffer[count++] = (IntPtr)cont.ResumeInfo->DiagnosticIP;
                     }
                     cont = cont.Next;
                 }
             }
 
-            if (continuationCount == 0)
-                return stackTrace;
+            if (count == 0)
+                return null;
 
-            // If we overflowed the stackalloc buffer, heap-allocate and re-walk.
-            if (continuationCount > continuationIPs.Length)
-            {
-                continuationIPs = new IntPtr[continuationCount];
-                continuationCount = 0;
-                for (AsyncDispatcherInfo* pCurrent = pInfo; pCurrent is not null; pCurrent = pCurrent->Next)
-                {
-                    Continuation? cont = pCurrent->NextContinuation;
-                    while (cont is not null)
-                    {
-                        if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
-                        {
-                            continuationIPs[continuationCount++] = (IntPtr)cont.ResumeInfo->DiagnosticIP;
-                        }
-                        cont = cont.Next;
-                    }
-                }
-            }
+            if (count < buffer.Length)
+                Array.Resize(ref buffer, count);
 
-            // Find the truncation point: the first StackTraceHidden frame from
-            // RuntimeAsyncTask (i.e. DispatchContinuations) marks the boundary
-            // between user async frames and internal dispatch machinery.
-            int truncateAt = FindAsyncDispatchBoundary(stackTrace, skipFrames, frameCount);
-            if (truncateAt < 0)
-                return stackTrace;
-
-            // Build augmented IP array: user frames up to the boundary, then continuation IPs.
-            int newCount = truncateAt + continuationCount;
-            IntPtr[] result = new IntPtr[newCount];
-            Array.Copy(stackTrace, 0, result, 0, truncateAt);
-            continuationIPs.Slice(0, continuationCount).CopyTo(result.AsSpan(truncateAt));
-
-            frameCount = newCount;
-            return result;
-        }
-
-        /// <summary>
-        /// Scan the IP array looking for the DispatchContinuations frame from
-        /// RuntimeAsyncTaskCore. Returns the index at which to truncate, or -1
-        /// if no boundary was found.
-        /// </summary>
-        private static int FindAsyncDispatchBoundary(IntPtr[] stackTrace, int skipFrames, int frameCount)
-        {
-            StackTraceMetadataCallbacks? callbacks = RuntimeAugments.StackTraceCallbacksIfAvailable;
-            if (callbacks is null)
-                return -1;
-
-            for (int i = skipFrames; i < frameCount; i++)
-            {
-                IntPtr ip = stackTrace[i];
-                if (ip == IntPtr.Zero || ip == Exception.EdiSeparator)
-                    continue;
-
-                IntPtr methodStart = RuntimeImports.RhFindMethodStartAddress(ip);
-                if (methodStart == IntPtr.Zero)
-                    continue;
-
-                int nativeOffset = (int)((nint)ip - (nint)methodStart);
-                string? methodName = callbacks.TryGetMethodStackFrameInfo(
-                    methodStart, nativeOffset, false,
-                    out string? owningType, out _, out _, out bool isHidden, out _, out _);
-
-                // NativeAOT metadata uses '.' as nested type separator and includes
-                // the full namespace, producing e.g.:
-                // "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1"
-                if (isHidden && methodName is "DispatchContinuations" &&
-                    owningType is "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1")
-                {
-                    return i;
-                }
-            }
-
-            return -1;
+            return buffer;
         }
 #endif
 
@@ -154,42 +82,66 @@ namespace System.Diagnostics
 
         /// <summary>
         /// Initialize the stack trace based on a given array of IP addresses.
+        /// When continuationIPs is provided, detects the async dispatch boundary
+        /// during frame construction and splices in continuation frames.
         /// </summary>
-        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo)
+        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs = null)
         {
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
+            int continuationCount = continuationIPs?.Length ?? 0;
 
-            // Calculate true frame count upfront - we need to skip EdiSeparators which get
-            // collapsed onto boolean flags on the preceding stack frame
-            int outputFrameCount = 0;
+            // Count physical frames upfront — EdiSeparators are collapsed onto the
+            // preceding frame's boolean flag and don't produce output frames.
+            int physicalFrameCount = 0;
             for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
             {
                 if (ipAddresses[frameIndex + skipFrames] != Exception.EdiSeparator)
-                {
-                    outputFrameCount++;
-                }
+                    physicalFrameCount++;
             }
 
-            if (outputFrameCount > 0)
+            int totalCapacity = physicalFrameCount + continuationCount;
+            if (totalCapacity > 0)
             {
-                _stackFrames = new StackFrame[outputFrameCount];
+                _stackFrames = new StackFrame[totalCapacity];
                 int outputFrameIndex = 0;
+
                 for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
                 {
                     IntPtr ipAddress = ipAddresses[frameIndex + skipFrames];
-                    if (ipAddress != Exception.EdiSeparator)
+                    if (ipAddress == Exception.EdiSeparator)
                     {
-                        _stackFrames[outputFrameIndex++] = new StackFrame(ipAddress, needFileInfo);
+                        if (outputFrameIndex > 0)
+                            _stackFrames[outputFrameIndex - 1].SetIsLastFrameFromForeignExceptionStackTrace();
+                        continue;
                     }
-                    else if (outputFrameIndex > 0)
+
+                    var frame = new StackFrame(ipAddress, needFileInfo);
+
+                    // When inside a v2 async dispatch, the DispatchContinuations frame marks
+                    // the boundary between user frames and internal dispatch machinery.
+                    // Truncate there and append the continuation chain instead.
+                    if (continuationIPs is not null && frame.IsAsyncDispatchBoundary())
                     {
-                        _stackFrames[outputFrameIndex - 1].SetIsLastFrameFromForeignExceptionStackTrace();
+                        for (int i = 0; i < continuationCount; i++)
+                            _stackFrames[outputFrameIndex++] = new StackFrame(continuationIPs[i], needFileInfo);
+                        break;
                     }
+
+                    _stackFrames[outputFrameIndex++] = frame;
                 }
-                Debug.Assert(outputFrameIndex == outputFrameCount);
+
+                Debug.Assert(continuationIPs is not null || outputFrameIndex == physicalFrameCount);
+
+                if (outputFrameIndex < totalCapacity)
+                    Array.Resize(ref _stackFrames, outputFrameIndex);
+
+                _numOfFrames = outputFrameIndex;
+            }
+            else
+            {
+                _numOfFrames = 0;
             }
 
-            _numOfFrames = outputFrameCount;
             _methodsToSkip = 0;
         }
 
