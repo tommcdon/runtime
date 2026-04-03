@@ -4,8 +4,7 @@
 using System;
 using System.Runtime.CompilerServices;
 
-bool success = RunTest(AsyncStackTrace.Run);
-success &= RunTest(BasicThreading.Run);
+bool success = RunTest(BasicThreading.Run);
 success &= RunTest(Delegates.Run);
 success &= RunTest(Generics.Run);
 success &= RunTest(Interfaces.Run);

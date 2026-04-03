@@ -203,6 +203,19 @@ namespace System.Diagnostics
         }
 
         /// <summary>
+        /// Returns true if this frame represents the RuntimeAsyncTask.DispatchContinuations
+        /// boundary between user async frames and internal dispatch machinery.
+        /// </summary>
+        internal bool IsAsyncDispatchBoundary()
+        {
+            // Stack trace formatting uses '.' for nested types, so the owning type is
+            // "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1".
+            return _isStackTraceHidden &&
+                   _methodName is "DispatchContinuations" &&
+                   _methodOwningType is "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
+        }
+
+        /// <summary>
         /// Builds a representation of the stack frame for use in the stack trace.
         /// </summary>
         internal void AppendToStackTrace(StringBuilder builder)
