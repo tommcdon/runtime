@@ -19,21 +19,23 @@ public class Async2EnvStackTrace
     {
         string stackTrace = await OuterMethod();
 
-        Console.WriteLine("=== Environment.StackTrace after continuation dispatch ===");
-        Console.WriteLine(stackTrace);
-        Console.WriteLine("=== End StackTrace ===");
-
         // MiddleMethod captures Environment.StackTrace after InnerMethod completes
         // and MiddleMethod resumes via continuation dispatch.
-        Assert.Contains(nameof(MiddleMethod), stackTrace);
+        Assert.True(
+            stackTrace.Contains(nameof(MiddleMethod), StringComparison.Ordinal),
+            "Expected Environment.StackTrace to contain " + nameof(MiddleMethod) + "." + Environment.NewLine + stackTrace);
 
         // OuterMethod is NOT on the physical stack (it's a suspended caller),
         // but async v2 continuation tracking should inject it into the trace.
-        Assert.Contains(nameof(OuterMethod), stackTrace);
+        Assert.True(
+            stackTrace.Contains(nameof(OuterMethod), StringComparison.Ordinal),
+            "Expected Environment.StackTrace to contain " + nameof(OuterMethod) + "." + Environment.NewLine + stackTrace);
 
         // The internal dispatch frame (DispatchContinuations) should be
         // filtered out of the visible stack trace.
-        Assert.DoesNotContain("DispatchContinuations", stackTrace);
+        Assert.False(
+            stackTrace.Contains("DispatchContinuations", StringComparison.Ordinal),
+            "Expected Environment.StackTrace not to contain DispatchContinuations." + Environment.NewLine + stackTrace);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -55,6 +57,6 @@ public class Async2EnvStackTrace
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static async Task InnerMethod()
     {
-        await Task.Yield();
+        await Task.Delay(1);
     }
 }
