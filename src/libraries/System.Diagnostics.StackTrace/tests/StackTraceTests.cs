@@ -747,5 +747,39 @@ namespace System.Diagnostics.Tests
                     Assert.NotNull(stackFrame.GetMethod());
             }
         }
+
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsRuntimeAsyncSupported))]
+        public void EnvironmentStackTrace_AsyncContinuationStitching()
+        {
+            string stackTrace = AsyncStitchingOuter().GetAwaiter().GetResult();
+
+            Assert.Contains(nameof(AsyncStitchingMiddle), stackTrace);
+            Assert.Contains(nameof(AsyncStitchingOuter), stackTrace);
+            Assert.DoesNotContain("DispatchContinuations", stackTrace);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<string> AsyncStitchingOuter()
+        {
+            return await AsyncStitchingMiddle();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<string> AsyncStitchingMiddle()
+        {
+            await AsyncStitchingInner();
+            return Environment.StackTrace;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task AsyncStitchingInner()
+        {
+            // Task.Delay forces timer-based completion ensuring actual async
+            // resume through DispatchContinuations on both CoreCLR and NativeAOT.
+            await Task.Delay(1);
+        }
     }
 }
