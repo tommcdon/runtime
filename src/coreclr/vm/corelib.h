@@ -741,6 +741,9 @@ DEFINE_METHOD(RUNTIME_ASYNC_AWAIT_STATE, POP,                 Pop,  NoSig)
 
 DEFINE_CLASS(RUNTIME_ASYNC_STACK_STATE,  CompilerServices,    AsyncHelpers+RuntimeAsyncStackState)
 
+DEFINE_CLASS(RUNTIME_ASYNC_TASK,  CompilerServices,      AsyncHelpers+RuntimeAsyncTask`1)
+DEFINE_METHOD(RUNTIME_ASYNC_TASK, DISPATCH_CONTINUATIONS, DispatchContinuations, NoSig)
+
 DEFINE_CLASS_U(CompilerServices, Continuation,          ContinuationObject)
 DEFINE_FIELD_U(Next,             ContinuationObject,    Next)
 DEFINE_FIELD_U(ResumeInfo,       ContinuationObject,    ResumeInfo)

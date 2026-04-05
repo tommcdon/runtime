@@ -300,10 +300,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     }
     else if (pFunc != NULL && pData->fAsyncFramesPresent)
     {
-        DefineFullyQualifiedNameForClass();
-        LPCUTF8 pClassName = GetFullyQualifiedNameForClassNestedAware(pFunc->GetMethodTable());
-        if (strcmp(pClassName, "System.Runtime.CompilerServices.AsyncHelpers+RuntimeAsyncTask`1") == 0 &&
-            !strcmp(pFunc->GetName(), "DispatchContinuations"))
+        if (pFunc->LoadTypicalMethodDefinition() == CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS))
         {
             // capture async v2 continuations
             DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
