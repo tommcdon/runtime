@@ -235,7 +235,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                 continue;
             }
 
-            gc.continuation = (CONTINUATIONREF)(Object*)OBJECTREFToObject(pDispatcherInfo->NextContinuation);
+            gc.continuation = (CONTINUATIONREF)pDispatcherInfo->NextContinuation;
             while (gc.continuation != NULL)
             {
                 // Use ContinuationObject accessors — these match the binder-verified layout.
