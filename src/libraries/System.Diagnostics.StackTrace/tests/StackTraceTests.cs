@@ -781,5 +781,51 @@ namespace System.Diagnostics.Tests
             // resume through DispatchContinuations on both CoreCLR and NativeAOT.
             await Task.Delay(1);
         }
+
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsRuntimeAsyncSupported))]
+        public void EnvironmentStackTrace_AsyncFrameHiding_DefaultOn()
+        {
+            (string preAwait, string postAwait) = FrameHidingSyncCaller();
+
+            // Both traces should contain async v2 method names
+            Assert.Contains(nameof(FrameHidingMiddle), preAwait);
+            Assert.Contains(nameof(FrameHidingOuter), preAwait);
+            Assert.Contains(nameof(FrameHidingMiddle), postAwait);
+            Assert.Contains(nameof(FrameHidingOuter), postAwait);
+
+            // With hiding ON (default), the sync caller should NOT appear in pre-await
+            // This makes pre-await and post-await traces consistent.
+            Assert.DoesNotContain(nameof(FrameHidingSyncCaller), preAwait);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static (string preAwait, string postAwait) FrameHidingSyncCaller()
+        {
+            return FrameHidingOuter().GetAwaiter().GetResult();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<(string, string)> FrameHidingOuter()
+        {
+            return await FrameHidingMiddle();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<(string, string)> FrameHidingMiddle()
+        {
+            string preAwait = Environment.StackTrace;
+            await FrameHidingInner();
+            string postAwait = Environment.StackTrace;
+            return (preAwait, postAwait);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task FrameHidingInner()
+        {
+            await Task.Delay(1);
+        }
     }
 }

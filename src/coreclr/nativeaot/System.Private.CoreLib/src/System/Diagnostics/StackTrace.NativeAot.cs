@@ -26,7 +26,7 @@ namespace System.Diagnostics
 
             int adjustedSkip = skipFrames + SystemDiagnosticsStackDepth;
             IntPtr[]? continuationIPs = CollectAsyncContinuationIPs();
-            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs);
+            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, isCurrentThread: true);
         }
 
         /// <summary>
@@ -75,7 +75,7 @@ namespace System.Diagnostics
         private void InitializeForException(Exception exception, int skipFrames, bool needFileInfo)
         {
             IntPtr[] stackIPs = exception.GetStackIPs();
-            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo);
+            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo, continuationIPs: null, isCurrentThread: false);
         }
 
         /// <summary>
@@ -83,10 +83,23 @@ namespace System.Diagnostics
         /// When continuationIPs is provided, detects the async dispatch boundary
         /// during frame construction and splices in continuation frames.
         /// </summary>
-        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs = null)
+        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs = null, bool isCurrentThread = false)
         {
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
+
+            // 0 = show all, 1 = hide all non-async after first async, 2 = truncate trailing non-async
+            int hideAsyncDispatchMode = 0;
+            if (isCurrentThread)
+            {
+                string? envValue = Environment.GetEnvironmentVariable("DOTNET_HideAsyncDispatchFrames");
+                hideAsyncDispatchMode = envValue switch
+                {
+                    "0" => 0,
+                    "2" => 2,
+                    _ => 1, // default is mode 1
+                };
+            }
 
             // Count physical frames upfront — EdiSeparators are collapsed onto the
             // preceding frame's boolean flag and don't produce output frames.
@@ -102,6 +115,7 @@ namespace System.Diagnostics
             {
                 _stackFrames = new StackFrame[totalCapacity];
                 int outputFrameIndex = 0;
+                bool asyncFrameSeen = false;
 
                 for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
                 {
@@ -115,6 +129,11 @@ namespace System.Diagnostics
 
                     var frame = new StackFrame(ipAddress, needFileInfo);
 
+                    if (frame.IsAsyncV2Method)
+                    {
+                        asyncFrameSeen = true;
+                    }
+
                     // When inside a v2 async dispatch, the DispatchContinuations frame marks
                     // the boundary between user frames and internal dispatch machinery.
                     // Truncate there and append the continuation chain instead.
@@ -125,10 +144,25 @@ namespace System.Diagnostics
                         break;
                     }
 
+                    // Mode 1: hide all non-async frames once we've seen the first async frame.
+                    if (hideAsyncDispatchMode == 1 && asyncFrameSeen && !frame.IsAsyncV2Method)
+                        continue;
+
                     _stackFrames[outputFrameIndex++] = frame;
                 }
 
-                Debug.Assert(continuationIPs is not null || outputFrameIndex == physicalFrameCount);
+                // Mode 2: trim trailing non-async frames below the last async frame.
+                if (hideAsyncDispatchMode == 2 && asyncFrameSeen)
+                {
+                    int lastAsyncIndex = -1;
+                    for (int i = 0; i < outputFrameIndex; i++)
+                    {
+                        if (_stackFrames[i].IsAsyncV2Method)
+                            lastAsyncIndex = i;
+                    }
+                    if (lastAsyncIndex >= 0)
+                        outputFrameIndex = lastAsyncIndex + 1;
+                }
 
                 if (outputFrameIndex < totalCapacity)
                     Array.Resize(ref _stackFrames, outputFrameIndex);
