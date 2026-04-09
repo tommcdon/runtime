@@ -39,6 +39,7 @@ namespace System.Diagnostics
         private bool _noMethodBaseAvailable;
 
         private bool _isStackTraceHidden;
+        private bool _isAsyncMethod;
 
         // If stack trace metadata is available, _methodOwningType is the namespace-qualified name of the owning type,
         // _methodName is the name of the method, _methodGenericArgs are generic arguments, and _methodSignature is the list of parameters
@@ -122,7 +123,7 @@ namespace System.Diagnostics
                 StackTraceMetadataCallbacks stackTraceCallbacks = RuntimeAugments.StackTraceCallbacksIfAvailable;
                 if (stackTraceCallbacks != null)
                 {
-                    _methodName = stackTraceCallbacks.TryGetMethodStackFrameInfo(methodStartAddress, _nativeOffset, needFileInfo, out _methodOwningType, out _methodGenericArgs, out _methodSignature, out _isStackTraceHidden, out _fileName, out _lineNumber);
+                    _methodName = stackTraceCallbacks.TryGetMethodStackFrameInfo(methodStartAddress, _nativeOffset, needFileInfo, out _methodOwningType, out _methodGenericArgs, out _methodSignature, out _isStackTraceHidden, out _isAsyncMethod, out _fileName, out _lineNumber);
                 }
 
                 if (_methodName == null)
@@ -214,6 +215,11 @@ namespace System.Diagnostics
                    _methodName is "DispatchContinuations" &&
                    _methodOwningType is "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
         }
+
+        /// <summary>
+        /// Returns true if this frame represents a runtime async (v2) method.
+        /// </summary>
+        internal bool IsAsyncV2Method => _isAsyncMethod;
 
         /// <summary>
         /// Builds a representation of the stack frame for use in the stack trace.
