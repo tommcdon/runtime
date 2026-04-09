@@ -300,6 +300,15 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             // capture async v2 continuations
             DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
         }
+        else
+        {
+            if (pData->hideAsyncDispatchMode == 1)
+            {
+                // Mode 1: Hide all non-async frames below the first async frame.
+                return SWA_CONTINUE;
+            }
+            // Mode 2: Let the frame through; trailing non-async frames will be trimmed after the walk.
+        }
     }
 
     int cNumAlloc = pData->cElements + pData->continuationResumeList.GetCount();
@@ -417,7 +426,23 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
 
     // Allocate memory for the initial 'n' frames
     pData->pElements = new DebugStackTrace::Element[pData->cElementsAllocated];
+    pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_HideAsyncDispatchFrames);
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
+
+    // Mode 2: Trim trailing non-async frames below the last runtime async frame.
+    if (pData->hideAsyncDispatchMode == 2 && pData->fAsyncFramesPresent)
+    {
+        INT32 lastAsyncIndex = -1;
+        for (INT32 i = 0; i < pData->cElements; i++)
+        {
+            if (pData->pElements[i].pFunc != NULL && pData->pElements[i].pFunc->IsAsyncMethod())
+                lastAsyncIndex = i;
+        }
+        if (lastAsyncIndex >= 0 && lastAsyncIndex + 1 < pData->cElements)
+        {
+            pData->cElements = lastAsyncIndex + 1;
+        }
+    }
 
     // Do a 2nd pass outside of any locks.
     // This will compute IL offsets.
