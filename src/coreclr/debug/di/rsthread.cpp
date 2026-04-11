@@ -1412,13 +1412,11 @@ HRESULT CordbThread::FindFrame(ICorDebugFrame ** ppFrame, FramePointer fp)
         ICorDebugFrame * pIFrame = pSSW->GetFrame(i);
         CordbFrame * pCFrame = CordbFrame::GetCordbFrameFromInterface(pIFrame);
 
-#if defined(HOST_64BIT)
-        // On 64-bit we can simply compare the FramePointer.
-        if (pCFrame->GetFramePointer() == fp)
-#else  // !HOST_64BIT
-        // On other platforms, we need to do a more elaborate check.
+#if defined(TARGET_X86)
         if (pCFrame->IsContainedInFrame(fp))
-#endif // HOST_64BIT
+#else  // !TARGET_X86
+        if (pCFrame->GetFramePointer() == fp)
+#endif // TARGET_X86
         {
             *ppFrame = pIFrame;
             (*ppFrame)->AddRef();
@@ -4772,6 +4770,27 @@ bool CordbFrame::IsContainedInFrame(FramePointer fp)
     _ASSERTE(SUCCEEDED(hr));
 
     CORDB_ADDRESS sp  = PTR_TO_CORDB_ADDRESS(fp.GetSPValue());
+
+#if defined(TARGET_X86)
+    // On x86, the runtime sends CallerSP - sizeof(TADDR) as the frame pointer
+    // for exception notifications (see GetSpForDiagnosticReporting). Since this
+    // does not account for the stack parameter size, we adjust for it here.
+    if (sp > stackEnd)
+    {
+        CordbNativeFrame * pNativeFrame = GetAsNativeFrame();
+        if (pNativeFrame != NULL)
+        {
+            CORDB_ADDRESS codeAddr = pNativeFrame->GetNativeCode()->GetAddress();
+            ULONG32 stackParamSize = 0;
+            IDacDbiInterface * pDAC = GetProcess()->GetDAC();
+            if (SUCCEEDED(pDAC->GetStackParameterSize(codeAddr + m_ip, &stackParamSize))
+                && stackParamSize > 0)
+            {
+                sp -= stackParamSize;
+            }
+        }
+    }
+#endif // TARGET_X86
 
     if ((stackStart <= sp) && (sp <= stackEnd))
     {
