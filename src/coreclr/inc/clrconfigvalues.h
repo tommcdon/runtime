@@ -216,7 +216,7 @@ RETAIL_CONFIG_DWORD_INFO(EXTERNAL_OutOfProcessSetContext, W("OutOfProcessSetCont
 ///
 /// Async Stack Traces
 ///
-RETAIL_CONFIG_DWORD_INFO(EXTERNAL_HideAsyncDispatchFrames, W("HideAsyncDispatchFrames"), 1, "Controls non-async frame visibility in Environment.StackTrace: 0 = show all frames, 1 (default) = hide all non-async frames below the first runtime async frame, 2 = keep non-async frames between runtime async frames but truncate trailing non-async frames below the last one.")
+RETAIL_CONFIG_DWORD_INFO(EXTERNAL_HideAsyncDispatchFrames, W("HideAsyncDispatchFrames"), 1, "Controls non-async frame visibility in Environment.StackTrace when async continuation stitching is active: 0 = show all frames including non-async frames between and below async methods, 1 (default) = hide all non-async frames below the first runtime async frame, 2 = keep non-async frames between runtime async frames but truncate trailing non-async frames below the last one.")
 
 ///
 /// Diagnostics (internal general-purpose)
