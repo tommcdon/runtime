@@ -88,7 +88,8 @@ namespace System.Diagnostics
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
 
-            // 0 = show all, 1 = hide all non-async after first async, 2 = truncate trailing non-async
+            // 0 = show all (including non-async frames between/below async methods),
+            // 1 = hide all non-async after first async, 2 = truncate trailing non-async
             int hideAsyncDispatchMode = 0;
             if (isCurrentThread)
             {
