@@ -85,6 +85,11 @@ namespace System.Diagnostics
             iFrameCount = 0;
         }
 
+        /// <summary>
+        /// Controls async frame behavior. Not part of the native-mirrored layout.
+        /// </summary>
+        internal StackTraceAsyncBehavior AsyncBehavior { get; set; }
+
         //
         // Initializes the stack trace helper. If fNeedFileInfo is true, initializes rgFilename,
         // rgiLineNumber and rgiColumnNumber fields using the portable PDB reader if not already

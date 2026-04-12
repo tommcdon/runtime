@@ -12,6 +12,37 @@ using System.Text;
 namespace System.Diagnostics
 {
     /// <summary>
+    /// Controls how async frames are handled during stack trace capture.
+    /// </summary>
+    public enum StackTraceAsyncBehavior
+    {
+        /// <summary>
+        /// Walk async continuations and hide non-async frames below the first
+        /// runtime async frame so pre-await and post-await traces look identical.
+        /// This is the default.
+        /// </summary>
+        Default = 0,
+
+        /// <summary>
+        /// Walk async continuations but show all physical frames.
+        /// Pre-await traces include synchronous callers; post-await traces do not.
+        /// </summary>
+        ShowAllFrames = 1,
+
+        /// <summary>
+        /// Walk async continuations, keep non-async frames between async methods,
+        /// but truncate trailing non-async frames below the last async frame.
+        /// </summary>
+        TruncateTrailing = 2,
+
+        /// <summary>
+        /// No async continuation stitching. Returns only the physical call stack.
+        /// This is the fastest option — skips continuation chain walking entirely.
+        /// </summary>
+        PhysicalOnly = 3,
+    }
+
+    /// <summary>
     /// Class which represents a description of a stack trace
     /// There is no good reason for the methods of this class to be virtual.
     /// </summary>
@@ -27,6 +58,11 @@ namespace System.Diagnostics
 
         private int _numOfFrames;
         private int _methodsToSkip;
+
+        /// <summary>
+        /// Controls async frame behavior for this stack trace instance.
+        /// </summary>
+        private StackTraceAsyncBehavior _asyncBehavior;
 
         /// <summary>
         /// Stack frames comprising this stack trace.
@@ -72,6 +108,30 @@ namespace System.Diagnostics
         {
             ArgumentOutOfRangeException.ThrowIfNegative(skipFrames);
 
+            InitializeForCurrentThread(skipFrames + METHODS_TO_SKIP, fNeedFileInfo);
+        }
+
+        /// <summary>
+        /// Constructs a stack trace from the current location with the specified
+        /// async frame behavior.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public StackTrace(StackTraceAsyncBehavior asyncBehavior)
+        {
+            _asyncBehavior = asyncBehavior;
+            InitializeForCurrentThread(METHODS_TO_SKIP, false);
+        }
+
+        /// <summary>
+        /// Constructs a stack trace from the current location with the specified
+        /// async frame behavior.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public StackTrace(int skipFrames, bool fNeedFileInfo, StackTraceAsyncBehavior asyncBehavior)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(skipFrames);
+
+            _asyncBehavior = asyncBehavior;
             InitializeForCurrentThread(skipFrames + METHODS_TO_SKIP, fNeedFileInfo);
         }
 

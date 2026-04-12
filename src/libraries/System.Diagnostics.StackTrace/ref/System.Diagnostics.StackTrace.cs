@@ -202,6 +202,8 @@ namespace System.Diagnostics
         public StackTrace(bool fNeedFileInfo) { }
         public StackTrace(System.Collections.Generic.IEnumerable<System.Diagnostics.StackFrame> frames) { }
         public StackTrace(System.Diagnostics.StackFrame frame) { }
+        public StackTrace(System.Diagnostics.StackTraceAsyncBehavior asyncBehavior) { }
+        public StackTrace(int skipFrames, bool fNeedFileInfo, System.Diagnostics.StackTraceAsyncBehavior asyncBehavior) { }
         public StackTrace(System.Exception e) { }
         public StackTrace(System.Exception e, bool fNeedFileInfo) { }
         public StackTrace(System.Exception e, int skipFrames) { }

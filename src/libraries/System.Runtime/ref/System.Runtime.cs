@@ -2706,6 +2706,7 @@ namespace System
         public static int ProcessorCount { get { throw null; } }
         public static string? ProcessPath { get { throw null; } }
         public static string StackTrace { get { throw null; } }
+        public static string GetStackTrace(System.Diagnostics.StackTraceAsyncBehavior asyncBehavior) { throw null; }
         public static string SystemDirectory { get { throw null; } }
         public static int SystemPageSize { get { throw null; } }
         public static int TickCount { get { throw null; } }
@@ -8926,6 +8927,13 @@ namespace System.Diagnostics
         public UnreachableException() { }
         public UnreachableException(string? message) { }
         public UnreachableException(string? message, System.Exception? innerException) { }
+    }
+    public enum StackTraceAsyncBehavior
+    {
+        Default = 0,
+        ShowAllFrames = 1,
+        TruncateTrailing = 2,
+        PhysicalOnly = 3,
     }
 }
 namespace System.Diagnostics.CodeAnalysis

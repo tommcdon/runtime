@@ -289,11 +289,11 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pFunc != NULL && pFunc->IsAsyncMethod())
+    if (pFunc != NULL && !pData->skipAsyncStitching && pFunc->IsAsyncMethod())
     {
         pData->fAsyncFramesPresent = TRUE;
     }
-    else if (pFunc != NULL && pData->fAsyncFramesPresent)
+    else if (pFunc != NULL && !pData->skipAsyncStitching && pData->fAsyncFramesPresent)
     {
         if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
         {
@@ -399,7 +399,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     return SWA_CONTINUE;
 }
 
-static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
+static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData, INT32 asyncBehavior)
 {
     CONTRACTL
     {
@@ -426,7 +426,37 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
 
     // Allocate memory for the initial 'n' frames
     pData->pElements = new DebugStackTrace::Element[pData->cElementsAllocated];
-    pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_HideAsyncDispatchFrames);
+
+    // asyncBehavior 3 = PhysicalOnly: skip all async stitching.
+    // Otherwise use the per-call asyncBehavior to map to hideAsyncDispatchMode,
+    // falling back to the env var config for Default (0).
+    if (asyncBehavior == 3)
+    {
+        pData->skipAsyncStitching = TRUE;
+        pData->hideAsyncDispatchMode = 0;
+    }
+    else
+    {
+        pData->skipAsyncStitching = FALSE;
+        // Map StackTraceAsyncBehavior to hideAsyncDispatchMode:
+        //   Default(0) → use env var, ShowAllFrames(1) → 0, TruncateTrailing(2) → 2
+        switch (asyncBehavior)
+        {
+        case 0: // Default - use env var
+            pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_HideAsyncDispatchFrames);
+            break;
+        case 1: // ShowAllFrames
+            pData->hideAsyncDispatchMode = 0;
+            break;
+        case 2: // TruncateTrailing
+            pData->hideAsyncDispatchMode = 2;
+            break;
+        default:
+            pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_HideAsyncDispatchFrames);
+            break;
+        }
+    }
+
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
 
     // Mode 2: Trim trailing non-async frames below the last runtime async frame.
@@ -482,7 +512,8 @@ extern "C" void QCALLTYPE AsyncHelpers_AddContinuationToExInternal(
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     QCall::ObjectHandleOnStack stackFrameHelper,
     BOOL fNeedFileInfo,
-    QCall::ObjectHandleOnStack exception)
+    QCall::ObjectHandleOnStack exception,
+    INT32 asyncBehavior)
 {
     QCALL_CONTRACT;
 
@@ -511,7 +542,7 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
 
     if (gc.pException == NULL)
     {
-        GetStackFrames(&data);
+        GetStackFrames(&data, asyncBehavior);
     }
     else
     {

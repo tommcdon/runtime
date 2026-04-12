@@ -115,6 +115,7 @@ public:
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
         BOOL fAsyncFramesPresent; // True if async frames were present in the stack
+        BOOL skipAsyncStitching; // True to skip all async stitching (PhysicalOnly mode)
         DWORD hideAsyncDispatchMode; // 0 = show all, 1 = hide non-async after first async, 2 = truncate trailing non-async
         SArray<ResumeData> continuationResumeList; // Used to capture async v2 continuation resume point
 
@@ -126,6 +127,7 @@ public:
             , TargetThread((THREADBASEREF)(TADDR)NULL)
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
             , fAsyncFramesPresent(FALSE)
+            , skipAsyncStitching(FALSE)
             , hideAsyncDispatchMode(0)
         {
             LIMITED_METHOD_CONTRACT;
@@ -144,7 +146,8 @@ public:
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     QCall::ObjectHandleOnStack stackFrameHelper,
     BOOL fNeedFileInfo,
-    QCall::ObjectHandleOnStack exception);
+    QCall::ObjectHandleOnStack exception,
+    INT32 asyncBehavior);
 
 extern "C" void QCALLTYPE AsyncHelpers_AddContinuationToExInternal(
     void* diagnosticIP,

@@ -235,6 +235,16 @@ namespace System
             get => new StackTrace(true).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
         }
 
+        /// <summary>
+        /// Returns a string representation of the current call stack, with the specified
+        /// async frame behavior controlling how runtime async v2 frames are presented.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public static string GetStackTrace(StackTraceAsyncBehavior asyncBehavior)
+        {
+            return new StackTrace(0, true, asyncBehavior).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
+        }
+
         private static int s_systemPageSize;
 
         public static int SystemPageSize

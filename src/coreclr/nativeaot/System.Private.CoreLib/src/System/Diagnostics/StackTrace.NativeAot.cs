@@ -25,7 +25,11 @@ namespace System.Diagnostics
             Debug.Assert(trueFrameCount == frameCount);
 
             int adjustedSkip = skipFrames + SystemDiagnosticsStackDepth;
-            IntPtr[]? continuationIPs = CollectAsyncContinuationIPs();
+
+            // PhysicalOnly (3) skips async continuation collection entirely.
+            IntPtr[]? continuationIPs = _asyncBehavior == StackTraceAsyncBehavior.PhysicalOnly
+                ? null
+                : CollectAsyncContinuationIPs();
             InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, isCurrentThread: true);
         }
 
@@ -88,17 +92,29 @@ namespace System.Diagnostics
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
 
-            // 0 = show all, 1 = hide all non-async after first async, 2 = truncate trailing non-async
+            // Determine hide mode. Per-instance _asyncBehavior overrides env var.
+            // PhysicalOnly (3) already skipped continuation collection; also skip frame hiding.
             int hideAsyncDispatchMode = 0;
-            if (isCurrentThread)
+            if (isCurrentThread && _asyncBehavior != StackTraceAsyncBehavior.PhysicalOnly)
             {
-                string? envValue = Environment.GetEnvironmentVariable("DOTNET_HideAsyncDispatchFrames");
-                hideAsyncDispatchMode = envValue switch
+                switch (_asyncBehavior)
                 {
-                    "0" => 0,
-                    "2" => 2,
-                    _ => 1, // default is mode 1
-                };
+                    case StackTraceAsyncBehavior.ShowAllFrames:
+                        hideAsyncDispatchMode = 0;
+                        break;
+                    case StackTraceAsyncBehavior.TruncateTrailing:
+                        hideAsyncDispatchMode = 2;
+                        break;
+                    default: // Default — use env var
+                        string? envValue = Environment.GetEnvironmentVariable("DOTNET_HideAsyncDispatchFrames");
+                        hideAsyncDispatchMode = envValue switch
+                        {
+                            "0" => 0,
+                            "2" => 2,
+                            _ => 1,
+                        };
+                        break;
+                }
             }
 
             // Count physical frames upfront — EdiSeparators are collapsed onto the
