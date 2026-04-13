@@ -20,7 +20,7 @@ public class Async2EnvStackTrace
         (string preAwait, string postAwait) = await OuterMethod();
 
         // With hiding ON (default), pre-await and post-await traces should
-        // both contain only the async v2 method chain.
+        // both contain only the runtime async method chain.
         Assert.True(
             preAwait.Contains(nameof(MiddleMethod), StringComparison.Ordinal),
             "Expected pre-await trace to contain " + nameof(MiddleMethod) + "." + Environment.NewLine + preAwait);
@@ -35,7 +35,7 @@ public class Async2EnvStackTrace
             "Expected post-await trace to contain " + nameof(MiddleMethod) + "." + Environment.NewLine + postAwait);
 
         // OuterMethod is NOT on the physical stack (it's a suspended caller),
-        // but async v2 continuation tracking should inject it into the trace.
+        // but runtime async continuation tracking should inject it into the trace.
         Assert.True(
             postAwait.Contains(nameof(OuterMethod), StringComparison.Ordinal),
             "Expected post-await trace to contain " + nameof(OuterMethod) + "." + Environment.NewLine + postAwait);
