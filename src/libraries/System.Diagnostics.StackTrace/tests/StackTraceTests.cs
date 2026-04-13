@@ -787,7 +787,7 @@ namespace System.Diagnostics.Tests
         {
             (string preAwait, string postAwait) = FrameHidingSyncCaller();
 
-            // Both traces should contain async v2 method names
+            // Both traces should contain runtime async method names
             Assert.Contains(nameof(FrameHidingMiddle), preAwait);
             Assert.Contains(nameof(FrameHidingOuter), preAwait);
             Assert.Contains(nameof(FrameHidingMiddle), postAwait);
