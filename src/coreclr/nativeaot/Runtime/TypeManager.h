@@ -13,6 +13,7 @@ class TypeManager
     uint8_t*                    m_pThreadStaticsDataSection;
     void**                      m_pClasslibFunctions;
     uint32_t                    m_nClasslibFunctions;
+    int                         m_cbStaticsGCDataSection;
 
     TypeManager(HANDLE osModule, ReadyToRunHeader * pHeader, void** pClasslibFunctions, uint32_t nClasslibFunctions);
 

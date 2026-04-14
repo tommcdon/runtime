@@ -45,6 +45,7 @@ TypeManager::TypeManager(HANDLE osModule, ReadyToRunHeader * pHeader, void** pCl
 {
     int length;
     m_pStaticsGCDataSection = (uint8_t*)GetModuleSection(ReadyToRunSectionType::GCStaticRegion, &length);
+    m_cbStaticsGCDataSection = m_pStaticsGCDataSection ? length : 0;
     m_pThreadStaticsDataSection = (uint8_t*)GetModuleSection(ReadyToRunSectionType::ThreadStaticRegion, &length);
 }
 

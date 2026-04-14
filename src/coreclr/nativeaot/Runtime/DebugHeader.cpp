@@ -15,6 +15,7 @@
 #include "StackFrameIterator.h"
 #include "thread.h"
 #include "threadstore.h"
+#include "TypeManager.h"
 
 extern uint8_t g_CrashInfoBuffer[];
 GPTR_DECL(MethodTable, g_pFreeObjectEEType);
@@ -35,7 +36,7 @@ struct GlobalValueEntry
 
 // This size should be one bigger than the number of entries since a null entry
 // signifies the end of the array.
-static constexpr size_t DebugTypeEntriesArraySize = 100;
+static constexpr size_t DebugTypeEntriesArraySize = 165;
 static DebugTypeEntry s_DebugEntries[DebugTypeEntriesArraySize];
 
 // This size should be one bigger than the number of entries since a null entry
@@ -86,7 +87,7 @@ struct DotNetRuntimeDebugHeader
     // This counter can be incremented to indicate back-compatible changes
     // This field must be encoded little endian, regardless of the typical endianness of
     // the machine
-    const uint16_t MinorVersion = 0;
+    const uint16_t MinorVersion = 1;
 
     // These flags must be encoded little endian, regardless of the typical endianness of
     // the machine. Ie Bit 0 is the least significant bit of the first byte.
@@ -160,6 +161,31 @@ extern "C" void PopulateDebugHeaders()
     MAKE_DEBUG_FIELD_ENTRY(GcDacVars, alloc_allocated);
     MAKE_DEBUG_FIELD_ENTRY(GcDacVars, n_heaps);
     MAKE_DEBUG_FIELD_ENTRY(GcDacVars, g_heaps);
+    MAKE_DEBUG_FIELD_ENTRY(GcDacVars, handle_table_map);
+
+    MAKE_SIZE_ENTRY(dac_handle_table_map);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_map, pBuckets);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_map, pNext);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_map, dwMaxIndex);
+
+    MAKE_SIZE_ENTRY(dac_handle_table_bucket);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_bucket, pTable);
+
+    MAKE_SIZE_ENTRY(dac_handle_table);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table, pSegmentList);
+
+    MAKE_SIZE_ENTRY(dac_handle_table_segment);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_segment, rgAllocation);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_segment, rgBlockType);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_segment, rgTail);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_segment, rgUserData);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_segment, pNextSegment);
+    MAKE_DEBUG_FIELD_ENTRY(dac_handle_table_segment, rgValue);
+
+    MAKE_DEFINE_ENTRY(HandleBlocksPerSegment, HANDLE_BLOCKS_PER_SEGMENT);
+    MAKE_DEFINE_ENTRY(HandleMaxInternalTypes, HANDLE_MAX_INTERNAL_TYPES);
+    MAKE_DEFINE_ENTRY(HandlesPerBlock, HANDLE_HANDLES_PER_BLOCK);
+    MAKE_DEFINE_ENTRY(HandleSegmentSize, HANDLE_SEGMENT_SIZE);
 
     MAKE_SIZE_ENTRY(dac_gc_heap);
     MAKE_DEBUG_FIELD_ENTRY(dac_gc_heap, alloc_allocated);
@@ -205,6 +231,23 @@ extern "C" void PopulateDebugHeaders()
     MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_threadId);
     MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pThreadStressLog);
     MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pExInfoStackHead);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pTransitionFrame);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pStackLow);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pStackHigh);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pThreadLocalStatics);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pInlinedThreadLocalStatics);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeThreadLocals, m_pGCFrameRegistrations);
+
+    MAKE_SIZE_ENTRY(GCFrameRegistration);
+    MAKE_DEBUG_FIELD_ENTRY(GCFrameRegistration, m_pNext);
+    MAKE_DEBUG_FIELD_ENTRY(GCFrameRegistration, m_pObjRefs);
+    MAKE_DEBUG_FIELD_ENTRY(GCFrameRegistration, m_numObjRefs);
+    MAKE_DEBUG_FIELD_ENTRY(GCFrameRegistration, m_MaybeInterior);
+
+    MAKE_SIZE_ENTRY(InlinedThreadStaticRoot);
+    MAKE_DEBUG_FIELD_ENTRY(InlinedThreadStaticRoot, m_threadStaticsBase);
+    MAKE_DEBUG_FIELD_ENTRY(InlinedThreadStaticRoot, m_next);
+    MAKE_DEBUG_FIELD_ENTRY(InlinedThreadStaticRoot, m_typeManager);
 
     MAKE_SIZE_ENTRY(ExInfo);
     MAKE_DEBUG_FIELD_ENTRY(ExInfo, m_pPrevExInfo);
@@ -257,6 +300,18 @@ extern "C" void PopulateDebugHeaders()
 
     MAKE_SIZE_ENTRY(RuntimeInstance);
     MAKE_DEBUG_FIELD_ENTRY(RuntimeInstance, m_pThreadStore);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeInstance, m_TypeManagerList);
+
+    // Note: SList<TypeManagerEntry>::m_pHead is the only data member (Traits has no data),
+    // so reading a pointer at the m_TypeManagerList offset gives the linked list head.
+
+    MAKE_SIZE_ENTRY(RuntimeInstance::TypeManagerEntry);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeInstance::TypeManagerEntry, m_pNext);
+    MAKE_DEBUG_FIELD_ENTRY(RuntimeInstance::TypeManagerEntry, m_pTypeManager);
+
+    MAKE_SIZE_ENTRY(TypeManager);
+    MAKE_DEBUG_FIELD_ENTRY(TypeManager, m_pStaticsGCDataSection);
+    MAKE_DEBUG_FIELD_ENTRY(TypeManager, m_cbStaticsGCDataSection);
 
     MAKE_GLOBAL_ENTRY(g_CrashInfoBuffer);
 
