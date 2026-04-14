@@ -219,7 +219,7 @@ namespace System.Diagnostics
         /// <summary>
         /// Returns true if this frame represents a runtime async (v2) method.
         /// </summary>
-        internal bool IsAsyncV2Method => _isAsyncMethod;
+        internal bool IsAsyncMethod => _isAsyncMethod;
 
         /// <summary>
         /// Builds a representation of the stack frame for use in the stack trace.
