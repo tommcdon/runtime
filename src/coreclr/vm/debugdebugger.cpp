@@ -294,11 +294,11 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pFunc != NULL && pFunc->IsAsyncMethod())
+    if (pFunc != NULL && pData->hideAsyncDispatchMode != 3 && pFunc->IsAsyncMethod())
     {
         pData->fAsyncFramesPresent = TRUE;
     }
-    else if (pFunc != NULL && pData->fAsyncFramesPresent)
+    else if (pFunc != NULL && pData->hideAsyncDispatchMode != 3 && pData->fAsyncFramesPresent)
     {
         if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
         {

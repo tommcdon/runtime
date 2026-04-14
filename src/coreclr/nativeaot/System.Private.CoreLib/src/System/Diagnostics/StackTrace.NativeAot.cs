@@ -25,7 +25,19 @@ namespace System.Diagnostics
             Debug.Assert(trueFrameCount == frameCount);
 
             int adjustedSkip = skipFrames + SystemDiagnosticsStackDepth;
-            IntPtr[]? continuationIPs = CollectAsyncContinuationIPs();
+
+            // Read the config to determine async behavior before collecting continuations.
+            string? envValue = Environment.GetEnvironmentVariable("DOTNET_HideAsyncDispatchFrames");
+            int hideMode = envValue switch
+            {
+                "0" => 0,
+                "2" => 2,
+                "3" => 3,
+                _ => 1,
+            };
+
+            // Mode 3 (physical only): skip continuation collection entirely.
+            IntPtr[]? continuationIPs = hideMode == 3 ? null : CollectAsyncContinuationIPs();
             InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, isCurrentThread: true);
         }
 
@@ -88,8 +100,8 @@ namespace System.Diagnostics
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
 
-            // 0 = show all (including non-async frames between/below async methods),
-            // 1 = hide all non-async after first async, 2 = truncate trailing non-async
+            // 0 = show all (with async stitching), 1 = hide all non-async after first async,
+            // 2 = truncate trailing non-async, 3 = physical only (no stitching)
             int hideAsyncDispatchMode = 0;
             if (isCurrentThread)
             {
@@ -98,6 +110,7 @@ namespace System.Diagnostics
                 {
                     "0" => 0,
                     "2" => 2,
+                    "3" => 3,
                     _ => 1, // default is mode 1
                 };
             }
