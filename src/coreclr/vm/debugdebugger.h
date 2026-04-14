@@ -115,7 +115,7 @@ public:
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
         BOOL fAsyncFramesPresent; // True if async frames were present in the stack
-        DWORD hideAsyncDispatchMode; // 0 = show all (with async stitching), 1 = hide non-async after first async, 2 = truncate trailing non-async
+        DWORD hideAsyncDispatchMode; // 0 = show all (with stitching), 1 = hide non-async, 2 = truncate trailing, 3 = physical only (no stitching)
         SArray<ResumeData> continuationResumeList; // Used to capture runtime async continuations
 
         GetStackFramesData()
