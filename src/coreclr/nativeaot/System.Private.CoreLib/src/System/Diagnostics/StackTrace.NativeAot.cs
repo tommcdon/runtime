@@ -130,7 +130,7 @@ namespace System.Diagnostics
 
                     var frame = new StackFrame(ipAddress, needFileInfo);
 
-                    if (frame.IsAsyncV2Method)
+                    if (frame.IsAsyncMethod)
                     {
                         asyncFrameSeen = true;
                     }
@@ -146,7 +146,7 @@ namespace System.Diagnostics
                     }
 
                     // Mode 1: hide all non-async frames once we've seen the first async frame.
-                    if (hideAsyncDispatchMode == 1 && asyncFrameSeen && !frame.IsAsyncV2Method)
+                    if (hideAsyncDispatchMode == 1 && asyncFrameSeen && !frame.IsAsyncMethod)
                         continue;
 
                     _stackFrames[outputFrameIndex++] = frame;
@@ -158,7 +158,7 @@ namespace System.Diagnostics
                     int lastAsyncIndex = -1;
                     for (int i = 0; i < outputFrameIndex; i++)
                     {
-                        if (_stackFrames[i].IsAsyncV2Method)
+                        if (_stackFrames[i].IsAsyncMethod)
                             lastAsyncIndex = i;
                     }
                     if (lastAsyncIndex >= 0)
