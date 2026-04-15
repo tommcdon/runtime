@@ -518,11 +518,12 @@ namespace Internal.StackTraceMetadata
 
             public struct StackTraceData : IComparable<StackTraceData>
             {
-                // NativeAOT guarantees MinimumFunctionAlignment = 4, so bits 0 and 1
-                // of method RVAs are always zero and available for flag packing.
-                private const int IsAsyncMethodFlag = 0x1;
+                // IsHidden is packed into bit 1 of the RVA. MinimumFunctionAlignment = 4
+                // guarantees bit 1 is always zero for aligned method RVAs.
+                // IsAsyncMethod is stored separately to avoid colliding with the ARM32
+                // THUMB bit (bit 0) that may be present in method addresses.
                 private const int IsHiddenFlag = 0x2;
-                private const int FlagsMask = IsHiddenFlag | IsAsyncMethodFlag;
+                private const int FlagsMask = IsHiddenFlag;
 
                 private readonly int _rvaAndFlags;
 
@@ -544,15 +545,7 @@ namespace Internal.StackTraceMetadata
                             _rvaAndFlags |= IsHiddenFlag;
                     }
                 }
-                public bool IsAsyncMethod
-                {
-                    get => (_rvaAndFlags & IsAsyncMethodFlag) != 0;
-                    init
-                    {
-                        if (value)
-                            _rvaAndFlags |= IsAsyncMethodFlag;
-                    }
-                }
+                public bool IsAsyncMethod { get; init; }
                 public Handle OwningType { get; init; }
                 public ConstantStringValueHandle Name { get; init; }
                 public MethodSignatureHandle Signature { get; init; }
