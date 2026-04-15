@@ -518,18 +518,21 @@ namespace Internal.StackTraceMetadata
 
             public struct StackTraceData : IComparable<StackTraceData>
             {
-                private const int IsHiddenFlag = 0x2;
+                // NativeAOT guarantees MinimumFunctionAlignment = 4, so bits 0 and 1
+                // of method RVAs are always zero and available for flag packing.
                 private const int IsAsyncMethodFlag = 0x1;
+                private const int IsHiddenFlag = 0x2;
+                private const int FlagsMask = IsHiddenFlag | IsAsyncMethodFlag;
 
                 private readonly int _rvaAndFlags;
 
                 public int Rva
                 {
-                    get => _rvaAndFlags & ~(IsHiddenFlag | IsAsyncMethodFlag);
+                    get => _rvaAndFlags & ~FlagsMask;
                     init
                     {
-                        Debug.Assert((value & (IsHiddenFlag | IsAsyncMethodFlag)) == 0);
-                        _rvaAndFlags = value | (_rvaAndFlags & (IsHiddenFlag | IsAsyncMethodFlag));
+                        Debug.Assert((value & FlagsMask) == 0);
+                        _rvaAndFlags = value | (_rvaAndFlags & FlagsMask);
                     }
                 }
                 public bool IsHidden
