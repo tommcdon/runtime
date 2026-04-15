@@ -55,20 +55,19 @@ namespace System.Diagnostics
             IntPtr[] buffer = new IntPtr[16];
             int count = 0;
 
-            for (AsyncDispatcherInfo* pCurrent = pInfo; pCurrent is not null; pCurrent = pCurrent->Next)
+            // Only collect continuations from the innermost (first) dispatcher in the chain.
+            // Outer dispatchers represent already-completed async scopes and are not displayed.
+            Continuation? cont = pInfo->NextContinuation;
+            while (cont is not null)
             {
-                Continuation? cont = pCurrent->NextContinuation;
-                while (cont is not null)
+                if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
                 {
-                    if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
-                    {
-                        if (count == buffer.Length)
-                            Array.Resize(ref buffer, buffer.Length * 2);
+                    if (count == buffer.Length)
+                        Array.Resize(ref buffer, buffer.Length * 2);
 
-                        buffer[count++] = (IntPtr)cont.ResumeInfo->DiagnosticIP;
-                    }
-                    cont = cont.Next;
+                    buffer[count++] = (IntPtr)cont.ResumeInfo->DiagnosticIP;
                 }
+                cont = cont.Next;
             }
 
             if (count == 0)

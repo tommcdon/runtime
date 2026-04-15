@@ -263,7 +263,8 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                 gc.continuation = gc.pNext;
             }
 
-            pDispatcherInfo = (AsyncDispatcherInfoLayout*)pDispatcherInfo->Next;
+            // Only display continuations from the innermost (first) dispatcher in the chain.
+            break;
         }
     }
     GCPROTECT_END();
