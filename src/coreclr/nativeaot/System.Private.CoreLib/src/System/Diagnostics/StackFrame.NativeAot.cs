@@ -51,6 +51,11 @@ namespace System.Diagnostics
         private string _methodGenericArgs;
         private string _methodSignature;
 
+        // Well-known names for the async dispatch boundary method.
+        // Centralized here so they only need updating if the method is renamed.
+        private const string AsyncDispatchMethodName = "DispatchContinuations";
+        private const string AsyncDispatchOwningType = "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
+
         /// <summary>
         /// Returns the method the frame is executing
         /// </summary>
@@ -204,16 +209,14 @@ namespace System.Diagnostics
         }
 
         /// <summary>
-        /// Returns true if this frame represents the RuntimeAsyncTask.DispatchContinuations
-        /// boundary between user async frames and internal dispatch machinery.
+        /// Returns true if this frame represents the async dispatch boundary
+        /// between user async frames and internal dispatch machinery.
         /// </summary>
         internal bool IsAsyncDispatchBoundary()
         {
-            // Stack trace formatting uses '.' for nested types, so the owning type is
-            // "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1".
             return _isStackTraceHidden &&
-                   _methodName is "DispatchContinuations" &&
-                   _methodOwningType is "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
+                   _methodName is AsyncDispatchMethodName &&
+                   _methodOwningType is AsyncDispatchOwningType;
         }
 
         /// <summary>
