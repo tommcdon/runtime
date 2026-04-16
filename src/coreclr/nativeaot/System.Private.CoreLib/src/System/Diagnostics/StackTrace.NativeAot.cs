@@ -38,7 +38,7 @@ namespace System.Diagnostics
 
             // Mode 3 (physical only): skip continuation collection entirely.
             IntPtr[]? continuationIPs = hideMode == 3 ? null : CollectAsyncContinuationIPs();
-            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, isCurrentThread: true);
+            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, hideMode);
         }
 
         /// <summary>
@@ -88,7 +88,7 @@ namespace System.Diagnostics
         private void InitializeForException(Exception exception, int skipFrames, bool needFileInfo)
         {
             IntPtr[] stackIPs = exception.GetStackIPs();
-            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo, continuationIPs: null, isCurrentThread: false);
+            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo);
         }
 
         /// <summary>
@@ -96,25 +96,13 @@ namespace System.Diagnostics
         /// When continuationIPs is provided, detects the async dispatch boundary
         /// during frame construction and splices in continuation frames.
         /// </summary>
-        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs = null, bool isCurrentThread = false)
+        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs = null, int hideAsyncDispatchMode = 0)
         {
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
 
             // 0 = show all above dispatch boundary (with async stitching), 1 = hide all non-async after first async,
             // 2 = truncate trailing non-async, 3 = physical only (no stitching)
-            int hideAsyncDispatchMode = 0;
-            if (isCurrentThread)
-            {
-                string? envValue = Environment.GetEnvironmentVariable("DOTNET_HideAsyncDispatchFrames");
-                hideAsyncDispatchMode = envValue switch
-                {
-                    "0" => 0,
-                    "2" => 2,
-                    "3" => 3,
-                    _ => 1, // default is mode 1
-                };
-            }
 
             // Count physical frames upfront — EdiSeparators are collapsed onto the
             // preceding frame's boolean flag and don't produce output frames.

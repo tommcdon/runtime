@@ -301,7 +301,9 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     }
     else if (pFunc != NULL && pData->hideAsyncDispatchMode != 3 && pData->fAsyncFramesPresent)
     {
-        if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
+        if (pData->pDispatchContinuationsMD == NULL)
+            pData->pDispatchContinuationsMD = CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS);
+        if (pFunc->HasSameMethodDefAs(pData->pDispatchContinuationsMD))
         {
             // capture runtime async continuations
             DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
