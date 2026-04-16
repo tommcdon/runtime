@@ -101,7 +101,7 @@ namespace System.Diagnostics
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
 
-            // 0 = show all (with async stitching), 1 = hide all non-async after first async,
+            // 0 = show all above dispatch boundary (with async stitching), 1 = hide all non-async after first async,
             // 2 = truncate trailing non-async, 3 = physical only (no stitching)
             int hideAsyncDispatchMode = 0;
             if (isCurrentThread)
