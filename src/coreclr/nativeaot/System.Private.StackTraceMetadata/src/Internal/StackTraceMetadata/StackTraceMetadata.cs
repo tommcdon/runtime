@@ -48,12 +48,21 @@ namespace Internal.StackTraceMetadata
         internal static extern bool StackTraceHiddenMetadataPresent();
 
         /// <summary>
+        /// Compute the aligned method RVA by masking off the low two bits.
+        /// On ARM32, RhFindMethodStartAddress sets bit 0 (THUMB bit) in returned addresses.
+        /// MinimumFunctionAlignment = 4 for all architectures guarantees bits 0-1 are always
+        /// zero for actual method RVAs, so we can safely use them for flag packing.
+        /// </summary>
+        private static unsafe int GetAlignedMethodRva(nint methodStart, nint moduleBase)
+            => (int)((methodStart - moduleBase) & ~0x3);
+
+        /// <summary>
         /// Locate the containing module for a method and try to resolve its name based on start address.
         /// </summary>
         public static unsafe string GetMethodNameFromStartAddressIfAvailable(IntPtr methodStartAddress, out string owningTypeName, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out int hashCodeForLineInfo)
         {
             IntPtr moduleStartAddress = RuntimeAugments.GetOSModuleFromPointer(methodStartAddress);
-            int rva = (int)((byte*)methodStartAddress - (byte*)moduleStartAddress);
+            int rva = GetAlignedMethodRva((nint)methodStartAddress, (nint)moduleStartAddress);
             foreach (NativeFormatModuleInfo moduleInfo in ModuleList.EnumerateModules())
             {
                 if (moduleInfo.Handle.OsModuleBase == moduleStartAddress)
@@ -188,7 +197,7 @@ namespace Internal.StackTraceMetadata
         public static unsafe DiagnosticMethodInfo? GetDiagnosticMethodInfoFromStartAddressIfAvailable(IntPtr methodStartAddress)
         {
             IntPtr moduleStartAddress = RuntimeAugments.GetOSModuleFromPointer(methodStartAddress);
-            int rva = (int)((byte*)methodStartAddress - (byte*)moduleStartAddress);
+            int rva = GetAlignedMethodRva((nint)methodStartAddress, (nint)moduleStartAddress);
             foreach (NativeFormatModuleInfo moduleInfo in ModuleList.EnumerateModules())
             {
                 if (moduleInfo.Handle.OsModuleBase == moduleStartAddress)
@@ -470,7 +479,7 @@ namespace Internal.StackTraceMetadata
                     pCurrent += sizeof(int);
 
                     Debug.Assert((nint)pMethod > handle.OsModuleBase);
-                    int methodRva = (int)((nint)pMethod - handle.OsModuleBase);
+                    int methodRva = GetAlignedMethodRva((nint)pMethod, handle.OsModuleBase);
 
                     _stacktraceDatas[current++] = new StackTraceData
                     {
@@ -518,12 +527,13 @@ namespace Internal.StackTraceMetadata
 
             public struct StackTraceData : IComparable<StackTraceData>
             {
-                // IsHidden is packed into bit 1 of the RVA. MinimumFunctionAlignment = 4
-                // guarantees bit 1 is always zero for aligned method RVAs.
-                // IsAsyncMethod is stored separately to avoid colliding with the ARM32
-                // THUMB bit (bit 0) that may be present in method addresses.
+                // Flags are packed into the low bits of the RVA. MinimumFunctionAlignment = 4
+                // for all architectures guarantees bits 0-1 are always zero for aligned method
+                // RVAs. On ARM32 the THUMB bit (bit 0) is present in raw addresses but is
+                // stripped by GetAlignedMethodRva before storage.
+                private const int IsAsyncMethodFlag = 0x1;
                 private const int IsHiddenFlag = 0x2;
-                private const int FlagsMask = IsHiddenFlag;
+                private const int FlagsMask = IsAsyncMethodFlag | IsHiddenFlag;
 
                 private readonly int _rvaAndFlags;
 
@@ -545,7 +555,15 @@ namespace Internal.StackTraceMetadata
                             _rvaAndFlags |= IsHiddenFlag;
                     }
                 }
-                public bool IsAsyncMethod { get; init; }
+                public bool IsAsyncMethod
+                {
+                    get => (_rvaAndFlags & IsAsyncMethodFlag) != 0;
+                    init
+                    {
+                        if (value)
+                            _rvaAndFlags |= IsAsyncMethodFlag;
+                    }
+                }
                 public Handle OwningType { get; init; }
                 public ConstantStringValueHandle Name { get; init; }
                 public MethodSignatureHandle Signature { get; init; }
