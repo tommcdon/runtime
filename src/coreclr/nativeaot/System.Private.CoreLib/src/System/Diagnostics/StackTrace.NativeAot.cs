@@ -52,12 +52,14 @@ namespace System.Diagnostics
             if (pInfo is null)
                 return null;
 
-            IntPtr[] buffer = new IntPtr[16];
-            int count = 0;
-
             // Only collect continuations from the innermost (first) dispatcher in the chain.
             // Outer dispatchers represent already-completed async scopes and are not displayed.
             Continuation? cont = pInfo->NextContinuation;
+            if (cont is null)
+                return null;
+
+            IntPtr[] buffer = new IntPtr[16];
+            int count = 0;
             while (cont is not null)
             {
                 if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
