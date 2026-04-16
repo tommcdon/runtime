@@ -7726,6 +7726,8 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetObjectFields(COR_TYPEID id, UL
     if (typeHandle.IsTypeDesc())
         return E_INVALIDARG;
 
+    typeHandle = typeHandle.UpCastTypeIfNeeded();
+
     ApproxFieldDescIterator fieldDescIterator(typeHandle.AsMethodTable(), ApproxFieldDescIterator::INSTANCE_FIELDS);
 
     ULONG32 cFields = fieldDescIterator.Count();
