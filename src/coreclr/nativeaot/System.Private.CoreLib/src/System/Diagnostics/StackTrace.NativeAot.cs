@@ -27,18 +27,31 @@ namespace System.Diagnostics
             int adjustedSkip = skipFrames + SystemDiagnosticsStackDepth;
 
             // Read the config to determine async behavior before collecting continuations.
-            string? envValue = Environment.GetEnvironmentVariable("DOTNET_HideAsyncDispatchFrames");
-            int hideMode = envValue switch
+            int hideMode = GetHideAsyncDispatchMode();
+
+            // Mode 3 (physical only): skip continuation collection entirely.
+            IntPtr[]? continuationIPs = hideMode == 3 ? null : CollectAsyncContinuationIPs();
+            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, hideMode);
+        }
+
+        private static int s_hideAsyncDispatchMode = -1;
+
+        private static int GetHideAsyncDispatchMode()
+        {
+            int cached = s_hideAsyncDispatchMode;
+            if (cached >= 0)
+                return cached;
+
+            string? envValue = Environment.GetEnvironmentVariable("DOTNET_StackTraceAsyncBehavior");
+            cached = envValue switch
             {
                 "0" => 0,
                 "2" => 2,
                 "3" => 3,
                 _ => 1,
             };
-
-            // Mode 3 (physical only): skip continuation collection entirely.
-            IntPtr[]? continuationIPs = hideMode == 3 ? null : CollectAsyncContinuationIPs();
-            InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, hideMode);
+            s_hideAsyncDispatchMode = cached;
+            return cached;
         }
 
         /// <summary>
@@ -88,7 +101,8 @@ namespace System.Diagnostics
         private void InitializeForException(Exception exception, int skipFrames, bool needFileInfo)
         {
             IntPtr[] stackIPs = exception.GetStackIPs();
-            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo);
+            int hideMode = GetHideAsyncDispatchMode();
+            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo, null, hideMode);
         }
 
         /// <summary>
@@ -96,15 +110,12 @@ namespace System.Diagnostics
         /// When continuationIPs is provided, detects the async dispatch boundary
         /// during frame construction and splices in continuation frames.
         /// </summary>
-        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs = null, int hideAsyncDispatchMode = 0)
+        private void InitializeForIpAddressArray(IntPtr[] ipAddresses, int skipFrames, int endFrameIndex, bool needFileInfo, IntPtr[]? continuationIPs, int hideAsyncDispatchMode)
         {
             int frameCount = (skipFrames < endFrameIndex ? endFrameIndex - skipFrames : 0);
             int continuationCount = continuationIPs?.Length ?? 0;
 
-            // 0 = show all above dispatch boundary (with async stitching), 1 = hide all non-async after first async,
-            // 2 = truncate trailing non-async, 3 = physical only (no stitching)
-
-            // Count physical frames upfront — EdiSeparators are collapsed onto the
+            // Count physical frames upfront - EdiSeparators are collapsed onto the
             // preceding frame's boolean flag and don't produce output frames.
             int physicalFrameCount = 0;
             for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)

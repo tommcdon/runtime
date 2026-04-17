@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Xunit;
 
 /// <summary>
-/// Tests Environment.StackTrace with DOTNET_HideAsyncDispatchFrames=2 (truncate mode).
+/// Tests Environment.StackTrace with DOTNET_StackTraceAsyncBehavior=2 (truncate mode).
 /// Mode 2 keeps non-async frames between async frames but truncates trailing
 /// non-async frames below the last async frame.
 /// </summary>

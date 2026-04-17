@@ -117,7 +117,6 @@ public:
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
         BOOL fAsyncFramesPresent; // True if async frames were present in the stack
         DWORD hideAsyncDispatchMode; // 0 = show all above dispatch boundary (with stitching), 1 = hide non-async, 2 = truncate trailing, 3 = physical only (no stitching)
-        MethodDesc* pDispatchContinuationsMD; // Cached MethodDesc for RuntimeAsyncTask.DispatchContinuations
         SArray<ResumeData> continuationResumeList; // Used to capture runtime async continuations
 
         GetStackFramesData()
@@ -129,7 +128,6 @@ public:
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
             , fAsyncFramesPresent(FALSE)
             , hideAsyncDispatchMode(0)
-            , pDispatchContinuationsMD(NULL)
         {
             LIMITED_METHOD_CONTRACT;
         }
