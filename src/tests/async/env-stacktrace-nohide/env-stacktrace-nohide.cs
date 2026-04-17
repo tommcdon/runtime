@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Xunit;
 
 /// <summary>
-/// Tests Environment.StackTrace with DOTNET_HideAsyncDispatchFrames=0 (hiding disabled).
+/// Tests Environment.StackTrace with DOTNET_StackTraceAsyncBehavior=0 (hiding disabled).
 /// When hiding is disabled, the pre-await trace should include non-async callers
 /// below the async methods (the full physical call stack).
 /// </summary>

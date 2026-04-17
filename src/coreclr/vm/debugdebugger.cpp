@@ -189,14 +189,9 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
 
     // Use the CoreLib binder to get AsyncDispatcherInfo and its t_current field.
     FieldDesc* pTCurrentField = CoreLibBinder::GetField(FIELD__ASYNC_DISPATCHER_INFO__T_CURRENT);
-    if (pTCurrentField == NULL)
-        return false;
-
     MethodTable* pDispatcherInfoMT = CoreLibBinder::GetClass(CLASS__ASYNC_DISPATCHER_INFO);
 
     Thread * pThread = GetThread();
-    if (pThread == NULL)
-        return false;
 
     pDispatcherInfoMT->EnsureTlsIndexAllocated();
     PTR_BYTE base = pDispatcherInfoMT->GetNonGCThreadStaticsBasePointer(pThread);
@@ -301,9 +296,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     }
     else if (pFunc != NULL && pData->hideAsyncDispatchMode != 3 && pData->fAsyncFramesPresent)
     {
-        if (pData->pDispatchContinuationsMD == NULL)
-            pData->pDispatchContinuationsMD = CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS);
-        if (pFunc->HasSameMethodDefAs(pData->pDispatchContinuationsMD))
+        if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
         {
             // capture runtime async continuations
             DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
@@ -394,7 +387,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         }
         pData->continuationResumeList.Clear();
 
-        // TODO: Re-evaluate if we should continue the stack walk after injecting continuations
+        // physical stack is truncated after injecting continuations
         return SWA_ABORT;
     }
 
@@ -434,7 +427,7 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
 
     // Allocate memory for the initial 'n' frames
     pData->pElements = new DebugStackTrace::Element[pData->cElementsAllocated];
-    pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_HideAsyncDispatchFrames);
+    pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_StackTraceAsyncBehavior);
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
 
     // Mode 2: Trim trailing non-async frames below the last runtime async frame.
