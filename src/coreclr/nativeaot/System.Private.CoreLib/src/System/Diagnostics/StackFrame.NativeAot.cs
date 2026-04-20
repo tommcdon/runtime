@@ -51,11 +51,6 @@ namespace System.Diagnostics
         private string _methodGenericArgs;
         private string _methodSignature;
 
-        // Well-known names for the async dispatch boundary method.
-        // Centralized here so they only need updating if the method is renamed.
-        private const string AsyncDispatchMethodName = "DispatchContinuations";
-        private const string AsyncDispatchOwningType = "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
-
         /// <summary>
         /// Returns the method the frame is executing
         /// </summary>
@@ -211,12 +206,16 @@ namespace System.Diagnostics
         /// <summary>
         /// Returns true if this frame represents the async dispatch boundary
         /// between user async frames and internal dispatch machinery.
+        /// Uses address comparison against the cached DispatchContinuations method address.
         /// </summary>
         internal bool IsAsyncDispatchBoundary()
         {
-            return _isStackTraceHidden &&
-                   _methodName is AsyncDispatchMethodName &&
-                   _methodOwningType is AsyncDispatchOwningType;
+            if (!_isStackTraceHidden || _ipAddress == IntPtr.Zero)
+                return false;
+
+            IntPtr methodStartAddress = _ipAddress - _nativeOffset;
+            StackTraceMetadataCallbacks callbacks = RuntimeAugments.StackTraceCallbacksIfAvailable;
+            return callbacks is not null && callbacks.IsAsyncDispatchBoundaryMethod(methodStartAddress);
         }
 
         /// <summary>

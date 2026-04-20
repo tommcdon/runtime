@@ -20,5 +20,7 @@ namespace Internal.Runtime.Augments
         public abstract string TryGetMethodStackFrameInfo(IntPtr methodStartAddress, int offset, bool needsFileInfo, out string owningType, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out string fileName, out int lineNumber);
 
         public abstract DiagnosticMethodInfo TryGetDiagnosticMethodInfoFromStartAddress(IntPtr methodStartAddress);
+
+        public virtual bool IsAsyncDispatchBoundaryMethod(IntPtr methodStartAddress) => false;
     }
 }
