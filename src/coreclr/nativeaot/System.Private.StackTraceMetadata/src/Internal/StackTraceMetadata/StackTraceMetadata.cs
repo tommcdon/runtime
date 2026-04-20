@@ -33,6 +33,17 @@ namespace Internal.StackTraceMetadata
         private static PerModuleMethodNameResolverHashtable _perModuleMethodNameResolverHashtable;
 
         /// <summary>
+        /// Cached start address of the async dispatch boundary method (DispatchContinuations).
+        /// Set on first resolution; IntPtr.Zero means not yet identified.
+        /// </summary>
+        private static IntPtr _asyncDispatchBoundaryMethodAddress;
+
+        // Well-known names for the async dispatch boundary method used to identify
+        // and cache the method address on first stack trace resolution.
+        private const string AsyncDispatchBoundaryMethodName = "DispatchContinuations";
+        private const string AsyncDispatchBoundaryOwningType = "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
+
+        /// <summary>
         /// Eager startup initialization of stack trace metadata support creates
         /// the per-module method name resolver hashtable and registers the runtime augment
         /// for metadata-based stack trace resolution.
@@ -84,6 +95,16 @@ namespace Internal.StackTraceMetadata
                         }
                         (owningTypeName, genericArgs, string methodName, methodSignature) = MethodNameFormatter.FormatMethodName(resolver.Reader, data.OwningType, data.Name, data.Signature, data.GenericArguments);
                         hashCodeForLineInfo = (int)VersionResilientHashCode.CombineThreeValuesIntoHash((uint)data.OwningType.ToIntToken(), (uint)((Handle)data.Name).ToIntToken(), (uint)((Handle)data.Signature).ToIntToken());
+
+                        // Identify and cache the async dispatch boundary method on first encounter.
+                        if (_asyncDispatchBoundaryMethodAddress == IntPtr.Zero &&
+                            isStackTraceHidden &&
+                            methodName is AsyncDispatchBoundaryMethodName &&
+                            owningTypeName is AsyncDispatchBoundaryOwningType)
+                        {
+                            _asyncDispatchBoundaryMethodAddress = methodStartAddress;
+                        }
+
                         return methodName;
                     }
                 }
@@ -130,6 +151,13 @@ namespace Internal.StackTraceMetadata
             hashCodeForLineInfo = 0;
             return null;
         }
+
+        /// <summary>
+        /// Returns true if the given method start address is the async dispatch boundary
+        /// (DispatchContinuations). The address is cached on first resolution.
+        /// </summary>
+        public static bool IsAsyncDispatchBoundaryMethod(IntPtr methodStartAddress)
+            => _asyncDispatchBoundaryMethodAddress != IntPtr.Zero && _asyncDispatchBoundaryMethodAddress == methodStartAddress;
 
         private static unsafe (string, int) GetLineNumberInfo(IntPtr methodStartAddress, int offset, int hashCode)
         {
@@ -340,6 +368,11 @@ namespace Internal.StackTraceMetadata
             public override DiagnosticMethodInfo TryGetDiagnosticMethodInfoFromStartAddress(nint methodStartAddress)
             {
                 return GetDiagnosticMethodInfoFromStartAddressIfAvailable(methodStartAddress);
+            }
+
+            public override bool IsAsyncDispatchBoundaryMethod(IntPtr methodStartAddress)
+            {
+                return StackTraceMetadata.IsAsyncDispatchBoundaryMethod(methodStartAddress);
             }
 
             public override string TryGetMethodStackFrameInfo(IntPtr methodStartAddress, int offset, bool needsFileInfo, out string owningType, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out string fileName, out int lineNumber)

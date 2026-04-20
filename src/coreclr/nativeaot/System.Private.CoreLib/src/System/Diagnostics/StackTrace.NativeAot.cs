@@ -130,6 +130,7 @@ namespace System.Diagnostics
                 _stackFrames = new StackFrame[totalCapacity];
                 int outputFrameIndex = 0;
                 bool asyncFrameSeen = false;
+                bool boundaryFound = false;
 
                 for (int frameIndex = 0; frameIndex < frameCount; frameIndex++)
                 {
@@ -155,6 +156,7 @@ namespace System.Diagnostics
                     {
                         for (int i = 0; i < continuationCount; i++)
                             _stackFrames[outputFrameIndex++] = new StackFrame(continuationIPs[i], needFileInfo);
+                        boundaryFound = true;
                         break;
                     }
 
@@ -163,6 +165,19 @@ namespace System.Diagnostics
                         continue;
 
                     _stackFrames[outputFrameIndex++] = frame;
+                }
+
+                // Fallback: if we have continuation IPs but didn't find the dispatch boundary
+                // (e.g. the boundary method was inlined), append continuations after the
+                // physical frames so async stitching is still performed.
+                if (continuationIPs is not null && !boundaryFound)
+                {
+                    int needed = outputFrameIndex + continuationCount;
+                    if (needed > _stackFrames.Length)
+                        Array.Resize(ref _stackFrames, needed);
+
+                    for (int i = 0; i < continuationCount; i++)
+                        _stackFrames[outputFrameIndex++] = new StackFrame(continuationIPs[i], needFileInfo);
                 }
 
                 // Mode 2: trim trailing non-async frames below the last async frame.
