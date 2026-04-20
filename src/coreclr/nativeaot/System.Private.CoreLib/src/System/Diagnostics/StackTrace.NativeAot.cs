@@ -101,8 +101,7 @@ namespace System.Diagnostics
         private void InitializeForException(Exception exception, int skipFrames, bool needFileInfo)
         {
             IntPtr[] stackIPs = exception.GetStackIPs();
-            int hideMode = GetHideAsyncDispatchMode();
-            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo, null, hideMode);
+            InitializeForIpAddressArray(stackIPs, skipFrames, stackIPs.Length, needFileInfo, null, 0);
         }
 
         /// <summary>
