@@ -3441,13 +3441,46 @@ MethodTableBuilder::EnumerateClassMethods()
                     memcpy(pNewMemberSignature + newRemainingSigOffset, pMemberSignature + originalRemainingSigOffset, cMemberSignature - originalRemainingSigOffset);
                     pNewMemberSignature[newRemainingSigOffset - 1] = ELEMENT_TYPE_VOID;
                 }
+                else if (returnKind == MethodReturnKind::NonGenericTaskReturningMethod)
+                {
+                    // from ". . . Task . . . Method(args);"    we construct
+                    //      ". . . void . . . Method(args);"
+                    // NOTE: Equivalent logic in EEClass::AddMethod uses BuildAsyncVariantSignature.
+
+                    ULONG taskTokenLen = CorSigUncompressedDataSize(&pMemberSignature[offsetOfAsyncDetails + 1]);
+                    ULONG taskTypePrefixSize = 1 + taskTokenLen;     // E_T_CLASS/E_T_VALUETYPE <TokenOfTask>
+                    ULONG taskTypePrefixReplacementSize = 1;         // ELEMENT_TYPE_VOID
+
+                    cAsyncThunkMemberSignature = cMemberSignature - taskTypePrefixSize + taskTypePrefixReplacementSize;
+                    pNewMemberSignature = AllocateFromHighFrequencyHeap(S_SIZE_T(cAsyncThunkMemberSignature));
+
+                    ULONG originalRemainingSigOffset = offsetOfAsyncDetails + taskTypePrefixSize;
+                    ULONG newRemainingSigOffset = offsetOfAsyncDetails + taskTypePrefixReplacementSize;
+                    memcpy(pNewMemberSignature, pMemberSignature, offsetOfAsyncDetails);
+                    _ASSERTE((cMemberSignature - originalRemainingSigOffset) == (cAsyncThunkMemberSignature - newRemainingSigOffset));
+                    memcpy(pNewMemberSignature + newRemainingSigOffset, pMemberSignature + originalRemainingSigOffset, cMemberSignature - originalRemainingSigOffset);
+                    pNewMemberSignature[newRemainingSigOffset - 1] = ELEMENT_TYPE_VOID;
+                }
                 else
                 {
-                    BuildAsyncVariantSignature(returnKind, pMemberSignature, cMemberSignature, offsetOfAsyncDetails,
-                                               nullptr, &cAsyncThunkMemberSignature);
+                    // from ". . . Task<tk> . . . Method(args);"    we construct
+                    //      ". . .       tk  . . . Method(args);"
+                    // NOTE: Equivalent logic in EEClass::AddMethod uses BuildAsyncVariantSignature.
+
+                    _ASSERTE(returnKind == MethodReturnKind::GenericTaskReturningMethod);
+
+                    ULONG taskTokenLen = CorSigUncompressedDataSize(&pMemberSignature[offsetOfAsyncDetails + 2]);
+                    ULONG taskTypePrefixSize = 2 + taskTokenLen + 1; // E_T_GENERICINST E_T_CLASS/E_T_VALUETYPE <TokenOfTask> 1
+                    ULONG taskTypePrefixReplacementSize = 0;
+
+                    cAsyncThunkMemberSignature = cMemberSignature - taskTypePrefixSize + taskTypePrefixReplacementSize;
                     pNewMemberSignature = AllocateFromHighFrequencyHeap(S_SIZE_T(cAsyncThunkMemberSignature));
-                    BuildAsyncVariantSignature(returnKind, pMemberSignature, cMemberSignature, offsetOfAsyncDetails,
-                                               pNewMemberSignature, &cAsyncThunkMemberSignature);
+
+                    ULONG originalRemainingSigOffset = offsetOfAsyncDetails + taskTypePrefixSize;
+                    ULONG newRemainingSigOffset = offsetOfAsyncDetails + taskTypePrefixReplacementSize;
+                    memcpy(pNewMemberSignature, pMemberSignature, offsetOfAsyncDetails);
+                    _ASSERTE((cMemberSignature - originalRemainingSigOffset) == (cAsyncThunkMemberSignature - newRemainingSigOffset));
+                    memcpy(pNewMemberSignature + newRemainingSigOffset, pMemberSignature + originalRemainingSigOffset, cMemberSignature - originalRemainingSigOffset);
                 }
 
                 MethodClassification asyncVariantType = type;
