@@ -216,7 +216,7 @@ RETAIL_CONFIG_DWORD_INFO(EXTERNAL_OutOfProcessSetContext, W("OutOfProcessSetCont
 ///
 /// Async Stack Traces
 ///
-RETAIL_CONFIG_DWORD_INFO(EXTERNAL_StackTraceAsyncBehavior, W("StackTraceAsyncBehavior"), 1, "Controls async stack trace behavior for Environment.StackTrace and System.Diagnostics.StackTrace: 0 = show all frames above the dispatch boundary with async continuation stitching, 1 (default) = hide non-async frames below the first runtime async frame, 2 = keep non-async frames between runtime async frames but truncate trailing ones, 3 = disable async stitching entirely and show only physical call stack frames.")
+RETAIL_CONFIG_DWORD_INFO(EXTERNAL_StackTraceAsyncBehavior, W("StackTraceAsyncBehavior"), 1, "Controls async stack trace behavior for Environment.StackTrace and System.Diagnostics.StackTrace: 0 = show all frames above the dispatch boundary with async continuation stitching, 1 (default) = hide non-async frames below the first runtime async frame, 2 = disable async stitching entirely and show only physical call stack frames.")
 
 ///
 /// Diagnostics (internal general-purpose)

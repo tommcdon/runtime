@@ -7,8 +7,8 @@ using System.Threading.Tasks;
 using Xunit;
 
 /// <summary>
-/// Tests Environment.StackTrace with DOTNET_StackTraceAsyncBehavior=3 (physical only).
-/// When set to 3, async continuation stitching is completely disabled.
+/// Tests Environment.StackTrace with DOTNET_StackTraceAsyncBehavior=2 (physical only).
+/// When set to 2, async continuation stitching is completely disabled.
 /// The stack trace shows only the physical call stack — no continuation frames are spliced in.
 /// </summary>
 public class Async2EnvStackTracePhysical
