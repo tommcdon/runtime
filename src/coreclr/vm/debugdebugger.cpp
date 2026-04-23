@@ -290,25 +290,21 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pFunc != NULL && pData->hideAsyncDispatchMode != 3 && pFunc->IsAsyncMethod())
+    if (pFunc != NULL && pData->hideAsyncDispatchMode != 2 && pFunc->IsAsyncMethod())
     {
         pData->fAsyncFramesPresent = TRUE;
     }
-    else if (pFunc != NULL && pData->hideAsyncDispatchMode != 3 && pData->fAsyncFramesPresent)
+    else if (pFunc != NULL && pData->hideAsyncDispatchMode != 2 && pData->fAsyncFramesPresent)
     {
         if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
         {
             // capture runtime async continuations
             DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
         }
-        else
+        else if (pData->hideAsyncDispatchMode == 1)
         {
-            if (pData->hideAsyncDispatchMode == 1)
-            {
-                // Mode 1: Hide all non-async frames below the first async frame.
-                return SWA_CONTINUE;
-            }
-            // Mode 2: Let the frame through; trailing non-async frames will be trimmed after the walk.
+            // Mode 1: Hide all non-async frames below the first async frame.
+            return SWA_CONTINUE;
         }
     }
 
@@ -430,22 +426,7 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
     pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_StackTraceAsyncBehavior);
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
 
-    // Mode 2: Trim trailing non-async frames below the last runtime async frame.
-    if (pData->hideAsyncDispatchMode == 2 && pData->fAsyncFramesPresent)
-    {
-        INT32 lastAsyncIndex = -1;
-        for (INT32 i = 0; i < pData->cElements; i++)
-        {
-            if (pData->pElements[i].pFunc != NULL && pData->pElements[i].pFunc->IsAsyncMethod())
-                lastAsyncIndex = i;
-        }
-        if (lastAsyncIndex >= 0 && lastAsyncIndex + 1 < pData->cElements)
-        {
-            pData->cElements = lastAsyncIndex + 1;
-        }
-    }
-
-    // Do a 2nd pass outside of any locks.
+    // Do a 2nd passoutside of any locks.
     // This will compute IL offsets.
     for (INT32 i = 0; i < pData->cElements; i++)
     {

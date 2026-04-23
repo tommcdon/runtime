@@ -6,6 +6,6 @@
   <ItemGroup>
     <Compile Include="$(MSBuildProjectName).cs" />
 
-    <CLRTestEnvironmentVariable Include="DOTNET_StackTraceAsyncBehavior" Value="3" />
+    <CLRTestEnvironmentVariable Include="DOTNET_StackTraceAsyncBehavior" Value="2" />
   </ItemGroup>
 </Project>

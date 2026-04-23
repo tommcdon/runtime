@@ -29,8 +29,8 @@ namespace System.Diagnostics
             // Read the config to determine async behavior before collecting continuations.
             int hideMode = GetHideAsyncDispatchMode();
 
-            // Mode 3 (physical only): skip continuation collection entirely.
-            IntPtr[]? continuationIPs = hideMode == 3 ? null : CollectAsyncContinuationIPs();
+            // Mode 2 (physical only): skip continuation collection entirely.
+            IntPtr[]? continuationIPs = hideMode == 2 ? null : CollectAsyncContinuationIPs();
             InitializeForIpAddressArray(stackTrace, adjustedSkip, trueFrameCount, needFileInfo, continuationIPs, hideMode);
         }
 
@@ -177,19 +177,6 @@ namespace System.Diagnostics
 
                     for (int i = 0; i < continuationCount; i++)
                         _stackFrames[outputFrameIndex++] = new StackFrame(continuationIPs[i], needFileInfo);
-                }
-
-                // Mode 2: trim trailing non-async frames below the last async frame.
-                if (hideAsyncDispatchMode == 2 && asyncFrameSeen)
-                {
-                    int lastAsyncIndex = -1;
-                    for (int i = 0; i < outputFrameIndex; i++)
-                    {
-                        if (_stackFrames[i].IsAsyncMethod)
-                            lastAsyncIndex = i;
-                    }
-                    if (lastAsyncIndex >= 0)
-                        outputFrameIndex = lastAsyncIndex + 1;
                 }
 
                 if (outputFrameIndex < totalCapacity)
