@@ -3445,8 +3445,6 @@ MethodTableBuilder::EnumerateClassMethods()
                 {
                     // from ". . . Task . . . Method(args);"    we construct
                     //      ". . . void . . . Method(args);"
-                    // NOTE: Equivalent logic in EEClass::AddMethod uses BuildAsyncVariantSignature.
-
                     ULONG taskTokenLen = CorSigUncompressedDataSize(&pMemberSignature[offsetOfAsyncDetails + 1]);
                     ULONG taskTypePrefixSize = 1 + taskTokenLen;     // E_T_CLASS/E_T_VALUETYPE <TokenOfTask>
                     ULONG taskTypePrefixReplacementSize = 1;         // ELEMENT_TYPE_VOID
@@ -3465,8 +3463,6 @@ MethodTableBuilder::EnumerateClassMethods()
                 {
                     // from ". . . Task<tk> . . . Method(args);"    we construct
                     //      ". . .       tk  . . . Method(args);"
-                    // NOTE: Equivalent logic in EEClass::AddMethod uses BuildAsyncVariantSignature.
-
                     _ASSERTE(returnKind == MethodReturnKind::GenericTaskReturningMethod);
 
                     ULONG taskTokenLen = CorSigUncompressedDataSize(&pMemberSignature[offsetOfAsyncDetails + 2]);
