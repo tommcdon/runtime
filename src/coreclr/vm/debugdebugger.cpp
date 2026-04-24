@@ -290,21 +290,24 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pFunc != NULL && pData->hideAsyncDispatchMode != 2 && pFunc->IsAsyncMethod())
+    if (pFunc != NULL && pData->hideAsyncDispatchMode != 2)
     {
-        pData->fAsyncFramesPresent = TRUE;
-    }
-    else if (pFunc != NULL && pData->hideAsyncDispatchMode != 2 && pData->fAsyncFramesPresent)
-    {
-        if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
+        if (pFunc->IsAsyncMethod())
         {
-            // capture runtime async continuations
-            DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
+            pData->fAsyncFramesPresent = TRUE;
         }
-        else if (pData->hideAsyncDispatchMode == 1)
+        else
         {
-            // Mode 1: Hide all non-async frames below the first async frame.
-            return SWA_CONTINUE;
+            if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
+            {
+                // capture runtime async continuations
+                DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
+            }
+            else if (pData->fAsyncFramesPresent && pData->hideAsyncDispatchMode == 1)
+            {
+                // Mode 1: Hide all non-async frames below the first async frame.
+                return SWA_CONTINUE;
+            }
         }
     }
 
