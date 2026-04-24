@@ -78,4 +78,58 @@ public class Async2EnvStackTrace
     {
         await Task.Delay(1);
     }
+
+    /// <summary>
+    /// Validates that DispatchContinuations is hidden and continuations are stitched
+    /// even when Environment.StackTrace is called from a non-async method invoked
+    /// by a resumed async method (no async frames above DispatchContinuations on
+    /// the physical stack between the non-async caller and the boundary).
+    /// </summary>
+    [Fact]
+    public static void TestNonAsyncCallerAfterResume()
+    {
+        NonAsyncCallerEntry().GetAwaiter().GetResult();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
+    private static async Task NonAsyncCallerEntry()
+    {
+        string trace = await NonAsyncCallerOuterAsync();
+
+        Assert.False(
+            trace.Contains("DispatchContinuations", StringComparison.Ordinal),
+            "DispatchContinuations should be hidden when called from a non-async method after resume." + Environment.NewLine + trace);
+
+        Assert.True(
+            trace.Contains(nameof(NonAsyncCallerOuterAsync), StringComparison.Ordinal),
+            "Continuation stitching should inject " + nameof(NonAsyncCallerOuterAsync) + " as a continuation caller." + Environment.NewLine + trace);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> NonAsyncCallerOuterAsync()
+    {
+        return await NonAsyncCallerInnerAsync();
+    }
+
+    /// <summary>
+    /// After resuming from await, calls a plain non-async method that captures
+    /// Environment.StackTrace. This means the physical stack has:
+    ///   CaptureStackFromNonAsync → NonAsyncCallerInnerAsync → DispatchContinuations → ...
+    /// with no async frames above DispatchContinuations boundary except
+    /// NonAsyncCallerInnerAsync itself.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> NonAsyncCallerInnerAsync()
+    {
+        await Task.Delay(1);
+        return CaptureStackFromNonAsync();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
+    private static string CaptureStackFromNonAsync()
+    {
+        return Environment.StackTrace;
+    }
 }
