@@ -2104,7 +2104,11 @@ static void VirtualUnwindInterpreterCallFrame(TADDR sp, T_CONTEXT *pContext)
     pFrame = pFrame->pParent;
     if (pFrame != NULL)
     {
-        SetIP(pContext, (TADDR)pFrame->ip);
+        // The parent frame's IP is a return address pointing past the CALL/CALLVIRT instruction.
+        // Subtract 1 to point back into the call instruction's native offset range so that
+        // MapNativeOffsetToIL resolves to the call site's source line, not the next line.
+        // This mirrors the STACKWALK_CONTROLPC_ADJUST_OFFSET adjustment done for JIT frames.
+        SetIP(pContext, (TADDR)pFrame->ip - 1);
         SetSP(pContext, dac_cast<TADDR>(pFrame));
         SetFP(pContext, (TADDR)pFrame->pStack);
     }
