@@ -1054,7 +1054,9 @@ int32_t* InterpCompiler::EmitCodeIns(int32_t *ip, InterpInst *ins, TArray<Reloc*
         if (ilOffset < (uint32_t)m_ILCodeSizeFromILHeader)
         {
             uint32_t nativeOffset = ConvertOffset(ins->nativeOffset);
-            if ((m_ILToNativeMapSize == 0) || (m_pILToNativeMap[m_ILToNativeMapSize - 1].ilOffset != ilOffset))
+            // Only emit mapping entries at IL offsets where the evaluation stack is empty or on NOP instructions
+            if ((ins->flags & INTERP_INST_FLAG_EMPTY_IL_STACK) &&
+                ((m_ILToNativeMapSize == 0) || (m_pILToNativeMap[m_ILToNativeMapSize - 1].ilOffset != ilOffset)))
             {
                 // This code assumes that instructions for the same IL offset are emitted in a single run without
                 // any other IL offsets in between and that they don't repeat again after the run ends.
@@ -1076,7 +1078,7 @@ int32_t* InterpCompiler::EmitCodeIns(int32_t *ip, InterpInst *ins, TArray<Reloc*
 
                 m_pILToNativeMap[m_ILToNativeMapSize].ilOffset = ilOffset;
                 m_pILToNativeMap[m_ILToNativeMapSize].nativeOffset = nativeOffset;
-                m_pILToNativeMap[m_ILToNativeMapSize].source = (ins->flags & INTERP_INST_FLAG_EMPTY_IL_STACK) ? ICorDebugInfo::STACK_EMPTY : ICorDebugInfo::SOURCE_TYPE_INVALID;
+                m_pILToNativeMap[m_ILToNativeMapSize].source = ICorDebugInfo::STACK_EMPTY;
                 m_ILToNativeMapSize++;
             }
         }
