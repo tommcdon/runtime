@@ -198,9 +198,9 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     if (base == NULL)
         return false;
 
-    // ResumeInfo is an unmanaged struct:
-    //   [0]             delegate*  Resume       (function pointer)
-    //   [sizeof(void*)] void*      DiagnosticIP (code pointer)
+    // ResumeInfo is an unmanaged struct stored in a Continuation's ResumeInfo pointer:
+    //   [0]             delegate*  Resume       (function pointer to IL_STUB_AsyncResume)
+    //   [sizeof(void*)] void*      DiagnosticIP (code pointer into the original async method)
     struct ResumeInfoLayout
     {
         PCODE Resume;
@@ -212,35 +212,48 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
     if (ppDispatcherInfo == NULL || *ppDispatcherInfo == NULL)
         return false;
 
+    // Fields and types needed for walking the task waiter chain.
+    FieldDesc* pContObjField = CoreLibBinder::GetField(FIELD__TASK__CONTINUATION_OBJECT);
+    FieldDesc* pStateObjField = CoreLibBinder::GetField(FIELD__TASK__STATE_OBJECT);
+    FieldDesc* pDelegateTargetField = CoreLibBinder::GetField(FIELD__DELEGATE__TARGET);
+    MethodTable* pRATMT = CoreLibBinder::GetClass(CLASS__RUNTIME_ASYNC_TASK);
+    MethodTable* pTaskMT = CoreLibBinder::GetClass(CLASS__TASK);
+
     struct
     {
         CONTINUATIONREF continuation;
         CONTINUATIONREF pNext;
+        OBJECTREF currentTaskRef;
+        OBJECTREF contObjRef;
+        OBJECTREF stateObjRef;
+        OBJECTREF delegateTargetRef;
+        OBJECTREF intermediateTaskRef;
     } gc{};
-    gc.continuation = NULL;
-    gc.pNext = NULL;
     GCPROTECT_BEGIN(gc)
     {
         AsyncDispatcherInfoLayout* pDispatcherInfo = *ppDispatcherInfo;
-        while (pDispatcherInfo != NULL)
-        {
-            if (pDispatcherInfo->NextContinuation == NULL)
-            {
-                pDispatcherInfo = (AsyncDispatcherInfoLayout*)pDispatcherInfo->Next;
-                continue;
-            }
 
-            gc.continuation = (CONTINUATIONREF)pDispatcherInfo->NextContinuation;
+        // Capture CurrentTask from the innermost dispatcher for waiter chain walking.
+        if (pDispatcherInfo != NULL)
+        {
+            gc.currentTaskRef = pDispatcherInfo->CurrentTask;
+        }
+
+        // Helper: walk a linked list of Continuation objects and append resolved resume
+        // data. Each Continuation has a ResumeInfo pointer to an IL_STUB_AsyncResume
+        // dynamic method; we resolve through to the actual target MethodDesc.
+        // Uses gc.continuation and gc.pNext for GC protection.
+        auto fnAppendResumesFromChain = [&](CONTINUATIONREF head)
+        {
+            gc.continuation = head;
             while (gc.continuation != NULL)
             {
-                // Use ContinuationObject accessors — these match the binder-verified layout.
                 gc.pNext = gc.continuation->GetNext();
                 ResumeInfoLayout* pResumeInfo = (ResumeInfoLayout*)gc.continuation->GetResumeInfo();
 
                 if (pResumeInfo != NULL && pResumeInfo->Resume != NULL)
                 {
                     MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResumeInfo->Resume);
-
                     if (pMD != NULL && pMD->IsDynamicMethod())
                     {
                         PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
@@ -257,9 +270,233 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
 
                 gc.continuation = gc.pNext;
             }
+        };
 
-            // Only display continuations from the innermost (first) dispatcher in the chain.
+        // Walk the dispatcher chain and extract NextContinuation chains.
+        // These represent frames from the current v2 async method (before suspension).
+        while (pDispatcherInfo != NULL)
+        {
+            if (pDispatcherInfo->NextContinuation == NULL)
+            {
+                pDispatcherInfo = (AsyncDispatcherInfoLayout*)pDispatcherInfo->Next;
+                continue;
+            }
+
+            fnAppendResumesFromChain((CONTINUATIONREF)pDispatcherInfo->NextContinuation);
+
+            // Only process continuations from the innermost (first) dispatcher in the chain.
             break;
+        }
+
+        // Walk the task waiter chain to recover frames from callers that are awaiting
+        // the current task. After suspension, each v2 async method creates its own
+        // RuntimeAsyncTask; the caller's RuntimeAsyncTask is registered as a waiter on
+        // the callee's Task via m_continuationObject. The waiter's m_stateObject holds
+        // the stored continuation chain (resume points) for its own call stack frames.
+        //
+        // m_continuationObject can be:
+        //   - null: no continuations
+        //   - A RuntimeAsyncTask directly (registered via TryAddCompletionAction)
+        //   - A Delegate whose _target is a RuntimeAsyncTask (registered via UnsafeOnCompleted)
+        //   - A Delegate whose _target is a v1 async state machine (mixed v1/v2 pipeline)
+        //   - A List<object> containing any of the above (multiple waiters)
+        //   - s_taskCompletionSentinel (task already completed)
+
+        // Helper: given a single object, try to resolve it to a RuntimeAsyncTask.
+        // Handles direct RuntimeAsyncTask, Delegate wrapping a RuntimeAsyncTask,
+        // and Delegate wrapping a v1 state machine (follows the state machine's Task
+        // field chain to find the next RuntimeAsyncTask).
+        auto fnUnwrapToRAT = [&](OBJECTREF obj) -> OBJECTREF
+        {
+            if (obj == NULL)
+                return NULL;
+
+            MethodTable* pMT = obj->GetMethodTable();
+
+            // Direct RuntimeAsyncTask reference.
+            if (pMT->HasSameTypeDefAs(pRATMT))
+                return obj;
+
+            // Delegate: read _target and check if it's a RuntimeAsyncTask.
+            if (pMT->IsDelegate())
+            {
+                gc.delegateTargetRef = pDelegateTargetField->GetRefValue(obj);
+                if (gc.delegateTargetRef != NULL)
+                {
+                    MethodTable* pTargetMT = gc.delegateTargetRef->GetMethodTable();
+                    if (pTargetMT->HasSameTypeDefAs(pRATMT))
+                    {
+                        OBJECTREF result = gc.delegateTargetRef;
+                        gc.delegateTargetRef = NULL;
+                        return result;
+                    }
+
+                    // Not a RuntimeAsyncTask -- might be a v1 async state machine.
+                    // Try to find a Task-typed field on the target and follow
+                    // m_continuationObject from that Task to find the next RuntimeAsyncTask.
+                    // This handles middleware pipelines with mixed v1/v2 async methods.
+                    OBJECTREF currentObj = gc.delegateTargetRef;
+                    for (int v1Depth = 0; v1Depth < 5; v1Depth++)
+                    {
+                        if (currentObj == NULL)
+                            break;
+
+                        MethodTable* pCurrentMT = currentObj->GetMethodTable();
+
+                        // Search fields for any Task-subclass field.
+                        ApproxFieldDescIterator iter(pCurrentMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+                        FieldDesc* pFD;
+                        OBJECTREF foundTask = NULL;
+                        while ((pFD = iter.Next()) != NULL)
+                        {
+                            if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
+                                continue;
+
+                            OBJECTREF fieldVal = pFD->GetRefValue(currentObj);
+                            if (fieldVal == NULL)
+                                continue;
+
+                            // Walk the type hierarchy to check if this is a Task subclass.
+                            MethodTable* pWalk = fieldVal->GetMethodTable();
+                            while (pWalk != NULL)
+                            {
+                                if (pWalk->HasSameTypeDefAs(pTaskMT))
+                                {
+                                    foundTask = fieldVal;
+                                    break;
+                                }
+                                pWalk = pWalk->GetParentMethodTable();
+                            }
+                            if (foundTask != NULL)
+                                break;
+                        }
+
+                        if (foundTask == NULL)
+                            break;
+
+                        // Read the found Task's m_continuationObject.
+                        gc.intermediateTaskRef = foundTask;
+                        OBJECTREF nextContObj = pContObjField->GetRefValue(gc.intermediateTaskRef);
+                        gc.intermediateTaskRef = NULL;
+
+                        if (nextContObj == NULL)
+                            break;
+
+                        MethodTable* pNextMT = nextContObj->GetMethodTable();
+
+                        // Is it a RuntimeAsyncTask?
+                        if (pNextMT->HasSameTypeDefAs(pRATMT))
+                        {
+                            gc.delegateTargetRef = NULL;
+                            return nextContObj;
+                        }
+
+                        // Is it a Delegate wrapping a RuntimeAsyncTask?
+                        if (pNextMT->IsDelegate())
+                        {
+                            OBJECTREF delegateTarget = pDelegateTargetField->GetRefValue(nextContObj);
+                            if (delegateTarget != NULL && delegateTarget->GetMethodTable()->HasSameTypeDefAs(pRATMT))
+                            {
+                                gc.delegateTargetRef = NULL;
+                                return delegateTarget;
+                            }
+
+                            // Delegate wraps another v1 state machine -- continue.
+                            if (delegateTarget != NULL)
+                            {
+                                currentObj = delegateTarget;
+                                continue;
+                            }
+                        }
+
+                        // Unrecognized continuation type -- stop walking.
+                        break;
+                    }
+
+                    gc.delegateTargetRef = NULL;
+                }
+            }
+
+            return NULL;
+        };
+
+        // Helper: given the m_continuationObject value, find a RuntimeAsyncTask waiter.
+        // Handles single objects (via fnUnwrapToRAT) and List<object> collections.
+        auto fnFindRATWaiter = [&](OBJECTREF contObj) -> OBJECTREF
+        {
+            if (contObj == NULL)
+                return NULL;
+
+            // Try direct unwrap (RuntimeAsyncTask, Delegate, v1 state machine chain).
+            OBJECTREF rat = fnUnwrapToRAT(contObj);
+            if (rat != NULL)
+                return rat;
+
+            MethodTable* pMT = contObj->GetMethodTable();
+
+            // Try List<object>: find the backing Object[] array field and scan elements.
+            OBJECTREF ratWaiter = NULL;
+            int ratCount = 0;
+            ApproxFieldDescIterator iter(pMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+            FieldDesc* pFD;
+            while ((pFD = iter.Next()) != NULL)
+            {
+                if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
+                    continue;
+
+                OBJECTREF fieldVal = pFD->GetRefValue(contObj);
+                if (fieldVal == NULL || !fieldVal->GetMethodTable()->IsArray())
+                    continue;
+
+                PTRARRAYREF arrRef = (PTRARRAYREF)(OBJECTREF)fieldVal;
+                DWORD count = arrRef->GetNumComponents();
+                for (DWORD i = 0; i < count && ratCount <= 1; i++)
+                {
+                    OBJECTREF elem = arrRef->GetAt(i);
+                    if (elem == NULL)
+                        continue;
+
+                    OBJECTREF unwrapped = fnUnwrapToRAT(elem);
+                    if (unwrapped != NULL)
+                    {
+                        ratWaiter = unwrapped;
+                        ratCount++;
+                    }
+                }
+                break; // processed the backing array
+            }
+
+            // Only return if exactly one RuntimeAsyncTask was found (unambiguous).
+            if (ratCount == 1)
+                return ratWaiter;
+
+            return NULL;
+        };
+
+        // Walk up the waiter chain: for each RuntimeAsyncTask, read its
+        // m_continuationObject to find the next waiter, then extract that
+        // waiter's continuation chain from m_stateObject.
+        int depth = 0;
+        while (gc.currentTaskRef != NULL && depth < 20)
+        {
+            gc.contObjRef = pContObjField->GetRefValue(gc.currentTaskRef);
+            OBJECTREF waiterRef = fnFindRATWaiter(gc.contObjRef);
+            gc.contObjRef = waiterRef;
+            if (gc.contObjRef == NULL)
+                break;
+
+            // contObjRef IS a RuntimeAsyncTask -- read its stored continuation chain.
+            gc.stateObjRef = pStateObjField->GetRefValue(gc.contObjRef);
+            if (gc.stateObjRef == NULL)
+                break;
+
+            fnAppendResumesFromChain((CONTINUATIONREF)gc.stateObjRef);
+
+            // Advance to the waiter task and look for its waiter in turn.
+            gc.currentTaskRef = gc.contObjRef;
+            gc.contObjRef = NULL;
+            gc.stateObjRef = NULL;
+            depth++;
         }
     }
     GCPROTECT_END();
@@ -300,12 +537,10 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         {
             if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
             {
-                // capture runtime async continuations
                 DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
             }
             else if (pData->fAsyncFramesPresent && pData->hideAsyncDispatchMode == 1)
             {
-                // Mode 1: Hide all non-async frames below the first async frame.
                 return SWA_CONTINUE;
             }
         }
