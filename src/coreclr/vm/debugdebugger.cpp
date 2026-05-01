@@ -302,9 +302,115 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
         //   - A List<object> containing any of the above (multiple waiters)
         //   - s_taskCompletionSentinel (task already completed)
 
+        // Helper: given a delegate object, try to resolve _target to a RuntimeAsyncTask.
+        // If _target is a RuntimeAsyncTask, returns it directly.
+        // Otherwise follows v1 state machine chain (state machine -> Task field
+        // -> m_continuationObject) to find the next RuntimeAsyncTask.
+        auto fnUnwrapDelegateToRAT = [&](OBJECTREF delegateObj) -> OBJECTREF
+        {
+            gc.delegateTargetRef = pDelegateTargetField->GetRefValue(delegateObj);
+            if (gc.delegateTargetRef == NULL)
+                return NULL;
+
+            MethodTable* pTargetMT = gc.delegateTargetRef->GetMethodTable();
+            if (pTargetMT->HasSameTypeDefAs(pRATMT))
+            {
+                OBJECTREF result = gc.delegateTargetRef;
+                gc.delegateTargetRef = NULL;
+                return result;
+            }
+
+            // Not a RuntimeAsyncTask -- might be a v1 async state machine.
+            // Try to find a Task-typed field on the target and follow
+            // m_continuationObject from that Task to find the next RuntimeAsyncTask.
+            // This handles middleware pipelines with mixed v1/v2 async methods.
+            OBJECTREF currentObj = gc.delegateTargetRef;
+            for (int v1Depth = 0; v1Depth < 5; v1Depth++)
+            {
+                if (currentObj == NULL)
+                    break;
+
+                MethodTable* pCurrentMT = currentObj->GetMethodTable();
+
+                // Search fields for any Task-subclass field.
+                ApproxFieldDescIterator iter(pCurrentMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+                FieldDesc* pFD;
+                OBJECTREF foundTask = NULL;
+                while ((pFD = iter.Next()) != NULL)
+                {
+                    if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
+                        continue;
+
+                    OBJECTREF fieldVal = pFD->GetRefValue(currentObj);
+                    if (fieldVal == NULL)
+                        continue;
+
+                    // Walk the type hierarchy to check if this is a Task subclass.
+                    MethodTable* pWalk = fieldVal->GetMethodTable();
+                    while (pWalk != NULL)
+                    {
+                        if (pWalk->HasSameTypeDefAs(pTaskMT))
+                        {
+                            foundTask = fieldVal;
+                            break;
+                        }
+                        pWalk = pWalk->GetParentMethodTable();
+                    }
+                    if (foundTask != NULL)
+                        break;
+                }
+
+                if (foundTask == NULL)
+                    break;
+
+                // Read the found Task's m_continuationObject.
+                gc.intermediateTaskRef = foundTask;
+                OBJECTREF nextContObj = pContObjField->GetRefValue(gc.intermediateTaskRef);
+                gc.intermediateTaskRef = NULL;
+
+                if (nextContObj == NULL)
+                    break;
+
+                MethodTable* pNextMT = nextContObj->GetMethodTable();
+
+                // Is it a RuntimeAsyncTask?
+                if (pNextMT->HasSameTypeDefAs(pRATMT))
+                {
+                    gc.delegateTargetRef = NULL;
+                    return nextContObj;
+                }
+
+                // Is it a Delegate wrapping a RuntimeAsyncTask?
+                if (pNextMT->IsDelegate())
+                {
+                    OBJECTREF delegateTarget = pDelegateTargetField->GetRefValue(nextContObj);
+                    if (delegateTarget != NULL && delegateTarget->GetMethodTable()->HasSameTypeDefAs(pRATMT))
+                    {
+                        gc.delegateTargetRef = NULL;
+                        return delegateTarget;
+                    }
+
+                    // Delegate wraps another v1 state machine -- continue.
+                    if (delegateTarget != NULL)
+                    {
+                        currentObj = delegateTarget;
+                        continue;
+                    }
+                }
+
+                // Unrecognized continuation type -- stop walking.
+                break;
+            }
+
+            gc.delegateTargetRef = NULL;
+            return NULL;
+        };
+
         // Helper: given a single object, try to resolve it to a RuntimeAsyncTask.
         // Handles direct RuntimeAsyncTask, Delegate wrapping a RuntimeAsyncTask,
-        // and Delegate wrapping a v1 state machine (follows the state machine's Task
+        // TaskContinuation subclasses (e.g. SynchronizationContextAwaitTaskContinuation)
+        // that wrap an Action delegate whose _target is a RuntimeAsyncTask, and
+        // Delegate wrapping a v1 state machine (follows the state machine's Task
         // field chain to find the next RuntimeAsyncTask).
         auto fnUnwrapToRAT = [&](OBJECTREF obj) -> OBJECTREF
         {
@@ -320,100 +426,39 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
             // Delegate: read _target and check if it's a RuntimeAsyncTask.
             if (pMT->IsDelegate())
             {
-                gc.delegateTargetRef = pDelegateTargetField->GetRefValue(obj);
-                if (gc.delegateTargetRef != NULL)
+                return fnUnwrapDelegateToRAT(obj);
+            }
+
+            // TaskContinuation subclasses (e.g. SynchronizationContextAwaitTaskContinuation,
+            // AwaitTaskContinuation): these wrap an Action delegate in their m_action field.
+            // The Action's _target may be the RuntimeAsyncTask waiter.
+            // Scan reference-type fields (including inherited) for a delegate
+            // and try to unwrap it. This handles TaskContinuation subclasses like
+            // SynchronizationContextAwaitTaskContinuation whose m_action field is
+            // inherited from AwaitTaskContinuation.
+            {
+                MethodTable* pWalkMT = pMT;
+                while (pWalkMT != NULL)
                 {
-                    MethodTable* pTargetMT = gc.delegateTargetRef->GetMethodTable();
-                    if (pTargetMT->HasSameTypeDefAs(pRATMT))
+                    ApproxFieldDescIterator iter(pWalkMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+                    FieldDesc* pFD;
+                    while ((pFD = iter.Next()) != NULL)
                     {
-                        OBJECTREF result = gc.delegateTargetRef;
-                        gc.delegateTargetRef = NULL;
-                        return result;
+                        if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
+                            continue;
+
+                        OBJECTREF fieldVal = pFD->GetRefValue(obj);
+                        if (fieldVal == NULL)
+                            continue;
+
+                        if (!fieldVal->GetMethodTable()->IsDelegate())
+                            continue;
+
+                        OBJECTREF rat = fnUnwrapDelegateToRAT(fieldVal);
+                        if (rat != NULL)
+                            return rat;
                     }
-
-                    // Not a RuntimeAsyncTask -- might be a v1 async state machine.
-                    // Try to find a Task-typed field on the target and follow
-                    // m_continuationObject from that Task to find the next RuntimeAsyncTask.
-                    // This handles middleware pipelines with mixed v1/v2 async methods.
-                    OBJECTREF currentObj = gc.delegateTargetRef;
-                    for (int v1Depth = 0; v1Depth < 5; v1Depth++)
-                    {
-                        if (currentObj == NULL)
-                            break;
-
-                        MethodTable* pCurrentMT = currentObj->GetMethodTable();
-
-                        // Search fields for any Task-subclass field.
-                        ApproxFieldDescIterator iter(pCurrentMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
-                        FieldDesc* pFD;
-                        OBJECTREF foundTask = NULL;
-                        while ((pFD = iter.Next()) != NULL)
-                        {
-                            if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
-                                continue;
-
-                            OBJECTREF fieldVal = pFD->GetRefValue(currentObj);
-                            if (fieldVal == NULL)
-                                continue;
-
-                            // Walk the type hierarchy to check if this is a Task subclass.
-                            MethodTable* pWalk = fieldVal->GetMethodTable();
-                            while (pWalk != NULL)
-                            {
-                                if (pWalk->HasSameTypeDefAs(pTaskMT))
-                                {
-                                    foundTask = fieldVal;
-                                    break;
-                                }
-                                pWalk = pWalk->GetParentMethodTable();
-                            }
-                            if (foundTask != NULL)
-                                break;
-                        }
-
-                        if (foundTask == NULL)
-                            break;
-
-                        // Read the found Task's m_continuationObject.
-                        gc.intermediateTaskRef = foundTask;
-                        OBJECTREF nextContObj = pContObjField->GetRefValue(gc.intermediateTaskRef);
-                        gc.intermediateTaskRef = NULL;
-
-                        if (nextContObj == NULL)
-                            break;
-
-                        MethodTable* pNextMT = nextContObj->GetMethodTable();
-
-                        // Is it a RuntimeAsyncTask?
-                        if (pNextMT->HasSameTypeDefAs(pRATMT))
-                        {
-                            gc.delegateTargetRef = NULL;
-                            return nextContObj;
-                        }
-
-                        // Is it a Delegate wrapping a RuntimeAsyncTask?
-                        if (pNextMT->IsDelegate())
-                        {
-                            OBJECTREF delegateTarget = pDelegateTargetField->GetRefValue(nextContObj);
-                            if (delegateTarget != NULL && delegateTarget->GetMethodTable()->HasSameTypeDefAs(pRATMT))
-                            {
-                                gc.delegateTargetRef = NULL;
-                                return delegateTarget;
-                            }
-
-                            // Delegate wraps another v1 state machine -- continue.
-                            if (delegateTarget != NULL)
-                            {
-                                currentObj = delegateTarget;
-                                continue;
-                            }
-                        }
-
-                        // Unrecognized continuation type -- stop walking.
-                        break;
-                    }
-
-                    gc.delegateTargetRef = NULL;
+                    pWalkMT = pWalkMT->GetParentMethodTable();
                 }
             }
 
