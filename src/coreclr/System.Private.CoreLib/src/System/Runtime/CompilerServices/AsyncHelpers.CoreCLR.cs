@@ -749,7 +749,7 @@ namespace System.Runtime.CompilerServices
 
                     if (QueueContinuationFollowUpActionIfNecessary(asyncDispatcherInfo.NextContinuation))
                     {
-                        RuntimeAsyncInstrumentationHelpers.SuspendRuntimeAsyncContext();
+                        RuntimeAsyncInstrumentationHelpers.SuspendRuntimeAsyncContext(flags);
                         awaitState.Pop();
                         refDispatcherInfo = asyncDispatcherInfo.Next;
                         return;
@@ -1199,7 +1199,7 @@ namespace System.Runtime.CompilerServices
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            public static void SuspendRuntimeAsyncContext()
+            public static void SuspendRuntimeAsyncContext(AsyncInstrumentation.Flags flags)
             {
                 if (AsyncInstrumentation.IsEnabled.SuspendAsyncContext(flags))
                 {
