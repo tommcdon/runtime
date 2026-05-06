@@ -3591,8 +3591,157 @@ static bool IsTopmostDebuggerU2MCatchHandlerFrame(Frame *pFrame)
     return (pFrame->GetFrameIdentifier() == FrameIdentifier::DebuggerU2MCatchHandlerFrame) && (pFrame->PtrNextFrame() == FRAME_TOP);
 }
 
+// -----------------------------------------------------------------------
+// Diagnostic logging helpers for nested funceval investigation.
+// Set DOTNET_NESTEDFUNCEVAL_LOG=<path> to enable logging to a file.
+// These helpers work on release builds and do not use the debug-only LOG macro.
+// -----------------------------------------------------------------------
+
+static const char* EHDbg_FrameIdentifierToString(FrameIdentifier id)
+{
+    switch (id)
+    {
+        case FrameIdentifier::None: return "None";
+#define FRAME_TYPE_NAME(frameType) case FrameIdentifier::frameType: return #frameType;
+#include "FrameTypes.h"
+        default: return "Unknown";
+    }
+}
+
+static const char* EHDbg_FrameStateToString(StackFrameIterator::FrameState state)
+{
+    switch (state)
+    {
+        case StackFrameIterator::SFITER_UNINITIALIZED:          return "UNINITIALIZED";
+        case StackFrameIterator::SFITER_FRAMELESS_METHOD:       return "FRAMELESS_METHOD";
+        case StackFrameIterator::SFITER_FRAME_FUNCTION:         return "FRAME_FUNCTION";
+        case StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION: return "SKIPPED_FRAME_FUNCTION";
+        case StackFrameIterator::SFITER_NO_FRAME_TRANSITION:    return "NO_FRAME_TRANSITION";
+        case StackFrameIterator::SFITER_NATIVE_MARKER_FRAME:    return "NATIVE_MARKER_FRAME";
+        case StackFrameIterator::SFITER_INITIAL_NATIVE_CONTEXT: return "INITIAL_NATIVE_CONTEXT";
+        case StackFrameIterator::SFITER_DONE:                   return "DONE";
+        default:                                                return "Unknown";
+    }
+}
+
+static void EHDbg_Log(const char* fmt, ...)
+{
+    // Lazily read the log file path from the environment. Empty path disables logging.
+    static char s_logPath[MAX_PATH] = {};
+    static bool s_initialized = false;
+    if (!s_initialized)
+    {
+        GetEnvironmentVariableA("DOTNET_NESTEDFUNCEVAL_LOG", s_logPath, MAX_PATH);
+        s_initialized = true;
+    }
+
+    if (s_logPath[0] == '\0')
+        return;
+
+    // Serialize writes across threads so lines are not interleaved.
+    // Use a CRITICAL_SECTION directly to avoid GC-mode constraints of Crst.
+    static CRITICAL_SECTION s_cs;
+    static LONG s_csState = 0;  // 0: uninit, 1: initializing, 2: ready
+
+    if (InterlockedCompareExchange(&s_csState, 1, 0) == 0)
+    {
+        InitializeCriticalSection(&s_cs);
+        InterlockedExchange(&s_csState, 2);
+    }
+    while (s_csState != 2)
+        __SwitchToThread(0, CALLER_LIMITS_SPINNING);
+
+    EnterCriticalSection(&s_cs);
+
+    FILE* f = fopen(s_logPath, "a");
+    if (f != NULL)
+    {
+        fprintf(f, "[TID=%u] ", (unsigned)GetCurrentThreadId());
+        va_list args;
+        va_start(args, fmt);
+        vfprintf(f, fmt, args);
+        va_end(args);
+        fclose(f);
+    }
+
+    LeaveCriticalSection(&s_cs);
+}
+
+// Log the topmost N explicit frames from the thread's frame chain.
+static void EHDbg_LogFrameChain(Thread* pThread, int maxFrames = 8)
+{
+    EHDbg_Log("  Frame chain (top %d):\n", maxFrames);
+    Frame* pFrame = pThread->GetFrame();
+    int count = 0;
+    while (pFrame != FRAME_TOP && count < maxFrames)
+    {
+        EHDbg_Log("    [%d] %s (addr=%p)\n", count, EHDbg_FrameIdentifierToString(pFrame->GetFrameIdentifier()), (void*)pFrame);
+        pFrame = pFrame->PtrNextFrame();
+        count++;
+    }
+    if (pFrame == FRAME_TOP)
+        EHDbg_Log("    [%d] FRAME_TOP\n", count);
+}
+
 static void NotifyExceptionPassStarted(StackFrameIterator *pThis, Thread *pThread, ExInfo *pExInfo)
 {
+    // Diagnostic: log iterator state at the start of each exception pass.
+    {
+        StackFrameIterator::FrameState frameState = pThis->GetFrameState();
+        EHDbg_Log("NotifyExceptionPassStarted: pass=%d, idxCurClause=0x%x, iterState=%s\n",
+            pExInfo->m_passNumber,
+            pExInfo->m_idxCurClause,
+            EHDbg_FrameStateToString(frameState));
+
+        // Log the current frame in the iterator if applicable.
+        if (frameState == StackFrameIterator::SFITER_FRAME_FUNCTION ||
+            frameState == StackFrameIterator::SFITER_SKIPPED_FRAME_FUNCTION ||
+            frameState == StackFrameIterator::SFITER_NATIVE_MARKER_FRAME)
+        {
+            Frame* pIterFrame = pThis->m_crawl.GetFrame();
+            EHDbg_Log("  iter crawl frame: %s (addr=%p)\n",
+                (pIterFrame != FRAME_TOP) ? EHDbg_FrameIdentifierToString(pIterFrame->GetFrameIdentifier()) : "FRAME_TOP",
+                (void*)pIterFrame);
+        }
+
+        // For pass 2 with no catch clause (funceval/reverse-P/Invoke path):
+        // Simulate what the OLD NotifyExceptionPassStarted code would have evaluated.
+        if (pExInfo->m_passNumber == 2 && pExInfo->m_idxCurClause == 0xffffffff)
+        {
+            EHDbg_Log("  [OLD CODE SIMULATION] pass2/no-catch-clause path:\n");
+            if (frameState == StackFrameIterator::SFITER_FRAME_FUNCTION)
+            {
+                Frame* pFrame = pThis->m_crawl.GetFrame();
+                EHDbg_Log("    iter state IS SFITER_FRAME_FUNCTION, frame=%s (addr=%p)\n",
+                    (pFrame != FRAME_TOP) ? EHDbg_FrameIdentifierToString(pFrame->GetFrameIdentifier()) : "FRAME_TOP",
+                    (void*)pFrame);
+                if (pFrame != FRAME_TOP && pFrame->GetFrameIdentifier() == FrameIdentifier::ProtectValueClassFrame)
+                {
+                    Frame* pNextFrame = pFrame->PtrNextFrame();
+                    EHDbg_Log("    ProtectValueClassFrame present; next frame=%s (addr=%p)\n",
+                        (pNextFrame != FRAME_TOP) ? EHDbg_FrameIdentifierToString(pNextFrame->GetFrameIdentifier()) : "FRAME_TOP",
+                        (void*)pNextFrame);
+                    pFrame = pNextFrame;
+                }
+                else
+                {
+                    EHDbg_Log("    No ProtectValueClassFrame; checking frame directly.\n");
+                }
+                bool wouldHaveFired = (pFrame != FRAME_TOP) &&
+                    ((pFrame->GetFrameIdentifier() == FrameIdentifier::FuncEvalFrame) ||
+                     IsTopmostDebuggerU2MCatchHandlerFrame(pFrame));
+                EHDbg_Log("    OLD NotifyOfCHFFilter would have fired: %s\n", wouldHaveFired ? "YES" : "NO");
+            }
+            else
+            {
+                EHDbg_Log("    iter state is NOT SFITER_FRAME_FUNCTION => OLD notification would NOT have fired.\n");
+            }
+        }
+
+        // Always log the top of the thread's explicit frame chain.
+        EHDbg_LogFrameChain(pThread);
+    }
+
     if (pExInfo->m_passNumber == 1)
     {
         GCX_COOP();
@@ -4022,16 +4171,38 @@ CLR_BOOL SfiNextWorker(StackFrameIterator* pThis, uint* uExCollideClauseIdx, CLR
             if (pTopExInfo->m_passNumber == 1 && pFrame != FRAME_TOP)
             {
                 Frame* pNotifyFrame = pFrame;
+                bool pvceWasPresent = false;
+
                 // Skip ProtectValueClassFrame — we want to report the FuncEvalFrame behind it
                 if (pNotifyFrame->GetFrameIdentifier() == FrameIdentifier::ProtectValueClassFrame)
                 {
+                    pvceWasPresent = true;
                     pNotifyFrame = pNotifyFrame->PtrNextFrame();
                     _ASSERTE(pNotifyFrame != FRAME_TOP);
                 }
-                if ((pNotifyFrame->GetFrameIdentifier() == FrameIdentifier::FuncEvalFrame) || IsTopmostDebuggerU2MCatchHandlerFrame(pNotifyFrame))
+
+                bool willNotify = (pNotifyFrame->GetFrameIdentifier() == FrameIdentifier::FuncEvalFrame) ||
+                                  IsTopmostDebuggerU2MCatchHandlerFrame(pNotifyFrame);
+
+                // Diagnostic logging to validate hypotheses about funceval/PVCF interaction.
+                EHDbg_Log("SfiNextWorker pass 1: propagating to native, pFrame=%s (addr=%p), "
+                          "ProtectValueClassFrame present=%s, pNotifyFrame=%s (addr=%p), "
+                          "NotifyOfCHFFilter will be called=%s\n",
+                    EHDbg_FrameIdentifierToString(pFrame->GetFrameIdentifier()), (void*)pFrame,
+                    pvceWasPresent ? "YES" : "NO",
+                    EHDbg_FrameIdentifierToString(pNotifyFrame->GetFrameIdentifier()), (void*)pNotifyFrame,
+                    willNotify ? "YES" : "NO");
+
+                if (willNotify)
                 {
                     EEToDebuggerExceptionInterfaceWrapper::NotifyOfCHFFilter((EXCEPTION_POINTERS *)&pTopExInfo->m_ptrs, pNotifyFrame);
                 }
+            }
+            else
+            {
+                EHDbg_Log("SfiNextWorker pass 1: propagating to native, pFrame=%s (pFrame==FRAME_TOP: %s) — no FuncEval notification\n",
+                    (pFrame != FRAME_TOP) ? EHDbg_FrameIdentifierToString(pFrame->GetFrameIdentifier()) : "N/A",
+                    (pFrame == FRAME_TOP) ? "YES" : "NO");
             }
 #endif // DEBUGGING_SUPPORTED
 
