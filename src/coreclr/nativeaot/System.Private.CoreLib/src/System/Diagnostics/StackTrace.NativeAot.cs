@@ -65,14 +65,12 @@ namespace System.Diagnostics
             if (pInfo is null)
                 return null;
 
-            // Only collect continuations from the innermost (first) dispatcher in the chain.
-            // Outer dispatchers represent already-completed async scopes and are not displayed.
-            Continuation? cont = pInfo->NextContinuation;
-            if (cont is null)
-                return null;
-
             IntPtr[] buffer = new IntPtr[16];
             int count = 0;
+
+            // Collect continuations from the innermost (first) dispatcher in the chain.
+            // Outer dispatchers represent already-completed async scopes and are not displayed.
+            Continuation? cont = pInfo->NextContinuation;
             while (cont is not null)
             {
                 if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
@@ -84,6 +82,10 @@ namespace System.Diagnostics
                 }
                 cont = cont.Next;
             }
+
+            // Walk the waiter chain: when a sync method sits between two v2 async
+            // methods, separate RuntimeAsyncTasks are linked via Task.m_continuationObject.
+            AsyncHelpers.CollectWaiterChainIPs(pInfo->CurrentTask, ref buffer, ref count);
 
             if (count == 0)
                 return null;

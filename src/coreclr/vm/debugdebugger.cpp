@@ -256,14 +256,30 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                     MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResumeInfo->Resume);
                     if (pMD != NULL && pMD->IsDynamicMethod())
                     {
+                        MethodDesc* pTargetMD = nullptr;
+
+                        // Try resolving through the ILStubResolver first (JIT'd stubs).
                         PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
                         if (pILResolver != nullptr)
                         {
-                            MethodDesc* pTargetMD = pILResolver->GetStubTargetMethodDesc();
-                            if (pTargetMD != nullptr && pResumeInfo->DiagnosticIP != NULL)
+                            pTargetMD = pILResolver->GetStubTargetMethodDesc();
+                        }
+
+                        // Fallback: resolve target MethodDesc from DiagnosticIP via EECodeInfo.
+                        // This handles R2R precompiled async resume stubs where the ILStubResolver
+                        // is not available.
+                        if (pTargetMD == nullptr && pResumeInfo->DiagnosticIP != NULL)
+                        {
+                            EECodeInfo diagCodeInfo((PCODE)pResumeInfo->DiagnosticIP);
+                            if (diagCodeInfo.IsValid())
                             {
-                                pContinuationResumeList->Append({ pTargetMD, pResumeInfo->DiagnosticIP });
+                                pTargetMD = diagCodeInfo.GetMethodDesc();
                             }
+                        }
+
+                        if (pTargetMD != nullptr && pResumeInfo->DiagnosticIP != NULL)
+                        {
+                            pContinuationResumeList->Append({ pTargetMD, pResumeInfo->DiagnosticIP });
                         }
                     }
                 }
@@ -709,7 +725,7 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
     pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_StackTraceAsyncBehavior);
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
 
-    // Do a 2nd passoutside of any locks.
+    // Do a 2nd pass outside of any locks.
     // This will compute IL offsets.
     for (INT32 i = 0; i < pData->cElements; i++)
     {
