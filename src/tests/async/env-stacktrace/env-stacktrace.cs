@@ -132,4 +132,152 @@ public class Async2EnvStackTrace
     {
         return Environment.StackTrace;
     }
+
+    /// <summary>
+    /// Validates the task waiter chain: when a sync (non-async) method sits
+    /// between two v2 async methods, the inner method suspends independently
+    /// from the outer method, creating separate RuntimeAsyncTasks linked
+    /// through m_continuationObject. After resume, Environment.StackTrace
+    /// must recover the outer caller's frames from the waiter chain.
+    ///
+    /// Call chain: PipelineOuterAsync (v2) -> SyncBridge (sync) -> PipelineInnerAsync (v2) -> Task.Delay
+    /// </summary>
+    [Fact]
+    public static void TestSyncBridgeWaiterChain()
+    {
+        SyncBridgeEntry().GetAwaiter().GetResult();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
+    private static async Task SyncBridgeEntry()
+    {
+        Task<string> outerTask = PipelineOuterAsync();
+        string trace = await outerTask;
+
+        int innerIdx = trace.IndexOf(nameof(PipelineInnerAsync), StringComparison.Ordinal);
+        int outerIdx = trace.IndexOf(nameof(PipelineOuterAsync), StringComparison.Ordinal);
+
+        Assert.True(
+            innerIdx >= 0,
+            "Expected post-await trace to contain " + nameof(PipelineInnerAsync) + "." + Environment.NewLine + trace);
+
+        Assert.True(
+            outerIdx >= 0,
+            "Expected post-await trace to contain " + nameof(PipelineOuterAsync) + " (recovered via task waiter chain)." + Environment.NewLine + trace);
+
+        Assert.True(
+            innerIdx < outerIdx,
+            nameof(PipelineInnerAsync) + " should appear before " + nameof(PipelineOuterAsync) + " in the trace (inner is the active frame, outer is the waiter)." + Environment.NewLine + trace);
+
+        Assert.False(
+            trace.Contains("DispatchContinuations", StringComparison.Ordinal),
+            "Expected DispatchContinuations to be hidden." + Environment.NewLine + trace);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> PipelineOuterAsync()
+    {
+        string result = await SyncBridge();
+        return result;
+    }
+
+    /// <summary>
+    /// Plain synchronous method that forwards the Task without awaiting.
+    /// Because SyncBridge is not a v2 async method, the inner method's
+    /// RuntimeAsyncTask is created first; then the outer v2 async caller
+    /// awaits the returned Task and creates its own RuntimeAsyncTask.
+    /// The two RuntimeAsyncTasks are connected through m_continuationObject,
+    /// possibly via intermediate wrapper types (e.g. TaskContinuation).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task<string> SyncBridge()
+    {
+        return PipelineInnerAsync();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> PipelineInnerAsync()
+    {
+        await Task.Delay(1);
+        return Environment.StackTrace;
+    }
+
+    /// <summary>
+    /// Validates deeper waiter chain walking with multiple sync bridges,
+    /// mimicking an ASP.NET-style middleware pipeline where sync dispatch
+    /// layers sit between v2 async request processing methods.
+    ///
+    /// Call chain: DeepOuter (v2) -> SyncLayer1 -> DeepMiddle (v2) -> SyncLayer2 -> DeepHandler (v2) -> Task.Delay
+    ///
+    /// This creates three separate RuntimeAsyncTasks linked via waiter chain:
+    ///   DeepHandler.RAT -> m_continuationObject -> DeepMiddle.RAT -> m_continuationObject -> DeepOuter.RAT
+    /// </summary>
+    [Fact]
+    public static void TestDeepSyncBridgeWaiterChain()
+    {
+        DeepPipelineEntry().GetAwaiter().GetResult();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
+    private static async Task DeepPipelineEntry()
+    {
+        string trace = await DeepOuterAsync();
+
+        int handlerIdx = trace.IndexOf(nameof(DeepHandlerAsync), StringComparison.Ordinal);
+        int middleIdx = trace.IndexOf(nameof(DeepMiddleAsync), StringComparison.Ordinal);
+        int outerIdx = trace.IndexOf(nameof(DeepOuterAsync), StringComparison.Ordinal);
+
+        Assert.True(
+            handlerIdx >= 0,
+            "Expected trace to contain " + nameof(DeepHandlerAsync) + "." + Environment.NewLine + trace);
+
+        Assert.True(
+            middleIdx >= 0,
+            "Expected trace to contain " + nameof(DeepMiddleAsync) + " (recovered from waiter chain depth 1)." + Environment.NewLine + trace);
+
+        Assert.True(
+            outerIdx >= 0,
+            "Expected trace to contain " + nameof(DeepOuterAsync) + " (recovered from waiter chain depth 2)." + Environment.NewLine + trace);
+
+        Assert.True(
+            handlerIdx < middleIdx && middleIdx < outerIdx,
+            "Expected waiter chain ordering: " + nameof(DeepHandlerAsync) + " < " + nameof(DeepMiddleAsync) + " < " + nameof(DeepOuterAsync) + "." + Environment.NewLine + trace);
+
+        Assert.False(
+            trace.Contains("DispatchContinuations", StringComparison.Ordinal),
+            "Expected DispatchContinuations to be hidden." + Environment.NewLine + trace);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> DeepOuterAsync()
+    {
+        return await SyncLayer1();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task<string> SyncLayer1()
+    {
+        return DeepMiddleAsync();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> DeepMiddleAsync()
+    {
+        return await SyncLayer2();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Task<string> SyncLayer2()
+    {
+        return DeepHandlerAsync();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static async Task<string> DeepHandlerAsync()
+    {
+        await Task.Delay(1);
+        return Environment.StackTrace;
+    }
 }

@@ -343,6 +343,8 @@ DEFINE_CLASS(TASK, Tasks, Task)
 DEFINE_METHOD(TASK, FROM_RESULT_T, FromResult, GM_T_RetTaskOfT)
 DEFINE_METHOD(TASK, GET_COMPLETED_TASK, get_CompletedTask, SM_RetTask)
 DEFINE_METHOD(TASK, GET_ISCOMPLETED, get_IsCompleted, NoSig)
+DEFINE_FIELD(TASK, CONTINUATION_OBJECT, m_continuationObject)
+DEFINE_FIELD(TASK, STATE_OBJECT, m_stateObject)
 
 DEFINE_CLASS(TYPE_HANDLE,           System,                 RuntimeTypeHandle)
 DEFINE_CLASS(RT_TYPE_HANDLE,        System,                 RuntimeTypeHandle)
