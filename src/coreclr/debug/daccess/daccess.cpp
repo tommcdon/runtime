@@ -5298,11 +5298,36 @@ PCSTR
 ClrDataAccess::GetJitHelperName(IN TADDR address)
 {
     PCODE pCode = PINSTRToPCODE(address);
+
+    // Check auxiliary symbol table (dynamically-patched helpers like JIT_WriteBarrier)
     for (unsigned i = 0; i < g_auxiliarySymbolCount; i++)
     {
         if (pCode == hlpAuxiliarySymbolTable[i].pfnAuxiliarySymbol)
         {
             return hlpAuxiliarySymbolTable[i].name;
+        }
+    }
+
+    // Check dynamically generated JIT helpers (e.g., CORINFO_HELP_NEWSFAST)
+    const static PCSTR s_rgHelperNames[] = {
+#define JITHELPER(code,fn,sig) #code,
+#include <jithelpers.h>
+    };
+    static_assert(ARRAY_SIZE(s_rgHelperNames) == CORINFO_HELP_COUNT);
+
+    const static CorInfoHelpFunc s_rgDynamicHCallIds[] = {
+#define DYNAMICJITHELPER(code, fn, binderId) code,
+#define JITHELPER(code, fn, binderId)
+#include <jithelpers.h>
+    };
+
+    VMHELPDEF * pDynamicTable = static_cast<VMHELPDEF *>(
+        PTR_READ(dac_cast<TADDR>(&hlpDynamicFuncTable), DYNAMIC_CORINFO_HELP_COUNT * sizeof(VMHELPDEF)));
+    for (unsigned d = 0; d < DYNAMIC_CORINFO_HELP_COUNT; d++)
+    {
+        if (address == pDynamicTable[d].pfnHelper)
+        {
+            return s_rgHelperNames[s_rgDynamicHCallIds[d]];
         }
     }
 
