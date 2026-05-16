@@ -169,6 +169,10 @@ namespace System.Threading.Tasks
         // m_continuationObject is set to this when the task completes.
         private static readonly object s_taskCompletionSentinel = new object();
 
+        // Internal accessors for async stack trace stitching (waiter chain walking).
+        internal object? ContinuationObjectForStackTrace => m_continuationObject;
+        internal static bool IsContinuationCompletionSentinel(object? obj) => ReferenceEquals(obj, s_taskCompletionSentinel);
+
         // A private flag that would be set (only) by the debugger
         // When true the Async Causality logging trace is enabled as well as a dictionary to relate operation ids with Tasks
         internal static bool s_asyncDebuggingEnabled; // false by default

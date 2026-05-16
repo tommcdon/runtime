@@ -343,6 +343,8 @@ DEFINE_CLASS(TASK, Tasks, Task)
 DEFINE_METHOD(TASK, FROM_RESULT_T, FromResult, GM_T_RetTaskOfT)
 DEFINE_METHOD(TASK, GET_COMPLETED_TASK, get_CompletedTask, SM_RetTask)
 DEFINE_METHOD(TASK, GET_ISCOMPLETED, get_IsCompleted, NoSig)
+DEFINE_FIELD(TASK, CONTINUATION_OBJECT, m_continuationObject)
+DEFINE_FIELD(TASK, STATE_OBJECT, m_stateObject)
 
 DEFINE_CLASS(TYPE_HANDLE,           System,                 RuntimeTypeHandle)
 DEFINE_CLASS(RT_TYPE_HANDLE,        System,                 RuntimeTypeHandle)
@@ -741,6 +743,9 @@ DEFINE_METHOD(RUNTIME_ASYNC_AWAIT_STATE, POP,                 Pop,  NoSig)
 
 DEFINE_CLASS(RUNTIME_ASYNC_STACK_STATE,  CompilerServices,    AsyncHelpers+RuntimeAsyncStackState)
 
+DEFINE_CLASS(RUNTIME_ASYNC_TASK,  CompilerServices,      AsyncHelpers+RuntimeAsyncTask`1)
+DEFINE_METHOD(RUNTIME_ASYNC_TASK, DISPATCH_CONTINUATIONS, DispatchContinuations, NoSig)
+
 DEFINE_CLASS_U(CompilerServices, Continuation,          ContinuationObject)
 DEFINE_FIELD_U(Next,             ContinuationObject,    Next)
 DEFINE_FIELD_U(ResumeInfo,       ContinuationObject,    ResumeInfo)
@@ -867,6 +872,13 @@ DEFINE_FIELD(CONTINUATION,              NEXT,               Next)
 DEFINE_FIELD(CONTINUATION,              RESUME_INFO,        ResumeInfo)
 DEFINE_FIELD(CONTINUATION,              STATE,              State)
 DEFINE_FIELD(CONTINUATION,              FLAGS,              Flags)
+
+DEFINE_CLASS_U(CompilerServices,   AsyncDispatcherInfo,    AsyncDispatcherInfoLayout)
+DEFINE_FIELD_U(Next,              AsyncDispatcherInfoLayout,  Next)
+DEFINE_FIELD_U(NextContinuation,  AsyncDispatcherInfoLayout,  NextContinuation)
+DEFINE_FIELD_U(CurrentTask,       AsyncDispatcherInfoLayout,  CurrentTask)
+DEFINE_CLASS(ASYNC_DISPATCHER_INFO,     CompilerServices,   AsyncDispatcherInfo)
+DEFINE_FIELD(ASYNC_DISPATCHER_INFO,     T_CURRENT,          t_current)
 
 DEFINE_CLASS(RUNTIME_WRAPPED_EXCEPTION, CompilerServices,   RuntimeWrappedException)
 DEFINE_FIELD(RUNTIME_WRAPPED_EXCEPTION, WRAPPED_EXCEPTION,  _wrappedException)
