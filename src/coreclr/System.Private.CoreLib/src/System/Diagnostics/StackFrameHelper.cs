@@ -90,9 +90,9 @@ namespace System.Diagnostics
         // rgiLineNumber and rgiColumnNumber fields using the portable PDB reader if not already
         // done by GetStackFramesInternal (on Windows for old PDB format).
         //
-        internal void InitializeSourceInfo(bool fNeedFileInfo, Exception? exception)
+        internal void InitializeSourceInfo(bool fNeedFileInfo, Exception? exception, bool asyncStitching = false)
         {
-            StackTrace.GetStackFramesInternal(this, fNeedFileInfo, exception);
+            StackTrace.GetStackFramesInternal(this, fNeedFileInfo, exception, asyncStitching);
 
 
             if (!StackTrace.IsLineNumberSupported || !fNeedFileInfo)

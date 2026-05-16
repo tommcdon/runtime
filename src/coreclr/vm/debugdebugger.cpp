@@ -588,7 +588,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
 
-    if (pFunc != NULL && pData->hideAsyncDispatchMode != 2)
+    if (pFunc != NULL && pData->fAsyncStitching)
     {
         if (pFunc->IsAsyncMethod())
         {
@@ -600,7 +600,7 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
             {
                 DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
             }
-            else if (pData->fAsyncFramesPresent && pData->hideAsyncDispatchMode == 1)
+            else if (pData->fAsyncFramesPresent)
             {
                 return SWA_CONTINUE;
             }
@@ -722,7 +722,6 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
 
     // Allocate memory for the initial 'n' frames
     pData->pElements = new DebugStackTrace::Element[pData->cElementsAllocated];
-    pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_StackTraceAsyncBehavior);
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
 
     // Do a 2nd pass outside of any locks.
@@ -763,7 +762,8 @@ extern "C" void QCALLTYPE AsyncHelpers_AddContinuationToExInternal(
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     QCall::ObjectHandleOnStack stackFrameHelper,
     BOOL fNeedFileInfo,
-    QCall::ObjectHandleOnStack exception)
+    QCall::ObjectHandleOnStack exception,
+    BOOL fAsyncStitching)
 {
     QCALL_CONTRACT;
 
@@ -792,6 +792,7 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
 
     if (gc.pException == NULL)
     {
+        data.fAsyncStitching = fAsyncStitching;
         GetStackFrames(&data);
     }
     else

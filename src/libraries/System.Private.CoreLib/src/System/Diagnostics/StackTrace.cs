@@ -52,6 +52,18 @@ namespace System.Diagnostics
         }
 
         /// <summary>
+        /// Constructs a stack trace with async continuation stitching.
+        /// When asyncStitching is true, runtime async (v2) continuation frames
+        /// are spliced into the trace and non-async frames below async frames
+        /// are hidden, producing a logical async call chain.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        internal StackTrace(bool fNeedFileInfo, bool asyncStitching)
+        {
+            InitializeForCurrentThread(METHODS_TO_SKIP, fNeedFileInfo, asyncStitching);
+        }
+
+        /// <summary>
         /// Constructs a stack trace from the current location, in a caller's
         /// frame
         /// </summary>

@@ -28,7 +28,7 @@ public class Async2EnvStackTrace
             preAwait.Contains(nameof(OuterMethod), StringComparison.Ordinal),
             "Expected pre-await trace to contain " + nameof(OuterMethod) + "." + Environment.NewLine + preAwait);
 
-        // MiddleMethod captures Environment.StackTrace after InnerMethod completes
+        // MiddleMethod captures Environment.AsyncStackTrace after InnerMethod completes
         // and MiddleMethod resumes via continuation dispatch.
         Assert.True(
             postAwait.Contains(nameof(MiddleMethod), StringComparison.Ordinal),
@@ -63,12 +63,12 @@ public class Async2EnvStackTrace
     private static async Task<(string, string)> MiddleMethod()
     {
         // Capture BEFORE the blocking await (physical call stack is intact)
-        string preAwait = Environment.StackTrace;
+        string preAwait = Environment.AsyncStackTrace;
 
         await InnerMethod();
 
         // Capture AFTER the blocking await (resumed via DispatchContinuations)
-        string postAwait = Environment.StackTrace;
+        string postAwait = Environment.AsyncStackTrace;
 
         return (preAwait, postAwait);
     }
@@ -81,7 +81,7 @@ public class Async2EnvStackTrace
 
     /// <summary>
     /// Validates that DispatchContinuations is hidden and continuations are stitched
-    /// even when Environment.StackTrace is called from a non-async method invoked
+    /// even when Environment.AsyncStackTrace is called from a non-async method invoked
     /// by a resumed async method (no async frames above DispatchContinuations on
     /// the physical stack between the non-async caller and the boundary).
     /// </summary>
@@ -114,7 +114,7 @@ public class Async2EnvStackTrace
 
     /// <summary>
     /// After resuming from await, calls a plain non-async method that captures
-    /// Environment.StackTrace. This means the physical stack has:
+    /// Environment.AsyncStackTrace. This means the physical stack has:
     ///   CaptureStackFromNonAsync → NonAsyncCallerInnerAsync → DispatchContinuations → ...
     /// with no async frames above DispatchContinuations boundary except
     /// NonAsyncCallerInnerAsync itself.
@@ -130,14 +130,14 @@ public class Async2EnvStackTrace
     [RuntimeAsyncMethodGeneration(false)]
     private static string CaptureStackFromNonAsync()
     {
-        return Environment.StackTrace;
+        return Environment.AsyncStackTrace;
     }
 
     /// <summary>
     /// Validates the task waiter chain: when a sync (non-async) method sits
     /// between two v2 async methods, the inner method suspends independently
     /// from the outer method, creating separate RuntimeAsyncTasks linked
-    /// through m_continuationObject. After resume, Environment.StackTrace
+    /// through m_continuationObject. After resume, Environment.AsyncStackTrace
     /// must recover the outer caller's frames from the waiter chain.
     ///
     /// Call chain: PipelineOuterAsync (v2) -> SyncBridge (sync) -> PipelineInnerAsync (v2) -> Task.Delay
@@ -200,7 +200,7 @@ public class Async2EnvStackTrace
     private static async Task<string> PipelineInnerAsync()
     {
         await Task.Delay(1);
-        return Environment.StackTrace;
+        return Environment.AsyncStackTrace;
     }
 
     /// <summary>
@@ -278,6 +278,6 @@ public class Async2EnvStackTrace
     private static async Task<string> DeepHandlerAsync()
     {
         await Task.Delay(1);
-        return Environment.StackTrace;
+        return Environment.AsyncStackTrace;
     }
 }
