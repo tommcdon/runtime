@@ -308,11 +308,10 @@ public class Async2Reflection
         }
         else
         {
-            // When called directly (no async caller), we see the dispatcher as the caller.
+            // Note: we go through suspend/resume, that is why we see dispatcher as the caller.
+            //       we do not see the resume stub though.
             Assert.Equal("Void DispatchContinuations()", FromStackAsync(1).Result);
-            // When called through an async caller (FromStackAwait), continuation tracking
-            // injects the logical async caller instead of DispatchContinuations.
-            Assert.Equal("System.Threading.Tasks.Task`1[System.String] FromStackAwait(Int32)", FromStackAwait(1).Result);
+            Assert.Equal("Void DispatchContinuations()", FromStackAwait(1).Result);
 
             Assert.Equal("Void FromStack(Int32)", FromStackTask(1).Result);
             // Note: we do not go through suspend/resume, that is why we see the actual caller.
@@ -369,11 +368,10 @@ public class Async2Reflection
         }
         else
         {
-            // When called directly (no async caller), we see the dispatcher as the caller.
+            // Note: we go through suspend/resume, that is why we see dispatcher as the caller.
+            //       we do not see the resume stub though.
             Assert.Equal("DispatchContinuations", FromStackDMIAsync(1).Result);
-            // When called through an async caller (FromStackDMIAwait), continuation tracking
-            // injects the logical async caller instead of DispatchContinuations.
-            Assert.Equal("FromStackDMIAwait", FromStackDMIAwait(1).Result);
+            Assert.Equal("DispatchContinuations", FromStackDMIAwait(1).Result);
 
             Assert.Equal("FromStackDMI", FromStackDMITask(1).Result);
             // Note: we do not go through suspend/resume, that is why we see the actual caller.
