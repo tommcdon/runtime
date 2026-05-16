@@ -8,6 +8,7 @@
 #include "dllimportcallback.h"
 #include "stubhelpers.h"
 #include "asmconstants.h"
+#include "debuginfostore.h"
 #ifdef FEATURE_COMINTEROP
 #include "olecontexthelpers.h"
 #include "clrtocomcall.h"
@@ -2214,8 +2215,36 @@ BOOL AsyncThunkStubManager::DoTraceStub(PCODE stubStartAddress, TraceDestination
 #ifndef DACCESS_COMPILE
      _ASSERTE(CheckIsStub_Internal(stubStartAddress));
 
-    trace->InitForManagerPush(stubStartAddress, this);
+    MethodDesc* pMD = ExecutionManager::GetCodeMethodDesc(stubStartAddress);
+    if (pMD == NULL || !pMD->IsAsyncThunkMethod())
+    {
+        return FALSE;
+    }
 
+    // Resolve the target method via MethodDesc variant scanning
+    MethodDesc* pTargetMD = pMD->GetOrdinaryVariant();
+    _ASSERTE_MSG(pTargetMD != NULL, "ATSM::DoTraceStub: Async thunk does not have non-async variant");
+
+    // An ordinary variant may be a thunk in a rare case when we start from ReturnDroppingThunk.
+    // In such case the regular async variant must not be a thunk.
+    if (pTargetMD->IsAsyncThunkMethod())
+    {
+        pTargetMD = pMD->GetAsyncVariant();
+        _ASSERTE_MSG(pTargetMD != NULL, "ATSM::DoTraceStub: Async thunk has no non-thunk variant to step through to");
+        _ASSERTE(!pTargetMD->IsAsyncThunkMethod());
+    }
+
+    PCODE target = GetStubTarget(pTargetMD);
+    if (target == (PCODE)NULL)
+    {
+        trace->InitForUnjittedMethod(pTargetMD);
+    }
+    else
+    {
+        trace->InitForManaged(target);
+    }
+
+    LOG((LF_CORDB, LL_INFO1000, "ATSM::DoTraceStub: Resolved directly to target %p\n", pTargetMD));
     LOG_TRACE_DESTINATION(trace, stubStartAddress, "AsyncThunkStubManager::DoTraceStub");
 
     return TRUE;
@@ -2229,42 +2258,26 @@ BOOL AsyncThunkStubManager::DoTraceStub(PCODE stubStartAddress, TraceDestination
 
 #ifndef DACCESS_COMPILE
 
-BOOL AsyncThunkStubManager::TraceManager(Thread *thread,
-                                         TraceDestination *trace,
-                                         T_CONTEXT *pContext,
-                                         BYTE **pRetAddr)
+// static
+bool AsyncThunkStubManager::IsAsyncThunkTrace(TraceDestination *trace)
 {
-    PCODE stubIP = GetIP(pContext);
-    *pRetAddr = (BYTE *)StubManagerHelpers::GetReturnAddress(pContext);
+    LIMITED_METHOD_CONTRACT;
 
-    MethodDesc* pMD = NonVirtualEntry2MethodDesc(stubIP);
-    if (pMD->IsAsyncThunkMethod())
+    if (trace == NULL)
+        return false;
+
+    TraceType type = trace->GetTraceType();
+
+    if (type == TRACE_UNJITTED_METHOD)
     {
-        MethodDesc* pOtherMD = pMD->GetOrdinaryVariant();
-        _ASSERTE_MSG(pOtherMD != NULL, "ATSM::TraceManager: Async thunk does not have non-async variant");
-
-        // An ordinary variant may be a thunk in a rare case when we start from ReturnDroppingThunk.
-        // In such case the regular async variant must not be a thunk.
-        if (pOtherMD->IsAsyncThunkMethod())
-        {
-            pOtherMD = pMD->GetAsyncVariant();
-            _ASSERTE_MSG(pOtherMD != NULL, "ATSM::TraceManager: Async thunk has no non-thunk variant to step through to");
-            _ASSERTE(!pOtherMD->IsAsyncThunkMethod());
-        }
-
-        LOG((LF_CORDB, LL_INFO1000, "ATSM::TraceManager: Step through async thunk to target - %p\n", pOtherMD));
-        PCODE target = GetStubTarget(pOtherMD);
-        if (target == (PCODE)NULL)
-        {
-            trace->InitForUnjittedMethod(pOtherMD);
-            return TRUE;
-        }
-
-        trace->InitForManaged(target);
-        return TRUE;
+        MethodDesc *pMD = trace->GetMethodDesc();
+        return (pMD != NULL && pMD->IsAsyncThunkMethod());
     }
-    return FALSE;
+
+    return false;
 }
+
+// static
 #endif //!DACCESS_COMPILE
 
 #ifdef DACCESS_COMPILE

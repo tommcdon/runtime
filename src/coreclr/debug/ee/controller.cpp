@@ -19,6 +19,7 @@
 #include "../../vm/methoditer.h"
 #include "../../vm/tailcallhelp.h"
 
+
 const char *GetTType( TraceType tt);
 
 #define IsSingleStep(exception) ((exception) == EXCEPTION_SINGLE_STEP)
@@ -5518,7 +5519,8 @@ DebuggerStepper::DebuggerStepper(Thread *thread,
     m_fpParentMethod(LEAF_MOST_FRAME),
     m_fpException(LEAF_MOST_FRAME),
     m_fdException(0),
-    m_cFuncEvalNesting(0)
+    m_cFuncEvalNesting(0),
+    m_inNoMappingStepOverRegion(false)
 {
 #ifdef _DEBUG
     m_fReadyToSend = false;
@@ -6029,9 +6031,6 @@ bool DebuggerStepper::TrapStepInto(ControllerStackInfo *info,
     TraceDestination trace;
 
     // Trace through the stubs.
-    // If we're calling from managed code, this should either succeed
-    // or become an ecall into coreclr.
-    // @todo - if this fails, we want to provide as much info as possible.
     if (!g_pEEInterface->TraceStub(ip, &trace)
         || !g_pEEInterface->FollowTrace(&trace))
     {
@@ -6039,6 +6038,8 @@ bool DebuggerStepper::TrapStepInto(ControllerStackInfo *info,
         return false;
     }
 
+    LOG((LF_CORDB, LL_INFO10000, "DS::TSI: resolved trace type=%d addr=%p\n",
+        trace.GetTraceType(), trace.GetAddress()));
 
     (*pTD) = trace; //bitwise copy
 
@@ -7819,8 +7820,9 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
     // on the trace type == TRACE_UNJITTED_METHOD to identify this case.
     {
         PCODE currentPC = GetControlPC(&(info.m_activeFrame.registers));
-        LOG((LF_CORDB, LL_INFO10000, "DS::TP: Checking stub at PC %p, IsStub=%d\n", currentPC, g_pEEInterface->IsStub((const BYTE*)currentPC)));
-        if (g_pEEInterface->IsStub((const BYTE*)currentPC))
+        bool isStub = g_pEEInterface->IsStub((const BYTE*)currentPC);
+        LOG((LF_CORDB, LL_INFO10000, "DS::TP: Checking stub at PC %p, IsStub=%d\n", currentPC, isStub));
+        if (isStub)
         {
             LOG((LF_CORDB, LL_INFO10000, "DS::TP: IsStub=true, calling TraceStub\n"));
             TraceDestination trace;
@@ -7869,9 +7871,35 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
     LOG((LF_CORDB,LL_INFO10000, "DS: m_fp:0x%p, activeFP:0x%p fpExc:0x%p\n",
         m_fp.GetSPValue(), info.m_activeFrame.fp.GetSPValue(), m_fpException.GetSPValue()));
 
-    if (IsInRange(offset, m_range, m_rangeCount, &info) ||
-        ShouldContinueStep( &info, offset))
+    bool fInRange = IsInRange(offset, m_range, m_rangeCount, &info);
+    bool fShouldContinue = !fInRange && ShouldContinueStep( &info, offset);
+
+    if (fInRange || fShouldContinue)
     {
+        // When stepping into a method that has a NO_MAPPING_STEP_OVER prolog region
+        // (e.g., async variant methods with CaptureContexts infrastructure calls),
+        // temporarily force step-over mode so the stepper doesn't follow infrastructure
+        // calls and overshoot the method. The flag is cleared when the stepper exits the
+        // NO_MAPPING_STEP_OVER region and reaches a real IL instruction.
+        bool stepIn = m_stepIn;
+        if (m_stepIn && fSafeToDoStackTrace)
+        {
+            DebuggerJitInfo *ji = info.m_activeFrame.GetJitInfoFromFrame();
+            bool isStepOverRegion = (ji != NULL && ji->IsNoMappingStepOverRegion((DWORD)offset));
+            
+            if (isStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TP: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
+                m_inNoMappingStepOverRegion = true;
+                stepIn = false;
+            }
+        }
+        
+        if (m_inNoMappingStepOverRegion)
+        {
+            stepIn = false;
+        }
+
         LOG((LF_CORDB, LL_INFO10000,
              "Intermediate step patch hit at 0x%x\n", offset));
 
@@ -8113,7 +8141,27 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
     if (IsInRange(offset, m_range, m_rangeCount, &info) ||
         ShouldContinueStep( &info, offset))
     {
-        if (!TrapStep(&info, m_stepIn))
+        // When in a NO_MAPPING_STEP_OVER region, force step-over to avoid following
+        // infrastructure calls. Clear the flag when we exit the region.
+        bool stepIn = m_stepIn;
+        if (m_stepIn)
+        {
+            DebuggerJitInfo *ji = info.m_activeFrame.GetJitInfoFromFrame();
+            bool isStepOverRegion = (ji != NULL && ji->IsNoMappingStepOverRegion((DWORD)offset));
+            if (isStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TSS: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
+                m_inNoMappingStepOverRegion = true;
+                stepIn = false;
+            }
+        }
+        
+        if (m_inNoMappingStepOverRegion)
+        {
+            stepIn = false;
+        }
+
+        if (!TrapStep(&info, stepIn))
             TrapStepNext(&info);
 
         EnableUnwind(m_fp);
@@ -8142,6 +8190,7 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
 void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
 {
     LOG((LF_CORDB,LL_INFO10000,"DS::TTC this:0x%x, @ ip:0x%x\n",this,ip));
+    
     TraceDestination trace;
 
     if (IsFrozen())
@@ -8295,6 +8344,9 @@ void DebuggerStepper::PrepareForSendEvent(StackTraceTicket ticket)
     _ASSERTE(!m_fReadyToSend);
     m_fReadyToSend = true;
 #endif
+
+    // Clear the step-over region flag when a step completes.
+    m_inNoMappingStepOverRegion = false;
 
     LOG((LF_CORDB, LL_INFO10000, "DS::SE m_fpStepInto:0x%x\n", m_fpStepInto.GetSPValue()));
 

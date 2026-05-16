@@ -4331,6 +4331,20 @@ void Compiler::compCompile(void** methodCodePtr, uint32_t* methodCodeSize, JitFl
             lvaStubArgumentVar                     = lvaGrabTempWithImplicitUse(false DEBUGARG("stub argument"));
             lvaGetDesc(lvaStubArgumentVar)->lvType = TYP_I_IMPL;
         }
+
+        // Detect async thunks: IL stubs where getAsyncOtherVariant returns the variant.
+        // Store the variant handle so importation can identify the variant call's IL offset.
+        if (opts.jitFlags->IsSet(JitFlags::JIT_FLAG_IL_STUB) && opts.compDbgInfo)
+        {
+            bool variantIsThunk = false;
+            CORINFO_METHOD_HANDLE variant = info.compCompHnd->getAsyncOtherVariant(
+                info.compMethodHnd, &variantIsThunk);
+            if (variant != nullptr && !variantIsThunk)
+            {
+                compIsAsyncThunkMethod      = true;
+                compAsyncThunkVariantHandle = variant;
+            }
+        }
     };
     DoPhase(this, PHASE_PRE_IMPORT, preImportPhase);
 

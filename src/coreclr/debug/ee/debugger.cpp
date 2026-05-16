@@ -2923,6 +2923,12 @@ HRESULT Debugger::GetILToNativeMappingIntoArrays(
     for (ULONG32 iMap=0; iMap < cMap; iMap++)
     {
         rguiILOffsetTemp[iMap] = rgMapInt[iMap].ilOffset;
+        // NO_MAPPING_STEP_OVER is internal-only; normalize to PROLOG for external consumers
+        // since it replaces the original PROLOG entry in async variant methods.
+        if (rguiILOffsetTemp[iMap] == (UINT)ICorDebugInfo::NO_MAPPING_STEP_OVER)
+        {
+            rguiILOffsetTemp[iMap] = (UINT)ICorDebugInfo::PROLOG;
+        }
         rguiNativeOffsetTemp[iMap] = rgMapInt[iMap].nativeStartOffset;
     }
 

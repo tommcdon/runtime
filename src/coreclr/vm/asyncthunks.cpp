@@ -79,8 +79,14 @@ bool MethodDesc::TryGenerateAsyncThunk(DynamicResolver** resolver, COR_ILMETHOD_
     ilResolver->SetStubMethodDesc(this);
     ilResolver->SetStubTargetMethodDesc(pAsyncOtherVariant);
 
-    // Generate all IL associated data for JIT
-    *methodILDecoder = ilResolver->FinalizeILStub(&sl);
+    // Generate all IL associated data for JIT.
+    // Include DEBUG_INFO so the JIT emits sequence point mappings for this thunk.
+    // These mappings use NO_MAPPING_STEP_OVER to tell the debugger to step over
+    // infrastructure calls (Push, TransparentAwait, etc.) and only step into the
+    // variant call.
+    CORJIT_FLAGS asyncThunkFlags(CORJIT_FLAGS::CORJIT_FLAG_IL_STUB);
+    asyncThunkFlags.Set(CORJIT_FLAGS::CORJIT_FLAG_DEBUG_INFO);
+    *methodILDecoder = ilResolver->FinalizeILStub(&sl, asyncThunkFlags);
     *resolver = ilResolver.Extract();
     return true;
 }

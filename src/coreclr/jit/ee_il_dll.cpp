@@ -1034,6 +1034,10 @@ void Compiler::eeSetLIinfo(unsigned which, UNATIVE_OFFSET nativeOffset, IPmappin
             eeBoundaries[which].ilOffset = ICorDebugInfo::NO_MAPPING;
             eeBoundaries[which].source   = ICorDebugInfo::STACK_EMPTY;
             break;
+        case IPmappingDscKind::NoMappingStepOver:
+            eeBoundaries[which].ilOffset = ICorDebugInfo::NO_MAPPING_STEP_OVER;
+            eeBoundaries[which].source   = ICorDebugInfo::STACK_EMPTY;
+            break;
         default:
             unreached();
     }

@@ -341,12 +341,13 @@ DWORD SequencePoints::MapNativeOffsetToIL(DWORD                  dwNativeOffset,
         // If the end offset is 0, we want to check if we're in the prologue before concluding that the
         // value of dwNativeOffset is out of range.
         if ((dwNativeOffset >= m_map[i].nativeStartOffset) &&
-            (((m_map[i].nativeEndOffset == 0) && (m_map[i].ilOffset != (ULONG)ICorDebugInfo::PROLOG)) ||
+            (((m_map[i].nativeEndOffset == 0) && (m_map[i].ilOffset != (ULONG)ICorDebugInfo::PROLOG) && (m_map[i].ilOffset != (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER)) ||
              (dwNativeOffset < m_map[i].nativeEndOffset)))
         {
             ULONG uILOffset = m_map[i].ilOffset;
 
-            if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::PROLOG)
+            if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::PROLOG ||
+                m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER)
             {
                 uILOffset = 0;
                 (*pMapType) = MAPPING_PROLOG;
@@ -399,6 +400,14 @@ void SequencePoints::CopyAndSortSequencePoints(const ICorDebugInfo::OffsetMappin
     for (i = 0; i < m_map.Count(); i++)
     {
         m_map[i].ilOffset = mapCopy[i].ilOffset;
+        // Normalize NO_MAPPING_STEP_OVER to PROLOG for external consumers.
+        // NO_MAPPING_STEP_OVER is an internal detail used by the stepper; external
+        // consumers (e.g., Concord inline properties) should see it as PROLOG.
+        if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER)
+        {
+            m_map[i].ilOffset = (ULONG)ICorDebugInfo::PROLOG;
+        }
+
         m_map[i].nativeStartOffset = mapCopy[i].nativeOffset;
 
         if (i < m_map.Count() - 1)

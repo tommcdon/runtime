@@ -74,7 +74,8 @@ namespace ILCompiler.Reflection.ReadyToRun
         NoMapping = 0xffffffff,
         Prolog = 0xfffffffe,
         Epilog = 0xfffffffd,
-        MaxMappingValue = Epilog
+        NoMappingStepOver = 0xfffffffc,
+        MaxMappingValue = NoMappingStepOver
     }
 
     public enum ImplicitILArguments

@@ -1317,6 +1317,7 @@ size_t WalkILOffsetsCallback(ICorDebugInfo::OffsetMapping *pOffsetMapping, void 
             if (pWalkData->skipPrologCase)
             {
                 if (pWalkData->prevILOffsetFound != (DWORD)ICorDebugInfo::NO_MAPPING &&
+                    pWalkData->prevILOffsetFound != (DWORD)ICorDebugInfo::NO_MAPPING_STEP_OVER &&
                     pWalkData->prevILOffsetFound != (DWORD)ICorDebugInfo::PROLOG &&
                     pWalkData->prevILOffsetFound != (DWORD)ICorDebugInfo::EPILOG)
                 {
@@ -1342,7 +1343,8 @@ size_t WalkILOffsetsCallback(ICorDebugInfo::OffsetMapping *pOffsetMapping, void 
                         return 1;
                     }
                 }
-                else if (pWalkData->dwILOffsetFound == (DWORD)ICorDebugInfo::NO_MAPPING)
+                else if (pWalkData->dwILOffsetFound == (DWORD)ICorDebugInfo::NO_MAPPING
+                      || pWalkData->dwILOffsetFound == (DWORD)ICorDebugInfo::NO_MAPPING_STEP_OVER)
                 {
                     pWalkData->dwFinalILOffset = 0;
                     return 1;
@@ -1371,7 +1373,7 @@ size_t WalkILOffsetsCallback(ICorDebugInfo::OffsetMapping *pOffsetMapping, void 
             pWalkData->prevILOffsetFound = pWalkData->dwILOffsetFound;
             pWalkData->dwILOffsetFound = pOffsetMapping->ilOffset;
         }
-        else if (((int32_t)pOffsetMapping->ilOffset < (int32_t)pWalkData->dwILOffsetFound) && (pOffsetMapping->ilOffset != (DWORD)ICorDebugInfo::NO_MAPPING))
+        else if (((int32_t)pOffsetMapping->ilOffset < (int32_t)pWalkData->dwILOffsetFound) && (pOffsetMapping->ilOffset != (DWORD)ICorDebugInfo::NO_MAPPING) && (pOffsetMapping->ilOffset != (DWORD)ICorDebugInfo::NO_MAPPING_STEP_OVER))
         {
             // We found a new IL offset that is less than the one we are looking for
             pWalkData->dwILOffsetFound = pOffsetMapping->ilOffset;
@@ -1678,12 +1680,12 @@ int32_t ILToNativeMapArrays::CompareILOffsets(uint32_t ilOffsetA, uint32_t ilOff
         // Prolog entries are always at the start of the list.
         return 1;
     }
-    else if (ilOffsetA == (uint32_t)ICorDebugInfo::NO_MAPPING)
+    else if (ilOffsetA == (uint32_t)ICorDebugInfo::NO_MAPPING || ilOffsetA == (uint32_t)ICorDebugInfo::NO_MAPPING_STEP_OVER)
     {
         // No mappings are always at the end of the list.
         return 1;
     }
-    else if (ilOffsetB == (uint32_t)ICorDebugInfo::NO_MAPPING)
+    else if (ilOffsetB == (uint32_t)ICorDebugInfo::NO_MAPPING || ilOffsetB == (uint32_t)ICorDebugInfo::NO_MAPPING_STEP_OVER)
     {
         // No mappings are always at the end of the list.
         return -1;

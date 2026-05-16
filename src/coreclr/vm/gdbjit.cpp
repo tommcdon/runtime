@@ -1349,6 +1349,7 @@ bool FunctionMember::GetBlockInNativeCode(int blockILOffset, int blockILLen, TAD
             case ICorDebugInfo::PROLOG:
             case ICorDebugInfo::EPILOG:
             case ICorDebugInfo::NO_MAPPING:
+            case ICorDebugInfo::NO_MAPPING_STEP_OVER:
                 continue;
             default:
                 break;

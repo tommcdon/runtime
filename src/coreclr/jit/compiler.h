@@ -2626,6 +2626,7 @@ enum class IPmappingDscKind
     Epilog,    // The mapping represents the start of an epilog.
     NoMapping, // This does not map to any IL offset.
     Normal,    // The mapping maps to an IL offset.
+    NoMappingStepOver, // Unmapped code: debugger should step over calls, not into.
 };
 
 struct IPmappingDsc
@@ -4217,6 +4218,13 @@ public:
     unsigned lvaAsyncSynchronizationContextVar = BAD_VAR_NUM; // SynchronizationContext local for async methods
 
     unsigned short asyncContextRestoreEHID = USHRT_MAX;
+
+    // Async thunk detection: set during pre-import for IL stubs that are async thunks.
+    // When true, genIPmappingGen converts body mappings to NoMappingStepOver (except the
+    // variant call at compAsyncThunkTargetCallILOffset).
+    bool                  compIsAsyncThunkMethod          = false;
+    CORINFO_METHOD_HANDLE compAsyncThunkVariantHandle     = nullptr;
+    IL_OFFSET             compAsyncThunkTargetCallILOffset = BAD_IL_OFFSET;
 
     unsigned lvaArg0Var = BAD_VAR_NUM; // The lclNum of arg0. Normally this will be info.compThisArg.
                          // However, if there is a "ldarga 0" or "starg 0" in the IL,

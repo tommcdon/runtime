@@ -5060,7 +5060,15 @@ void CodeGen::genFnProlog()
 
     // Do this so we can put the prolog instruction group ahead of
     // other instruction groups
-    genIPmappingAddToFront(IPmappingDscKind::Prolog, DebugInfo(), true);
+    // For async variants with CaptureContexts in the prolog (non-OSR) and async thunks,
+    // emit NoMappingStepOver so the debugger steps over infrastructure calls.
+    IPmappingDscKind prologKind = IPmappingDscKind::Prolog;
+    if ((m_compiler->lvaAsyncSynchronizationContextVar != BAD_VAR_NUM || m_compiler->compIsAsyncThunkMethod) &&
+        !m_compiler->opts.IsOSR())
+    {
+        prologKind = IPmappingDscKind::NoMappingStepOver;
+    }
+    genIPmappingAddToFront(prologKind, DebugInfo(), true);
 
 #ifdef DEBUG
     if (m_compiler->opts.dspCode)
@@ -6414,6 +6422,9 @@ void CodeGen::genIPmappingDisp(unsigned mappingNum, const IPmappingDsc* ipMappin
         case IPmappingDscKind::NoMapping:
             printf("NO_MAP");
             break;
+        case IPmappingDscKind::NoMappingStepOver:
+            printf("NO_MAP_SO");
+            break;
         case IPmappingDscKind::Normal:
             const ILLocation& loc = ipMapping->ipmdLoc;
             Compiler::eeDispILOffs(loc.GetOffset());
@@ -6481,6 +6492,7 @@ void CodeGen::genIPmappingAdd(IPmappingDscKind kind, const DebugInfo& di, bool i
     {
         case IPmappingDscKind::Prolog:
         case IPmappingDscKind::Epilog:
+        case IPmappingDscKind::NoMappingStepOver:
             break;
 
         default:
@@ -6626,24 +6638,25 @@ void CodeGen::genIPmappingGen()
 
         // Prev and current mappings have same native offset.
         // If one does not map to IL then remove that one.
-        if (prev->ipmdKind == IPmappingDscKind::NoMapping)
+        if (prev->ipmdKind == IPmappingDscKind::NoMapping || prev->ipmdKind == IPmappingDscKind::NoMappingStepOver)
         {
             m_compiler->genIPmappings.erase(prev);
             ++it;
             continue;
         }
 
-        if (it->ipmdKind == IPmappingDscKind::NoMapping)
+        if (it->ipmdKind == IPmappingDscKind::NoMapping || it->ipmdKind == IPmappingDscKind::NoMappingStepOver)
         {
             it = m_compiler->genIPmappings.erase(it);
             continue;
         }
 
         // Both have mappings.
-        // If previous is the prolog, keep both if this one is at IL offset 0.
+        // If previous is the prolog (or step-over prolog), keep both if this one is at IL offset 0.
         // (TODO: Why? Debugger has no problem breaking on the prolog mapping
         // it seems.)
-        if ((prev->ipmdKind == IPmappingDscKind::Prolog) && (it->ipmdKind == IPmappingDscKind::Normal) &&
+        if ((prev->ipmdKind == IPmappingDscKind::Prolog || prev->ipmdKind == IPmappingDscKind::NoMappingStepOver) &&
+            (it->ipmdKind == IPmappingDscKind::Normal) &&
             (it->ipmdLoc.GetOffset() == 0))
         {
             ++it;
@@ -6681,6 +6694,28 @@ void CodeGen::genIPmappingGen()
         {
             m_compiler->genIPmappings.erase(prev);
             ++it;
+        }
+    }
+
+    // For async thunks, convert body mappings to NoMappingStepOver so the debugger
+    // steps over infrastructure calls (Push, TransparentAwait, etc.) and only steps
+    // into the variant call. The variant call is identified by its IL offset
+    // (compAsyncThunkTargetCallILOffset) recorded during importation.
+    if (m_compiler->compIsAsyncThunkMethod)
+    {
+        for (IPmappingDsc& dsc : m_compiler->genIPmappings)
+        {
+            if (dsc.ipmdKind == IPmappingDscKind::Normal || dsc.ipmdKind == IPmappingDscKind::NoMapping)
+            {
+                // Keep the variant call as Normal (step-in / FeeFee)
+                if (dsc.ipmdKind == IPmappingDscKind::Normal &&
+                    m_compiler->compAsyncThunkTargetCallILOffset != BAD_IL_OFFSET &&
+                    dsc.ipmdLoc.GetOffset() == m_compiler->compAsyncThunkTargetCallILOffset)
+                {
+                    continue;
+                }
+                dsc.ipmdKind = IPmappingDscKind::NoMappingStepOver;
+            }
         }
     }
 
@@ -7045,11 +7080,6 @@ void CodeGen::genReportAsyncDebugInfo()
 }
 
 /*============================================================================
- *
- *   These are empty stubs to help the late dis-assembler to compile
- *   if the late disassembler is being built into a non-DEBUG build.
- *
- *============================================================================
  */
 
 #ifndef TARGET_WASM

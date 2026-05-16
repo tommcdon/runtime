@@ -1680,6 +1680,10 @@ public:
                               DWORD *which,
                               BOOL skipPrologs=FALSE);
 
+    // Returns true if the given native offset falls within a NO_MAPPING_STEP_OVER
+    // region — runtime-injected code where the debugger should step over calls.
+    bool IsNoMappingStepOverRegion(DWORD nativeOffset);
+
     void Init(TADDR newAddress);
 
     enum GetFuncletIndexMode

@@ -1046,6 +1046,7 @@ namespace Internal.JitInterface
                         ilOffset = largestILOffset;
                         break;
                     case (int)MappingTypes.NO_MAPPING:
+                    case (int)MappingTypes.NO_MAPPING_STEP_OVER:
                         continue;
                 }
                 // Ignore these; see WalkILOffsetsCallback in src/coreclr/vm/debugdebugger.cpp.

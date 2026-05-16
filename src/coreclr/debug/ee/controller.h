@@ -1803,6 +1803,11 @@ protected:
     // a func-eval.
     int                     m_cFuncEvalNesting;
 
+    // Set when the stepper enters a NO_MAPPING_STEP_OVER region (e.g., async variant prolog).
+    // While set, TrapStep uses step-over to avoid following infrastructure calls. Cleared
+    // when the stepper exits the region and reaches a real IL instruction.
+    bool                    m_inNoMappingStepOverRegion;
+
     // To freeze a stepper, we disable all triggers. We have to remember that so that
     // we can reenable them on Thaw.
     DWORD                   m_bvFrozenTriggers;

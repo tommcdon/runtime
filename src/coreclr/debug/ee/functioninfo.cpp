@@ -24,7 +24,8 @@ bool DbgIsSpecialILOffset(DWORD offset)
 
     return (offset == (ULONG) ICorDebugInfo::PROLOG ||
             offset == (ULONG) ICorDebugInfo::EPILOG ||
-            offset == (ULONG) ICorDebugInfo::NO_MAPPING);
+            offset == (ULONG) ICorDebugInfo::NO_MAPPING ||
+            offset == (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER);
 }
 
 // Helper to use w/ the debug stores.
@@ -544,7 +545,8 @@ SIZE_T DebuggerJitInfo::MapSpecialToNative(CorDebugMappingResult mapping,
                           (mapping == MAPPING_EPILOG &&
                     m->ilOffset == (ULONG) ICorDebugInfo::EPILOG) ||
                           ((mapping == MAPPING_NO_INFO || mapping == MAPPING_UNMAPPED_ADDRESS) &&
-                    m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING)
+                    (m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING ||
+                     m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER))
                         );
 
                 (*pfAccurate) = TRUE;
@@ -590,6 +592,7 @@ SIZE_T DebuggerJitInfo::MapILOffsetToNativeForSetIP(SIZE_T offsetILTo, int funcl
 
     _ASSERTE(pMap == m_sequenceMap ||
              (pMap - 1)->ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING ||
+             (pMap - 1)->ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER ||
              (pMap - 1)->ilOffset == (ULONG)ICorDebugInfo::PROLOG ||
              (pMap - 1)->ilOffset == (ULONG)ICorDebugInfo::EPILOG ||
              pMap->ilOffset > (pMap - 1)->ilOffset);
@@ -669,7 +672,8 @@ void DebuggerJitInfo::MapILRangeToMapEntryRange(SIZE_T startOffset,
         _ASSERTE(*end>=m_sequenceMap);
 
         while ( ((*end)->ilOffset == (ULONG) ICorDebugInfo::EPILOG||
-                (*end)->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING)
+                (*end)->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING||
+                (*end)->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER)
                && (*end) > m_sequenceMap)
         {
             (*end)--;
@@ -745,13 +749,16 @@ DWORD DebuggerJitInfo::MapNativeOffsetToIL(SIZE_T nativeOffsetToMap,
                 LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI: m->natStart:0x%x m->natEnd:0x%x il:EPILOG\n", m->nativeStartOffset, m->nativeEndOffset));
             else if (m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING)
                 LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI: m->natStart:0x%x m->natEnd:0x%x il:NO MAP\n", m->nativeStartOffset, m->nativeEndOffset));
+            else if (m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER)
+                LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI: m->natStart:0x%x m->natEnd:0x%x il:NO MAP STEP OVER\n", m->nativeStartOffset, m->nativeEndOffset));
             else
                 LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI: m->natStart:0x%x m->natEnd:0x%x il:0x%x src:0x%x\n", m->nativeStartOffset, m->nativeEndOffset, m->ilOffset, m->source));
 #endif // LOGGING
 
             if (m->ilOffset == (ULONG) ICorDebugInfo::PROLOG ||
                 m->ilOffset == (ULONG) ICorDebugInfo::EPILOG ||
-                m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING)
+                m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING ||
+                m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER)
             {
                 (*which)++;
             }
@@ -785,6 +792,14 @@ DWORD DebuggerJitInfo::MapNativeOffsetToIL(SIZE_T nativeOffsetToMap,
                     LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI:MAPPING_"
                         "UNMAPPED_ADDRESS\n"));
                 }
+                else if (m->ilOffset == (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER)
+                {
+                    // NO_MAPPING_STEP_OVER is an internal hint for the stepper.
+                    // To external consumers, treat it like a prolog (return MAPPING_PROLOG).
+                    ilOff = 0;
+                    (*map) = MAPPING_PROLOG;
+                    LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI:MAPPING_PROLOG (NO_MAPPING_STEP_OVER)\n"));
+                }
                 else if( m->ilOffset == (ULONG) ICorDebugInfo::EPILOG )
                 {
                     ilOff = m_lastIL;
@@ -812,6 +827,39 @@ DWORD DebuggerJitInfo::MapNativeOffsetToIL(SIZE_T nativeOffsetToMap,
     (*map) = MAPPING_NO_INFO;
     LOG((LF_CORDB,LL_INFO10000,"DJI::MNOTI:NO_INFO\n"));
     return 0;
+}
+
+/******************************************************************************
+ * IsNoMappingStepOverRegion
+ *
+ * Returns true if the given native offset falls within a NO_MAPPING_STEP_OVER
+ * region. This indicates runtime-injected code (e.g., async CaptureContexts
+ * calls) where the debugger should step over calls, not into them.
+ ******************************************************************************/
+bool DebuggerJitInfo::IsNoMappingStepOverRegion(DWORD nativeOffset)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+    }
+    CONTRACTL_END;
+
+    DebuggerILToNativeMap *m = GetSequenceMap();
+    DebuggerILToNativeMap *mEnd = m + GetSequenceMapCount();
+
+    while (m < mEnd)
+    {
+        if (nativeOffset >= m->nativeStartOffset &&
+            ((m->nativeEndOffset == 0 && m->ilOffset != (ULONG)ICorDebugInfo::PROLOG)
+             || nativeOffset < m->nativeEndOffset))
+        {
+            return m->ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER;
+        }
+        m++;
+    }
+
+    return false;
 }
 
 /******************************************************************************
@@ -1194,6 +1242,12 @@ void DebuggerJitInfo::SetBoundaries(ULONG32 cMap, ICorDebugInfo::OffsetMapping *
                     entry.nativeStartOffset,
                     entry.nativeEndOffset));
                 break;
+            case (ULONG) ICorDebugInfo::NO_MAPPING_STEP_OVER:
+                LOG((LF_CORDB, LL_INFO1000000,
+                    "DJI::sB: NO MAP STEP OVER     --> 0x%08x -- 0x%08x",
+                    entry.nativeStartOffset,
+                    entry.nativeEndOffset));
+                break;
             default:
                 LOG((LF_CORDB, LL_INFO1000000,
                     "DJI::sB: 0x%04x (Real:0x%04x) --> 0x%08x -- 0x%08x",
@@ -1347,6 +1401,11 @@ ULONG32 DebuggerMethodInfo::TranslateToInstIL(const InstrumentedILOffsetMapping 
             return (ULONG32)ICorDebugInfo::NO_MAPPING;
         }
 
+        if (offOrig == (ULONG32)ICorDebugInfo::NO_MAPPING_STEP_OVER)
+        {
+            return (ULONG32)ICorDebugInfo::NO_MAPPING_STEP_OVER;
+        }
+
         for(iMap = 1; iMap < cMap; iMap++)
         {
             if (offOrig < rgMap[iMap].oldOffset)
@@ -1373,6 +1432,11 @@ ULONG32 DebuggerMethodInfo::TranslateToInstIL(const InstrumentedILOffsetMapping 
         if (offOrig == (ULONG32)ICorDebugInfo::NO_MAPPING)
         {
             return (ULONG32)ICorDebugInfo::NO_MAPPING;
+        }
+
+        if (offOrig == (ULONG32)ICorDebugInfo::NO_MAPPING_STEP_OVER)
+        {
+            return (ULONG32)ICorDebugInfo::NO_MAPPING_STEP_OVER;
         }
 
         for(iMap = 1; iMap < cMap; iMap++)

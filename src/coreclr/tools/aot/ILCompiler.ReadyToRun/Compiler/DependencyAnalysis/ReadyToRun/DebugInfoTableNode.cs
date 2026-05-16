@@ -154,7 +154,7 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
             foreach (var locInfo in offsetMapping)
             {
                 maxNativeDelta = Math.Max(maxNativeDelta, locInfo.nativeOffset - previousNativeOffset);
-                maxILValue = Math.Max(maxILValue, locInfo.ilOffset + 3);
+                maxILValue = Math.Max(maxILValue, locInfo.ilOffset - unchecked((uint)MappingTypes.NO_MAPPING_STEP_OVER));
                 previousNativeOffset = locInfo.nativeOffset;
             }
 
@@ -206,7 +206,7 @@ namespace ILCompiler.DependencyAnalysis.ReadyToRun
 
                 ulong mappingDataEncoded = (ulong)sourceBits |
                     ((ulong)nativeOffsetDelta << BitsForSourceType) |
-                    ((ulong)((int)bound.ilOffset - (int)MappingTypes.EPILOG) << (BitsForSourceType + bitWidthForNativeDelta));
+                    ((ulong)((int)bound.ilOffset - (int)MappingTypes.NO_MAPPING_STEP_OVER) << (BitsForSourceType + bitWidthForNativeDelta));
 
                 for (byte bitsToWrite = (byte)bitWidth; bitsToWrite > 0;)
                 {

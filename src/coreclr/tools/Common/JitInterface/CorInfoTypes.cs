@@ -1331,7 +1331,8 @@ namespace Internal.JitInterface
     {
         NO_MAPPING = -1, // -- The IL offset corresponds to no source code (such as EH step blocks).
         PROLOG = -2,     // -- The IL offset indicates a prolog
-        EPILOG = -3      // -- The IL offset indicates an epilog
+        EPILOG = -3,     // -- The IL offset indicates an epilog
+        NO_MAPPING_STEP_OVER = -4 // -- Unmapped code containing calls the debugger should step over.
     }
 
     public enum BoundaryTypes

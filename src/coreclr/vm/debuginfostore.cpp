@@ -1138,7 +1138,7 @@ DebugInfoChunks CompressDebugInfo::DecodeChunks(IN PTR_BYTE pDebugInfo)
     }
     CONTRACTL_END;
 
-    NibbleReader r(pDebugInfo, 42 /* maximum size of compressed 7 UINT32s */);
+    NibbleReader r(pDebugInfo, 48 /* maximum size of compressed 8 UINT32s */);
 
     ULONG cbBoundsOrFatMarker = r.ReadEncodedU32();
 

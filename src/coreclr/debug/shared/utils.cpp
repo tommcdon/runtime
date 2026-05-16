@@ -137,6 +137,14 @@ void ExportILToNativeMap(ULONG32 cMap,             // [in] Min size of mapExt, m
     for(iMap=0; iMap < cMap; iMap++)
     {
         mapExt[iMap].ilOffset = mapInt[iMap].ilOffset ;
+
+        // NO_MAPPING_STEP_OVER is an internal-only mapping type.
+        // Normalize to PROLOG for external consumers since it replaces
+        // the original PROLOG entry in async variant methods.
+        if (mapExt[iMap].ilOffset == (ULONG32)ICorDebugInfo::NO_MAPPING_STEP_OVER)
+        {
+            mapExt[iMap].ilOffset = (ULONG32)ICorDebugInfo::PROLOG;
+        }
         mapExt[iMap].nativeStartOffset = mapInt[iMap].nativeStartOffset ;
         mapExt[iMap].nativeEndOffset = mapInt[iMap].nativeEndOffset ;
 

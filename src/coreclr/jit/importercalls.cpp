@@ -152,6 +152,15 @@ var_types Compiler::impImportCall(OPCODE                  opcode,
 
         methHnd = callInfo->hMethod;
 
+        // For async thunks, identify the variant call so its sequence point
+        // remains step-in (NO_MAPPING) while all other points become step-over.
+        if (compIsAsyncThunkMethod &&
+            compAsyncThunkTargetCallILOffset == BAD_IL_OFFSET &&
+            methHnd == compAsyncThunkVariantHandle)
+        {
+            compAsyncThunkTargetCallILOffset = rawILOffset;
+        }
+
         sig        = &(callInfo->sig);
         callRetTyp = JITtype2varType(sig->retType);
 

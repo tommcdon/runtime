@@ -782,16 +782,14 @@ class AsyncThunkStubManager : public StubManager
 
     virtual BOOL CheckIsStub_Internal(PCODE stubStartAddress);
 
+    // Static helpers for debugger stepping through async thunks.
+
+    // Returns true if the trace destination refers to an async thunk stub.
+    static bool IsAsyncThunkTrace(TraceDestination *trace);
+
   private:
 
     virtual BOOL DoTraceStub(PCODE stubStartAddress, TraceDestination *trace);
-
-#ifndef DACCESS_COMPILE
-    virtual BOOL TraceManager(Thread *thread,
-                              TraceDestination *trace,
-                              T_CONTEXT *pContext,
-                              BYTE **pRetAddr);
-#endif
 
 #ifdef DACCESS_COMPILE
     virtual void DoEnumMemoryRegions(CLRDataEnumMemoryFlags flags);
