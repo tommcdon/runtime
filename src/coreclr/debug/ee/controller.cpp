@@ -7861,6 +7861,17 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
             {
                 // Successfully patched the real target, continue execution
                 m_reason = STEP_CALL;
+
+                // If we're in a NO_MAPPING_STEP_OVER region (e.g., async thunk prolog),
+                // mark it so TriggerTraceCall won't follow infrastructure calls like
+                // CaptureContexts/Push that happen before the real target is reached.
+                DebuggerJitInfo *ji = info.m_activeFrame.GetJitInfoFromFrame();
+                if (ji != NULL && ji->IsNoMappingStepOverRegion((DWORD)offset))
+                {
+                    LOG((LF_CORDB, LL_INFO10000, "DS::TP: stub resolution in NO_MAPPING_STEP_OVER region\n"));
+                    m_inNoMappingStepOverRegion = true;
+                }
+
                 EnableTraceCall(LEAF_MOST_FRAME);
                 EnableUnwind(m_fp);
                 return TPR_IGNORE;
@@ -7903,7 +7914,7 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
         LOG((LF_CORDB, LL_INFO10000,
              "Intermediate step patch hit at 0x%x\n", offset));
 
-        if (!TrapStep(&info, m_stepIn))
+        if (!TrapStep(&info, stepIn))
             TrapStepNext(&info);
 
         EnableUnwind(m_fp);
@@ -8205,6 +8216,15 @@ void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
     // In that case the user has to put a breakpoint to stop in the code.
     if (g_pEEInterface->DetectHandleILStubs(thread))
     {
+        return;
+    }
+
+    // When stepping through a NO_MAPPING_STEP_OVER region (e.g., async thunk infrastructure),
+    // suppress trace calls so we don't follow infrastructure calls like CaptureContexts/Push.
+    // The real target is already patched; we just need to let execution reach it.
+    if (m_inNoMappingStepOverRegion)
+    {
+        LOG((LF_CORDB, LL_INFO10000, "DS::TTC: suppressing trace call in NO_MAPPING_STEP_OVER region\n"));
         return;
     }
 

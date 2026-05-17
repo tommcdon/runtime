@@ -400,12 +400,22 @@ void SequencePoints::CopyAndSortSequencePoints(const ICorDebugInfo::OffsetMappin
     for (i = 0; i < m_map.Count(); i++)
     {
         m_map[i].ilOffset = mapCopy[i].ilOffset;
-        // Normalize NO_MAPPING_STEP_OVER to NO_MAPPING for external consumers.
-        // NO_MAPPING_STEP_OVER is an internal detail used by the stepper; external
-        // consumers (e.g., Concord) should see it as unmapped.
+        // Normalize NO_MAPPING_STEP_OVER for external consumers.
+        // NO_MAPPING_STEP_OVER is an internal detail used by the stepper.
+        // At native offset 0 (the prolog), normalize to PROLOG so Concord's
+        // prolog-advance logic correctly steps past infrastructure code.
+        // At body offsets, normalize to NO_MAPPING so Concord doesn't
+        // mistakenly treat body code as prolog (which breaks disassembly/EE).
         if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER)
         {
-            m_map[i].ilOffset = (ULONG)ICorDebugInfo::NO_MAPPING;
+            if (mapCopy[i].nativeOffset == 0)
+            {
+                m_map[i].ilOffset = (ULONG)ICorDebugInfo::PROLOG;
+            }
+            else
+            {
+                m_map[i].ilOffset = (ULONG)ICorDebugInfo::NO_MAPPING;
+            }
         }
 
         m_map[i].nativeStartOffset = mapCopy[i].nativeOffset;
