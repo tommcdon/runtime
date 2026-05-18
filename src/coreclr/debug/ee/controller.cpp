@@ -7904,6 +7904,11 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
                 m_inNoMappingStepOverRegion = true;
                 stepIn = false;
             }
+            else if (m_inNoMappingStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TP: exited NO_MAPPING_STEP_OVER region, resuming normal step\n"));
+                m_inNoMappingStepOverRegion = false;
+            }
         }
         
         if (m_inNoMappingStepOverRegion)
@@ -8164,6 +8169,11 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
                 LOG((LF_CORDB, LL_INFO10000, "DS::TSS: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
                 m_inNoMappingStepOverRegion = true;
                 stepIn = false;
+            }
+            else if (m_inNoMappingStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TSS: exited NO_MAPPING_STEP_OVER region, resuming normal step\n"));
+                m_inNoMappingStepOverRegion = false;
             }
         }
         
