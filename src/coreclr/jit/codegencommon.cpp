@@ -6719,6 +6719,34 @@ void CodeGen::genIPmappingGen()
         }
     }
 
+    // For async variant methods (non-OSR), convert NoMapping entries that appear
+    // between the prolog and first user code to NoMappingStepOver. This covers the
+    // actual CaptureContexts CALL instruction which lives in a NoMapping gap after
+    // the IL offset 0 argument setup region. We preserve IL offset 0 entries as-is
+    // because they contain the first user-visible sequence point (opening brace)
+    // that the debugger should land on after stepping through the thunk.
+    if (m_compiler->lvaAsyncSynchronizationContextVar != BAD_VAR_NUM &&
+        !m_compiler->compIsAsyncThunkMethod &&
+        !m_compiler->opts.IsOSR())
+    {
+        for (IPmappingDsc& dsc : m_compiler->genIPmappings)
+        {
+            // Stop converting once we reach the first real user IL sequence point
+            if (dsc.ipmdKind == IPmappingDscKind::Normal &&
+                dsc.ipmdLoc.IsValid() &&
+                dsc.ipmdLoc.GetOffset() > 0)
+            {
+                break;
+            }
+
+            // Convert NoMapping entries (gap containing CaptureContexts CALL)
+            if (dsc.ipmdKind == IPmappingDscKind::NoMapping)
+            {
+                dsc.ipmdKind = IPmappingDscKind::NoMappingStepOver;
+            }
+        }
+    }
+
     // Tell them how many mapping records we've got
 
     m_compiler->eeSetLIcount(static_cast<unsigned int>(m_compiler->genIPmappings.size()));

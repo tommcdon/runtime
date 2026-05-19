@@ -19,6 +19,22 @@
 #include "../../vm/methoditer.h"
 #include "../../vm/tailcallhelp.h"
 
+// Diagnostic logging for async thunk step-in debugging
+static FILE* GetStepperLogFile()
+{
+    static FILE* s_logFile = nullptr;
+    if (s_logFile == nullptr)
+    {
+        s_logFile = fopen("D:\\stepper_diag.log", "a");
+    }
+    return s_logFile;
+}
+
+#define STEPPER_LOG(...) do { \
+    FILE* _f = GetStepperLogFile(); \
+    if (_f) { fprintf(_f, __VA_ARGS__); fflush(_f); } \
+} while(0)
+
 
 const char *GetTType( TraceType tt);
 
@@ -7821,6 +7837,7 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
     {
         PCODE currentPC = GetControlPC(&(info.m_activeFrame.registers));
         bool isStub = g_pEEInterface->IsStub((const BYTE*)currentPC);
+        STEPPER_LOG( "[DS::TP-stub] currentPC=%p isStub=%d\n", (void*)currentPC, (int)isStub);
         LOG((LF_CORDB, LL_INFO10000, "DS::TP: Checking stub at PC %p, IsStub=%d\n", currentPC, isStub));
         if (isStub)
         {
@@ -7885,6 +7902,18 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
     bool fInRange = IsInRange(offset, m_range, m_rangeCount, &info);
     bool fShouldContinue = !fInRange && ShouldContinueStep( &info, offset);
 
+    STEPPER_LOG( "[DS::TP] offset=0x%x md=%p fInRange=%d fShouldContinue=%d m_stepIn=%d m_inNoMappingStepOverRegion=%d\n",
+        (unsigned)offset, info.m_activeFrame.md, (int)fInRange, (int)fShouldContinue, (int)m_stepIn, (int)m_inNoMappingStepOverRegion);
+    if (info.m_activeFrame.md != NULL)
+    {
+        MethodDesc *pMD = info.m_activeFrame.md;
+        STEPPER_LOG( "[DS::TP]   method=%s token=0x%08x isAsyncThunk=%d isAsync=%d\n",
+            pMD->GetName(),
+            pMD->GetMemberDef(),
+            (int)pMD->IsAsyncThunkMethod(),
+            (int)pMD->IsAsyncMethod());
+    }
+
     if (fInRange || fShouldContinue)
     {
         // When stepping into a method that has a NO_MAPPING_STEP_OVER prolog region
@@ -7897,7 +7926,9 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
         {
             DebuggerJitInfo *ji = info.m_activeFrame.GetJitInfoFromFrame();
             bool isStepOverRegion = (ji != NULL && ji->IsNoMappingStepOverRegion((DWORD)offset));
-            
+
+            STEPPER_LOG( "[DS::TP]   if-block: isStepOverRegion=%d\n", (int)isStepOverRegion);
+
             if (isStepOverRegion)
             {
                 LOG((LF_CORDB, LL_INFO10000, "DS::TP: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
@@ -7916,6 +7947,8 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
             stepIn = false;
         }
 
+        STEPPER_LOG( "[DS::TP]   intermediate step: stepIn=%d\n", (int)stepIn);
+
         LOG((LF_CORDB, LL_INFO10000,
              "Intermediate step patch hit at 0x%x\n", offset));
 
@@ -7927,6 +7960,7 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
     }
     else
     {
+        STEPPER_LOG( "[DS::TP]   STEP COMPLETE at offset=0x%x\n", (unsigned)offset);
         LOG((LF_CORDB, LL_INFO10000, "Step patch hit at 0x%x\n", offset));
 
         // For a JMC stepper, we have an additional constraint:
@@ -8154,8 +8188,21 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
         return false;
     }
 
-    if (IsInRange(offset, m_range, m_rangeCount, &info) ||
-        ShouldContinueStep( &info, offset))
+    bool fTSSInRange = IsInRange(offset, m_range, m_rangeCount, &info);
+    bool fTSSShouldContinue = !fTSSInRange && ShouldContinueStep( &info, offset);
+
+    STEPPER_LOG( "[DS::TSS] ip=%p offset=0x%x md=%p fInRange=%d fShouldContinue=%d m_stepIn=%d m_inNoMappingStepOverRegion=%d\n",
+        ip, (unsigned)offset, fd, (int)fTSSInRange, (int)fTSSShouldContinue, (int)m_stepIn, (int)m_inNoMappingStepOverRegion);
+    if (fd != NULL)
+    {
+        STEPPER_LOG( "[DS::TSS]   method=%s token=0x%08x isAsyncThunk=%d isAsync=%d\n",
+            fd->GetName(),
+            fd->GetMemberDef(),
+            (int)fd->IsAsyncThunkMethod(),
+            (int)fd->IsAsyncMethod());
+    }
+
+    if (fTSSInRange || fTSSShouldContinue)
     {
         // When in a NO_MAPPING_STEP_OVER region, force step-over to avoid following
         // infrastructure calls. Clear the flag when we exit the region.
@@ -8164,6 +8211,9 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
         {
             DebuggerJitInfo *ji = info.m_activeFrame.GetJitInfoFromFrame();
             bool isStepOverRegion = (ji != NULL && ji->IsNoMappingStepOverRegion((DWORD)offset));
+
+            STEPPER_LOG( "[DS::TSS]   if-block: isStepOverRegion=%d\n", (int)isStepOverRegion);
+
             if (isStepOverRegion)
             {
                 LOG((LF_CORDB, LL_INFO10000, "DS::TSS: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
@@ -8182,6 +8232,8 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
             stepIn = false;
         }
 
+        STEPPER_LOG( "[DS::TSS]   intermediate step: stepIn=%d\n", (int)stepIn);
+
         if (!TrapStep(&info, stepIn))
             TrapStepNext(&info);
 
@@ -8192,6 +8244,7 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
     }
     else
     {
+        STEPPER_LOG( "[DS::TSS]   STEP COMPLETE at offset=0x%x\n", (unsigned)offset);
         LOG((LF_CORDB,LL_INFO10000, "DS::TSS: Returning true Case 2 for reason STEP_%02x!\n", m_reason));
 
         // @todo - when would a single-step (not a patch) land us in user-code?
@@ -8211,6 +8264,8 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
 void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
 {
     LOG((LF_CORDB,LL_INFO10000,"DS::TTC this:0x%x, @ ip:0x%x\n",this,ip));
+
+    STEPPER_LOG( "[DS::TTC] ip=%p m_inNoMappingStepOverRegion=%d\n", ip, (int)m_inNoMappingStepOverRegion);
     
     TraceDestination trace;
 
@@ -8226,6 +8281,7 @@ void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
     // In that case the user has to put a breakpoint to stop in the code.
     if (g_pEEInterface->DetectHandleILStubs(thread))
     {
+        STEPPER_LOG( "[DS::TTC]   suppressed by DetectHandleILStubs\n");
         return;
     }
 
@@ -8234,6 +8290,7 @@ void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
     // The real target is already patched; we just need to let execution reach it.
     if (m_inNoMappingStepOverRegion)
     {
+        STEPPER_LOG( "[DS::TTC]   suppressed by m_inNoMappingStepOverRegion\n");
         LOG((LF_CORDB, LL_INFO10000, "DS::TTC: suppressing trace call in NO_MAPPING_STEP_OVER region\n"));
         return;
     }
@@ -8243,6 +8300,7 @@ void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
         && PatchTrace(&trace, LEAF_MOST_FRAME,
             (m_rgfMappingStop&STOP_UNMANAGED)?(true):(false)))
     {
+        STEPPER_LOG( "[DS::TTC]   FOLLOWING trace call to %p type=%d\n", (void*)trace.GetAddress(), (int)trace.GetTraceType());
         // !!! We really want to know ahead of time if PatchTrace will succeed.
         DisableAll();
         PatchTrace(&trace, LEAF_MOST_FRAME, (m_rgfMappingStop&STOP_UNMANAGED)?

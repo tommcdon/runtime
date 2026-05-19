@@ -854,7 +854,14 @@ bool DebuggerJitInfo::IsNoMappingStepOverRegion(DWORD nativeOffset)
             ((m->nativeEndOffset == 0 && m->ilOffset != (ULONG)ICorDebugInfo::PROLOG)
              || nativeOffset < m->nativeEndOffset))
         {
-            return m->ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER;
+            bool result = m->ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER;
+            {
+                static FILE* s_mapLog = nullptr;
+                if (s_mapLog == nullptr) s_mapLog = fopen("D:\\stepper_map.log", "a");
+                if (s_mapLog) { fprintf(s_mapLog, "[MAP] nativeOffset=0x%x -> ilOffset=0x%x nativeStart=0x%x nativeEnd=0x%x result=%d\n",
+                    nativeOffset, m->ilOffset, m->nativeStartOffset, m->nativeEndOffset, (int)result); fflush(s_mapLog); }
+            }
+            return result;
         }
         m++;
     }
