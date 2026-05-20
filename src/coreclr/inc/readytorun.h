@@ -20,7 +20,7 @@
 // If you update this, ensure you run `git grep MINIMUM_READYTORUN_MAJOR_VERSION`
 // and handle pending work.
 #define READYTORUN_MAJOR_VERSION 18
-#define READYTORUN_MINOR_VERSION 0x0007
+#define READYTORUN_MINOR_VERSION 0x0008
 
 #define MINIMUM_READYTORUN_MAJOR_VERSION 18
 
@@ -58,6 +58,7 @@
 // R2R Version 18.5 adds READYTORUN_FLAG_STRIPPED_IL_BODIES, READYTORUN_FLAG_STRIPPED_INLINING_INFO, and READYTORUN_FLAG_STRIPPED_DEBUG_INFO flags
 // R2R Version 18.6 adds READYTORUN_FIXUP_InjectStringThunks for mapping strings to pregenerated code thunks
 // R2R Version 18.7 adds READYTORUN_HELPER_R2RToInterpreter
+// R2R Version 18.8 changes the debug bounds IL offset encoding bias from EPILOG (-3) to NO_MAPPING_STEP_OVER (-4)
 
 struct READYTORUN_CORE_HEADER
 {

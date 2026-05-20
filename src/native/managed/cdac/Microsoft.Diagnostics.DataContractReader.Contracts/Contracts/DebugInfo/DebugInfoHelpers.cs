@@ -36,7 +36,7 @@ internal static class DebugInfoHelpers
         VLT_INVALID,
     }
 
-    private const uint IL_OFFSET_BIAS = unchecked((uint)-3);
+    private const uint IL_OFFSET_BIAS = unchecked((uint)-4);
     private const uint SOURCE_TYPE_BITS_V1 = 2;
     private const uint SOURCE_TYPE_BITS_V2 = 3;
 

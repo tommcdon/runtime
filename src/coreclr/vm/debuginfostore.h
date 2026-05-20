@@ -142,7 +142,8 @@ public:
         OUT ULONG32                       * pcMap, // number of entries in ppMap
         OUT ICorDebugInfo::OffsetMapping **ppMap, // pointer to newly allocated array
         OUT ULONG32                         *pcVars,
-        OUT ICorDebugInfo::NativeVarInfo    **ppVars
+        OUT ICorDebugInfo::NativeVarInfo    **ppVars,
+        int32_t ilOffsetBias = (int32_t)ICorDebugInfo::MAX_MAPPING_VALUE
     );
 
     // Walk the ILOffsets without needing to allocate a buffer
@@ -150,7 +151,8 @@ public:
         IN PTR_BYTE                         pDebugInfo,
         BoundsType boundsType,
         void* pContext,
-        size_t (* pfnWalkILOffsets)(ICorDebugInfo::OffsetMapping *pOffsetMapping, void *pContext)
+        size_t (* pfnWalkILOffsets)(ICorDebugInfo::OffsetMapping *pOffsetMapping, void *pContext),
+        int32_t ilOffsetBias = (int32_t)ICorDebugInfo::MAX_MAPPING_VALUE
     );
 
 #ifdef FEATURE_ON_STACK_REPLACEMENT

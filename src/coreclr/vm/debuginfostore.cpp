@@ -1079,7 +1079,7 @@ PTR_BYTE CompressDebugInfo::Compress(
 #endif // DACCESS_COMPILE
 
 template <typename TNumBounds, typename TPerBound>
-static void DoBounds(PTR_BYTE addrBounds, uint32_t cbBounds, TNumBounds countHandler, TPerBound boundHandler)
+static void DoBounds(PTR_BYTE addrBounds, uint32_t cbBounds, int32_t ilOffsetBias, TNumBounds countHandler, TPerBound boundHandler)
 {
     NibbleReader r(addrBounds, cbBounds);
     uint32_t cNumEntries = r.ReadEncodedU32_NoThrow();//            writer2.WriteUInt((uint)offsetMapping.Length); // We need the total count
@@ -1116,7 +1116,7 @@ static void DoBounds(PTR_BYTE addrBounds, uint32_t cbBounds, TNumBounds countHan
             bound.nativeOffset = currentNativeOffset;
 
             mappingDataEncoded = mappingDataEncoded >> bitsForNativeDelta; // Remove native offset delta bits
-            bound.ilOffset = (uint32_t)((uint32_t)mappingDataEncoded + (uint32_t)ICorDebugInfo::MAX_MAPPING_VALUE);
+            bound.ilOffset = (uint32_t)((uint32_t)mappingDataEncoded + (uint32_t)ilOffsetBias);
             if (!boundHandler(bound))
                 return;
         }
@@ -1183,7 +1183,8 @@ void CompressDebugInfo::RestoreBoundariesAndVars(
     OUT ULONG32                       * pcMap, // number of entries in ppMap
     OUT ICorDebugInfo::OffsetMapping **ppMap, // pointer to newly allocated array
     OUT ULONG32                         *pcVars,
-    OUT ICorDebugInfo::NativeVarInfo    **ppVars
+    OUT ICorDebugInfo::NativeVarInfo    **ppVars,
+    int32_t ilOffsetBias
     )
 {
     CONTRACTL
@@ -1215,7 +1216,7 @@ void CompressDebugInfo::RestoreBoundariesAndVars(
     if ((pcMap != NULL || ppMap != NULL) && (cbBounds != 0))
     {
         uint32_t iEntry = 0;
-        DoBounds(addrBounds, cbBounds,
+        DoBounds(addrBounds, cbBounds, ilOffsetBias,
             [fpNew, pNewData, &pcMap, &ppMap](uint32_t cNumEntries) 
             {
                 if (pcMap != NULL)
@@ -1274,7 +1275,8 @@ size_t CompressDebugInfo::WalkILOffsets(
     IN PTR_BYTE pDebugInfo,
     BoundsType boundsType,
     void* pContext,
-    size_t (* pfnWalkILOffsets)(ICorDebugInfo::OffsetMapping *pOffsetMapping, void *pContext)
+    size_t (* pfnWalkILOffsets)(ICorDebugInfo::OffsetMapping *pOffsetMapping, void *pContext),
+    int32_t ilOffsetBias
 )
 {
     CONTRACTL
@@ -1301,7 +1303,7 @@ size_t CompressDebugInfo::WalkILOffsets(
     if (cbBounds != 0)
     {
         size_t callbackResult = 0;
-        DoBounds(addrBounds, cbBounds,
+        DoBounds(addrBounds, cbBounds, ilOffsetBias,
             [](uint32_t cNumEntries) 
             {
                 return true;

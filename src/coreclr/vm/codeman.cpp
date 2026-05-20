@@ -6649,6 +6649,13 @@ BOOL ReadyToRunJitManager::GetBoundariesAndVars(
     if (pDebugInfo == NULL)
         return FALSE;
 
+    // R2R images older than version 18.8 encoded IL offsets with EPILOG (-3) as the bias.
+    // Version 18.8+ uses NO_MAPPING_STEP_OVER (-4) as the bias.
+    PTR_READYTORUN_HEADER pHeader = pReadyToRunInfo->GetReadyToRunHeader();
+    int32_t ilOffsetBias = (pHeader->MajorVersion > 18 || (pHeader->MajorVersion == 18 && pHeader->MinorVersion >= 8))
+        ? (int32_t)ICorDebugInfo::MAX_MAPPING_VALUE
+        : (int32_t)ICorDebugInfo::EPILOG;
+
     // Uncompress. This allocates memory and may throw.
     CompressDebugInfo::RestoreBoundariesAndVars(
         fpNew,
@@ -6656,7 +6663,8 @@ BOOL ReadyToRunJitManager::GetBoundariesAndVars(
         boundsType,
         pDebugInfo,      // input
         pcMap, ppMap,    // output
-        pcVars, ppVars); // output
+        pcVars, ppVars,  // output
+        ilOffsetBias);
 
     return TRUE;
 }
@@ -6684,11 +6692,19 @@ size_t ReadyToRunJitManager::WalkILOffsets(
     if (pDebugInfo == NULL)
         return FALSE;
 
+    // R2R images older than version 18.8 encoded IL offsets with EPILOG (-3) as the bias.
+    // Version 18.8+ uses NO_MAPPING_STEP_OVER (-4) as the bias.
+    PTR_READYTORUN_HEADER pHeader = pReadyToRunInfo->GetReadyToRunHeader();
+    int32_t ilOffsetBias = (pHeader->MajorVersion > 18 || (pHeader->MajorVersion == 18 && pHeader->MinorVersion >= 8))
+        ? (int32_t)ICorDebugInfo::MAX_MAPPING_VALUE
+        : (int32_t)ICorDebugInfo::EPILOG;
+
     // Uncompress. This allocates memory and may throw.
     return CompressDebugInfo::WalkILOffsets(
         pDebugInfo,      // input
         boundsType,
-        pContext, pfnWalkILOffsets);
+        pContext, pfnWalkILOffsets,
+        ilOffsetBias);
 }
 
 BOOL ReadyToRunJitManager::GetRichDebugInfo(
