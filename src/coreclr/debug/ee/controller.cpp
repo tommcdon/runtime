@@ -5520,7 +5520,8 @@ DebuggerStepper::DebuggerStepper(Thread *thread,
     m_fpParentMethod(LEAF_MOST_FRAME),
     m_fpException(LEAF_MOST_FRAME),
     m_fdException(0),
-    m_cFuncEvalNesting(0)
+    m_cFuncEvalNesting(0),
+    m_inNoMappingStepOverRegion(false)
 {
 #ifdef _DEBUG
     m_fReadyToSend = false;
@@ -7877,7 +7878,33 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
         LOG((LF_CORDB, LL_INFO10000,
              "Intermediate step patch hit at 0x%x\n", offset));
 
-        if (!TrapStep(&info, m_stepIn))
+        // When in a NO_MAPPING_STEP_OVER region (e.g., async variant prolog),
+        // force step-over so the stepper doesn't follow infrastructure calls.
+        bool stepIn = m_stepIn;
+        if (m_stepIn && fSafeToDoStackTrace)
+        {
+            DebuggerJitInfo *ji = info.m_activeFrame.GetJitInfoFromFrame();
+            bool isStepOverRegion = (ji != NULL && ji->IsNoMappingStepOverRegion((DWORD)offset));
+
+            if (isStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TP: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
+                m_inNoMappingStepOverRegion = true;
+                stepIn = false;
+            }
+            else if (m_inNoMappingStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TP: exited NO_MAPPING_STEP_OVER region, resuming normal step\n"));
+                m_inNoMappingStepOverRegion = false;
+            }
+        }
+
+        if (m_inNoMappingStepOverRegion)
+        {
+            stepIn = false;
+        }
+
+        if (!TrapStep(&info, stepIn))
             TrapStepNext(&info);
 
         EnableUnwind(m_fp);
@@ -8115,7 +8142,32 @@ bool DebuggerStepper::TriggerSingleStep(Thread *thread, const BYTE *ip)
     if (IsInRange(offset, m_range, m_rangeCount, &info) ||
         ShouldContinueStep( &info, offset))
     {
-        if (!TrapStep(&info, m_stepIn))
+        // When in a NO_MAPPING_STEP_OVER region, force step-over to avoid following
+        // infrastructure calls. Clear the flag when we exit the region.
+        bool stepIn = m_stepIn;
+        if (m_stepIn)
+        {
+            bool isStepOverRegion = (dji != NULL && dji->IsNoMappingStepOverRegion((DWORD)offset));
+
+            if (isStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TSS: NO_MAPPING_STEP_OVER region, forcing step-over\n"));
+                m_inNoMappingStepOverRegion = true;
+                stepIn = false;
+            }
+            else if (m_inNoMappingStepOverRegion)
+            {
+                LOG((LF_CORDB, LL_INFO10000, "DS::TSS: exited NO_MAPPING_STEP_OVER region, resuming normal step\n"));
+                m_inNoMappingStepOverRegion = false;
+            }
+        }
+
+        if (m_inNoMappingStepOverRegion)
+        {
+            stepIn = false;
+        }
+
+        if (!TrapStep(&info, stepIn))
             TrapStepNext(&info);
 
         EnableUnwind(m_fp);
@@ -8158,6 +8210,14 @@ void DebuggerStepper::TriggerTraceCall(Thread *thread, const BYTE *ip)
     // In that case the user has to put a breakpoint to stop in the code.
     if (g_pEEInterface->DetectHandleILStubs(thread))
     {
+        return;
+    }
+
+    // When stepping through a NO_MAPPING_STEP_OVER region (e.g., async variant prolog),
+    // suppress trace calls so we don't follow infrastructure calls like CaptureContexts.
+    if (m_inNoMappingStepOverRegion)
+    {
+        LOG((LF_CORDB, LL_INFO10000, "DS::TTC: suppressing trace call in NO_MAPPING_STEP_OVER region\n"));
         return;
     }
 
@@ -8297,6 +8357,9 @@ void DebuggerStepper::PrepareForSendEvent(StackTraceTicket ticket)
     _ASSERTE(!m_fReadyToSend);
     m_fReadyToSend = true;
 #endif
+
+    // Clear the step-over region flag when a step completes.
+    m_inNoMappingStepOverRegion = false;
 
     LOG((LF_CORDB, LL_INFO10000, "DS::SE m_fpStepInto:0x%x\n", m_fpStepInto.GetSPValue()));
 

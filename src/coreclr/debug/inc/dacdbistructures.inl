@@ -351,7 +351,8 @@ DWORD SequencePoints::MapNativeOffsetToIL(DWORD                  dwNativeOffset,
                 uILOffset = 0;
                 (*pMapType) = MAPPING_PROLOG;
             }
-            else if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING)
+            else if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING ||
+                     m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER)
             {
                 uILOffset = 0;
                 (*pMapType) = MAPPING_UNMAPPED_ADDRESS;
@@ -399,6 +400,21 @@ void SequencePoints::CopyAndSortSequencePoints(const ICorDebugInfo::OffsetMappin
     for (i = 0; i < m_map.Count(); i++)
     {
         m_map[i].ilOffset = mapCopy[i].ilOffset;
+        // Normalize NO_MAPPING_STEP_OVER for external consumers.
+        // At native offset 0, normalize to PROLOG so Concord's prolog-advance logic works.
+        // At body offsets, normalize to NO_MAPPING.
+        if (m_map[i].ilOffset == (ULONG)ICorDebugInfo::NO_MAPPING_STEP_OVER)
+        {
+            if (mapCopy[i].nativeOffset == 0)
+            {
+                m_map[i].ilOffset = (ULONG)ICorDebugInfo::PROLOG;
+            }
+            else
+            {
+                m_map[i].ilOffset = (ULONG)ICorDebugInfo::NO_MAPPING;
+            }
+        }
+
         m_map[i].nativeStartOffset = mapCopy[i].nativeOffset;
 
         if (i < m_map.Count() - 1)

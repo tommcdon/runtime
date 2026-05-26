@@ -1698,6 +1698,9 @@ public:
 
     ICorDebugInfo::SourceTypes GetSrcTypeFromILOffset(SIZE_T ilOffset);
 
+    // Returns true if the given native offset falls within a NO_MAPPING_STEP_OVER region.
+    bool IsNoMappingStepOverRegion(DWORD nativeOffset);
+
 #ifdef DACCESS_COMPILE
     void EnumMemoryRegions(CLRDataEnumMemoryFlags flags);
 #endif

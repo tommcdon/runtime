@@ -18,7 +18,8 @@ public:
         NO_MAPPING  = -1,
         PROLOG      = -2,
         EPILOG      = -3,
-        MAX_MAPPING_VALUE = -3 // Sentinel value. This should be set to the largest magnitude value in the enum
+        NO_MAPPING_STEP_OVER = -4, // Unmapped code containing calls the debugger should step over, not into.
+        MAX_MAPPING_VALUE = -4 // Sentinel value. This should be set to the largest magnitude value in the enum
                                // so that the compression routines know the enum's range.
     };
 

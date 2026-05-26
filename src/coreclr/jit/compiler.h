@@ -2632,6 +2632,7 @@ enum class IPmappingDscKind
     Epilog,    // The mapping represents the start of an epilog.
     NoMapping, // This does not map to any IL offset.
     Normal,    // The mapping maps to an IL offset.
+    NoMappingStepOver, // Unmapped code: debugger should step over calls, not into.
 };
 
 struct IPmappingDsc
