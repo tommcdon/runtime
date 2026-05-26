@@ -1314,7 +1314,7 @@ static void PrepareMethodHelper(MethodDesc * pMD)
         pMD = pMD->GetWrappedMethodDesc();
     }
 
-    if (pMD->IsAsyncThunkMethod())
+    if (pMD->IsSyntheticAsyncThunk())
     {
         if (pMD->ShouldCallPrestub())
             pMD->DoPrestub(NULL);

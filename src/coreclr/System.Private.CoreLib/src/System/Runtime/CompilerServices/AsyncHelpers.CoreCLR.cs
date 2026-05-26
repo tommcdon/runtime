@@ -486,6 +486,7 @@ namespace System.Runtime.CompilerServices
 
         [BypassReadyToRun]
         [MethodImpl(MethodImplOptions.Async)]
+        [DebuggerHidden]
         private static void TransparentAwait(Task task)
         {
             if (!task.IsCompleted)
@@ -498,6 +499,7 @@ namespace System.Runtime.CompilerServices
 
         [BypassReadyToRun]
         [MethodImpl(MethodImplOptions.Async)]
+        [DebuggerHidden]
         private static T TransparentAwait<T>(Task<T> task)
         {
             if (!task.IsCompleted)
@@ -511,6 +513,7 @@ namespace System.Runtime.CompilerServices
 
         [BypassReadyToRun]
         [MethodImpl(MethodImplOptions.Async)]
+        [DebuggerHidden]
         private static void TransparentAwait(ValueTask task)
         {
             if (!task.IsCompleted)
@@ -524,6 +527,7 @@ namespace System.Runtime.CompilerServices
 
         [BypassReadyToRun]
         [MethodImpl(MethodImplOptions.Async)]
+        [DebuggerHidden]
         private static T TransparentAwait<T>(ValueTask<T> task)
         {
             if (!task.IsCompleted)

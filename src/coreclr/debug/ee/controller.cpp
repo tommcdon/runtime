@@ -80,9 +80,11 @@ bool ShouldBindPatchToMethodDesc(MethodDesc* pMD, MethodDesc* pMethodDescFilter)
         return pMD == pMethodDescFilter;
     }
 
-    // Default filtering policy: exclude async thunk methods
-    // User breakpoints should bind to the actual async implementation, not the thunk
-    if (pMD->IsAsyncThunkMethod())
+    // Default filtering policy: exclude synthetic async thunk methods
+    // User breakpoints should bind to the actual async implementation, not the thunk.
+    // Note: async versions with real user code (IsAsyncVariantMethod && IsAsyncThunkMethod
+    // && !IsReturnDroppingThunk) should still have breakpoints bound to them.
+    if (pMD->IsSyntheticAsyncThunk())
     {
         return false;
     }
@@ -6939,9 +6941,9 @@ void DebuggerStepper::TrapStepOut(ControllerStackInfo *info, bool fForceTraditio
                  "DS::TSO: CallTailCallTarget frame.\n"));
             continue;
         }
-        else if (info->m_activeFrame.md != nullptr && info->m_activeFrame.md->IsAsyncThunkMethod())
+        else if (info->m_activeFrame.md != nullptr && info->m_activeFrame.md->IsSyntheticAsyncThunk())
         {
-            // Async thunks are not interesting frames to step out into.
+            // Synthetic async thunks are not interesting frames to step out into.
             LOG((LF_CORDB, LL_INFO10000,
                  "DS::TSO: skipping async thunk method frame.\n"));
             continue;

@@ -12661,11 +12661,13 @@ HRESULT Debugger::UpdateFunction(MethodDesc* pMD, SIZE_T encVersion)
     // So this call will get the most recent old function.
     //
     // Task-returning methods have two MethodDescs: a primary and an async variant.
-    // If the primary is a thunk (i.e. the type loader created it as a wrapper that
+    // If the primary is a synthetic thunk (i.e. the type loader created it as a wrapper that
     // packages the result into a Task), the user code lives in the async variant.
     // Switch to that variant so we plant remap breakpoints on the user code, not
     // the thunk.
-    if (pMD->IsAsyncThunkMethod() && pMD->ReturnsTaskOrValueTask())
+    // Note: For async versions (IsAsyncVariantMethod), the method already IS the user code —
+    // no redirect needed.
+    if (pMD->IsSyntheticAsyncThunk() && pMD->ReturnsTaskOrValueTask())
     {
         MethodDesc* pAsyncVariant = pMD->GetAsyncVariantNoCreate();
         if (pAsyncVariant == NULL)

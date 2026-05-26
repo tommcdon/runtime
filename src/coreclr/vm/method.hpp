@@ -2121,6 +2121,48 @@ public:
         return hasAsyncFlags(asyncFlags, AsyncMethodFlags::Thunk);
     }
 
+    // Is this a synthetic async thunk with no user IL?
+    // Returns true for pure thunks (trivial wrappers) and return-dropping thunks,
+    // but NOT for async versions that are compiled from the same IL as the sync method.
+    // Use this in diagnostics/debugger code to determine if a method should be hidden
+    // from stacks, skipped for breakpoints, etc.
+    inline bool IsSyntheticAsyncThunk() const
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        if (!IsAsyncThunkMethod())
+            return false;
+
+        // An async version (IsAsyncVariantMethod && IsAsyncThunkMethod && !IsReturnDroppingThunk)
+        // has real user code compiled from the same IL as the sync method.
+        // Only pure thunks and return-dropping thunks are synthetic.
+        return !IsAsyncVariantMethod() || IsReturnDroppingThunk();
+    }
+
+    // Is this a runtime async infrastructure method (e.g. AsyncHelpers.Await,
+    // AsyncHelpers.TransparentAwait) that should be hidden from diagnostics?
+    // These are MethodImpl.Async methods that are NOT variants of user methods
+    // and NOT thunks — they're standalone helper methods used by the runtime
+    // async machinery.
+    inline bool IsAsyncInfrastructureMethod() const
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        if (!IsAsyncMethod())
+            return false;
+
+        // Variants of user methods (async versions) have user code
+        if (IsAsyncVariantMethod())
+            return false;
+
+        // Thunks are already handled by IsSyntheticAsyncThunk
+        if (IsAsyncThunkMethod())
+            return false;
+
+        // What remains are standalone MethodImpl.Async infrastructure methods
+        // (e.g., AsyncHelpers.Await, AsyncHelpers.TransparentAwait, etc.)
+        // These are internal runtime infrastructure that should be hidden.
+        return true;
+    }
+
     inline bool ReturnsTaskOrValueTask() const
     {
         LIMITED_METHOD_DAC_CONTRACT;

@@ -3432,8 +3432,9 @@ void MethodDesc::ResetCodeEntryPointForEnC()
 
     // Updates are expressed via metadata diff and a methoddef of a runtime async method
     // would be resolved to the task-returning thunk.
-    // If we see a thunk here, fetch the async variant that owns the IL and reset that.
-    if (IsAsyncThunkMethod())
+    // If we see a synthetic thunk here, fetch the async variant that owns the IL and reset that.
+    // For async versions (IsAsyncVariantMethod), the method itself has the user IL — reset directly.
+    if (IsSyntheticAsyncThunk())
     {
         MethodDesc *otherVariant = GetAsyncVariantNoCreate();
         _ASSERTE(otherVariant != NULL);

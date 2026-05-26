@@ -1237,7 +1237,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetNativeCodeInfo(VMPTR_Assembly 
         Module *   pModule   = pAssembly->GetModule();
 
         MethodDesc* pMethodDesc = FindLoadedMethodRefOrDef(pModule, functionToken);
-        if (pMethodDesc != NULL && pMethodDesc->IsAsyncThunkMethod())
+        if (pMethodDesc != NULL && pMethodDesc->IsSyntheticAsyncThunk())
         {
             MethodDesc* pAsyncVariant = pMethodDesc->GetAsyncVariantNoCreate();
             if (pAsyncVariant != NULL)
@@ -7519,7 +7519,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetAsyncLocals(VMPTR_MethodDesc v
     {
 
         MethodDesc* pMethodDesc = vmMethod.GetDacPtr();
-        if (pMethodDesc->IsAsyncThunkMethod())
+        if (pMethodDesc->IsSyntheticAsyncThunk())
         {
             return hr;
         }
