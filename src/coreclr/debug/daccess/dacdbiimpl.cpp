@@ -5432,7 +5432,13 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::IsDiagnosticsHiddenOrLCGMethod(VM
 
         MethodDesc * pMD = vmMethodDesc.GetDacPtr();
 
-        if (pMD->IsDiagnosticsHidden())
+        // Validate the MethodDesc pointer before dereferencing
+        if (pMD == NULL || !DacValidateMD(pMD))
+        {
+            // Invalid MethodDesc - treat as not hidden
+            *pRetVal = kNone;
+        }
+        else if (pMD->IsDiagnosticsHidden())
         {
             *pRetVal = kDiagnosticHidden;
         }
