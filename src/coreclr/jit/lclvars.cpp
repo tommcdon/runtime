@@ -5854,14 +5854,6 @@ int Compiler::lvaAllocLocalAndSetVirtualOffset(unsigned lclNum, unsigned size, i
 //
 int Compiler::lvaAllocAsyncContexts(int stkOffs)
 {
-    // For EnC, include the async continuation arg in the preserved area (frame header).
-    assert(!opts.IsOSR() || !opts.compDbgEnC);
-    if (opts.compDbgEnC && (lvaAsyncContinuationArg != BAD_VAR_NUM))
-    {
-        stkOffs = lvaAllocLocalAndSetVirtualOffset(lvaAsyncContinuationArg,
-                                                   lvaLclStackHomeSize(lvaAsyncContinuationArg), stkOffs);
-    }
-
     if (lvaAsyncThreadObjectVar != BAD_VAR_NUM)
     {
         stkOffs = lvaAllocLocalAndSetVirtualOffset(lvaAsyncThreadObjectVar,
@@ -5896,6 +5888,13 @@ int Compiler::lvaAllocAsyncContexts(int stkOffs)
         assert((info.compMethodInfo->options & CORINFO_ASYNC_SAVE_CONTEXTS) == 0);
     }
 
+    // For EnC, include the async continuation arg in the preserved area (frame header).
+    assert(!opts.IsOSR() || !opts.compDbgEnC);
+    if (opts.compDbgEnC && (lvaAsyncContinuationArg != BAD_VAR_NUM))
+    {
+        stkOffs = lvaAllocLocalAndSetVirtualOffset(lvaAsyncContinuationArg,
+                                                   lvaLclStackHomeSize(lvaAsyncContinuationArg), stkOffs);
+    }
     return stkOffs;
 }
 
