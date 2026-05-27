@@ -3875,6 +3875,14 @@ void CodeGen::genCreateAndStoreGCInfo(unsigned            codeSize,
                    -preservedAreaSize);
         }
 
+        if (m_compiler->lvaAsyncContinuationArg != BAD_VAR_NUM)
+        {
+            preservedAreaSize += TARGET_POINTER_SIZE;
+
+            assert(m_compiler->lvaGetCallerSPRelativeOffset(m_compiler->lvaAsyncContinuationArg) ==
+                   -preservedAreaSize);
+        }
+
         // Used to signal both that the method is compiled for EnC, and also the size of the block at the top of the
         // frame
         gcInfoEncoder->SetSizeOfEditAndContinuePreservedArea(preservedAreaSize);
