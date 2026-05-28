@@ -4678,12 +4678,6 @@ void Compiler::lvaAssignVirtualFrameOffsetsToArgs()
     {
         LclVarDsc* dsc = lvaGetDesc(lclNum);
 
-        // Skip continuation arg if it was already placed in the EnC frame header
-        if (opts.compDbgEnC && (lclNum == lvaAsyncContinuationArg))
-        {
-            continue;
-        }
-
         int startOffset;
         if (lvaGetRelativeOffsetToCallerAllocatedSpaceForParameter(lclNum, &startOffset))
         {
@@ -5327,8 +5321,7 @@ void Compiler::lvaAssignVirtualFrameOffsetsToLocals()
             }
 
             if ((lclNum == lvaMonAcquired) || (lclNum == lvaAsyncThreadObjectVar) ||
-                (lclNum == lvaAsyncExecutionContextVar) || (lclNum == lvaAsyncSynchronizationContextVar) ||
-                (opts.compDbgEnC && (lclNum == lvaAsyncContinuationArg)))
+                (lclNum == lvaAsyncExecutionContextVar) || (lclNum == lvaAsyncSynchronizationContextVar))
             {
                 continue;
             }
@@ -5854,14 +5847,6 @@ int Compiler::lvaAllocLocalAndSetVirtualOffset(unsigned lclNum, unsigned size, i
 //
 int Compiler::lvaAllocAsyncContexts(int stkOffs)
 {
-    // For EnC, include the async continuation arg in the preserved area (frame header).
-    assert(!opts.IsOSR() || !opts.compDbgEnC);
-    if (opts.compDbgEnC && (lvaAsyncContinuationArg != BAD_VAR_NUM))
-    {
-        stkOffs = lvaAllocLocalAndSetVirtualOffset(lvaAsyncContinuationArg,
-                                                   lvaLclStackHomeSize(lvaAsyncContinuationArg), stkOffs);
-    }
-
     if (lvaAsyncThreadObjectVar != BAD_VAR_NUM)
     {
         stkOffs = lvaAllocLocalAndSetVirtualOffset(lvaAsyncThreadObjectVar,
