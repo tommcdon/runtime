@@ -1246,7 +1246,7 @@ unsigned Compiler::compMap2ILvarNum(unsigned varNum) const
 
     if (varNum == lvaAsyncContinuationArg)
     {
-        return (unsigned)ICorDebugInfo::UNKNOWN_ILNUM;
+        return (unsigned)ICorDebugInfo::ASYNC_CONTINUATION_ILNUM;
     }
 
 #if defined(TARGET_WASM)
