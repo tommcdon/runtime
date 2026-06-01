@@ -389,7 +389,9 @@ public:
 
         UNKNOWN_ILNUM       = -5, // Unknown variable
 
-        MAX_ILNUM           = -5  // Sentinel value. This should be set to the largest magnitude value in the enum
+        CALL_RETURN_ILNUM   = -6, // The return value of a call
+
+        MAX_ILNUM           = -6  // Sentinel value. This should be set to the largest magnitude value in the enum
                                   // so that the compression routines know the enum's range.
     };
 
@@ -404,6 +406,7 @@ public:
     {
         uint32_t        startOffset;
         uint32_t        endOffset;
+        uint32_t        callReturnValueILOffset;
         uint32_t        varNumber;
         VarLoc          loc;
     };
