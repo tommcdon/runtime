@@ -1321,7 +1321,8 @@ namespace System.Runtime.CompilerServices
 
         /// <summary>
         /// Given a single object, try to resolve it to a RuntimeAsyncTask.
-        /// Handles direct RAT reference, Delegate wrapping RAT (_target),
+        /// Handles direct RAT reference, RuntimeAsyncTaskContinuation (which
+        /// directly holds a RuntimeAsyncTask field), Delegate wrapping RAT (_target),
         /// and TaskContinuation subclasses whose inherited m_action field
         /// is a delegate wrapping RAT.
         /// </summary>
@@ -1330,6 +1331,10 @@ namespace System.Runtime.CompilerServices
             // Direct RuntimeAsyncTask reference.
             if (obj is IRuntimeAsyncTask rat)
                 return rat;
+
+            // RuntimeAsyncTaskContinuation: directly holds the waiter's RuntimeAsyncTask.
+            if (obj is RuntimeAsyncTaskContinuation rtc)
+                return rtc.RuntimeAsyncTask as IRuntimeAsyncTask;
 
             // Delegate: check _target.
             if (obj is Delegate del)

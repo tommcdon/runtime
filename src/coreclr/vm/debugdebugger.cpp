@@ -312,7 +312,8 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
         //
         // m_continuationObject can be:
         //   - null: no continuations
-        //   - A RuntimeAsyncTask directly (registered via TryAddCompletionAction)
+        //   - A RuntimeAsyncTask directly
+        //   - A RuntimeAsyncTaskContinuation whose RuntimeAsyncTask field is the waiter
         //   - A Delegate whose _target is a RuntimeAsyncTask (registered via UnsafeOnCompleted)
         //   - A Delegate whose _target is a v1 async state machine (mixed v1/v2 pipeline)
         //   - A List<object> containing any of the above (multiple waiters)
@@ -423,7 +424,8 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
         };
 
         // Helper: given a single object, try to resolve it to a RuntimeAsyncTask.
-        // Handles direct RuntimeAsyncTask, Delegate wrapping a RuntimeAsyncTask,
+        // Handles direct RuntimeAsyncTask, RuntimeAsyncTaskContinuation (which has
+        // a RuntimeAsyncTask field directly), Delegate wrapping a RuntimeAsyncTask,
         // TaskContinuation subclasses (e.g. SynchronizationContextAwaitTaskContinuation)
         // that wrap an Action delegate whose _target is a RuntimeAsyncTask, and
         // Delegate wrapping a v1 state machine (follows the state machine's Task
@@ -445,13 +447,9 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                 return fnUnwrapDelegateToRAT(obj);
             }
 
-            // TaskContinuation subclasses (e.g. SynchronizationContextAwaitTaskContinuation,
-            // AwaitTaskContinuation): these wrap an Action delegate in their m_action field.
-            // The Action's _target may be the RuntimeAsyncTask waiter.
-            // Scan reference-type fields (including inherited) for a delegate
-            // and try to unwrap it. This handles TaskContinuation subclasses like
-            // SynchronizationContextAwaitTaskContinuation whose m_action field is
-            // inherited from AwaitTaskContinuation.
+            // Scan reference-type fields for either:
+            // - A delegate wrapping a RuntimeAsyncTask (TaskContinuation subclasses)
+            // - A direct RuntimeAsyncTask reference (RuntimeAsyncTaskContinuation)
             {
                 MethodTable* pWalkMT = pMT;
                 while (pWalkMT != NULL)
@@ -467,12 +465,19 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                         if (fieldVal == NULL)
                             continue;
 
-                        if (!fieldVal->GetMethodTable()->IsDelegate())
-                            continue;
+                        MethodTable* pFieldMT = fieldVal->GetMethodTable();
 
-                        OBJECTREF rat = fnUnwrapDelegateToRAT(fieldVal);
-                        if (rat != NULL)
-                            return rat;
+                        // Check if the field value IS a RuntimeAsyncTask directly.
+                        if (pFieldMT->HasSameTypeDefAs(pRATMT))
+                            return fieldVal;
+
+                        // Check if it's a delegate wrapping a RuntimeAsyncTask.
+                        if (pFieldMT->IsDelegate())
+                        {
+                            OBJECTREF rat = fnUnwrapDelegateToRAT(fieldVal);
+                            if (rat != NULL)
+                                return rat;
+                        }
                     }
                     pWalkMT = pWalkMT->GetParentMethodTable();
                 }
