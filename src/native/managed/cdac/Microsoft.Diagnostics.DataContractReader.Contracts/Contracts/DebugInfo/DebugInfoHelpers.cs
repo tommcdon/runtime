@@ -41,7 +41,7 @@ internal static class DebugInfoHelpers
     private const uint SOURCE_TYPE_BITS_V2 = 3;
 
     // ICorDebugInfo::MAX_ILNUM sentinel value used for adjusted encoding of var numbers.
-    private const uint MAX_ILNUM = unchecked((uint)-5);
+    private const uint MAX_ILNUM = unchecked((uint)-6);
 
     internal static IEnumerable<OffsetMapping> DoBounds(NativeReader nativeReader, uint version)
     {
@@ -113,11 +113,29 @@ internal static class DebugInfoHelpers
         if (varCount == 0)
             yield break;
 
+        const uint CALL_RETURN_ILNUM = unchecked((uint)-6);
+
         for (uint i = 0; i < varCount; i++)
         {
-            uint startOffset = reader.ReadUInt();
-            uint endOffset = startOffset + reader.ReadUInt();
+            // New encoding: varNumber comes first so field #2 can be conditional
             uint varNumber = reader.ReadUInt() + MAX_ILNUM;
+            uint startOffset = reader.ReadUInt();
+
+            uint endOffset;
+            uint returnValueILOffset = 0;
+
+            if (varNumber == CALL_RETURN_ILNUM)
+            {
+                // For return value homes, field #2 is the IL offset of the call instruction
+                returnValueILOffset = reader.ReadUInt();
+                endOffset = startOffset + 1;
+            }
+            else
+            {
+                // For normal variables, field #2 is end offset delta
+                endOffset = startOffset + reader.ReadUInt();
+            }
+
             VarLocType locType = (VarLocType)reader.ReadUInt();
 
             if (locType is VarLocType.VLT_INVALID or VarLocType.VLT_COUNT)
@@ -127,59 +145,59 @@ internal static class DebugInfoHelpers
             {
                 VarLocType.VLT_REG or VarLocType.VLT_REG_FP => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.Register, Register = reader.ReadUInt(),
                 },
                 VarLocType.VLT_REG_BYREF => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.Register, Register = reader.ReadUInt(), IsByRef = true,
                 },
                 VarLocType.VLT_STK => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.Stack, BaseRegister = reader.ReadUInt(), StackOffset = ReadEncodedStackOffset(reader, isX86),
                 },
                 VarLocType.VLT_STK_BYREF => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.Stack, BaseRegister = reader.ReadUInt(), StackOffset = ReadEncodedStackOffset(reader, isX86), IsByRef = true,
                 },
                 VarLocType.VLT_REG_REG => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.RegisterRegister, Register = reader.ReadUInt(), Register2 = reader.ReadUInt(),
                 },
                 VarLocType.VLT_REG_STK => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.RegisterStack, Register = reader.ReadUInt(), BaseRegister2 = reader.ReadUInt(), StackOffset2 = ReadEncodedStackOffset(reader, isX86),
                 },
                 VarLocType.VLT_STK_REG => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.StackRegister, StackOffset = ReadEncodedStackOffset(reader, isX86), BaseRegister = reader.ReadUInt(), Register = reader.ReadUInt(),
                 },
                 VarLocType.VLT_STK2 => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                     Kind = DebugVarLocKind.DoubleStack, BaseRegister = reader.ReadUInt(), StackOffset = ReadEncodedStackOffset(reader, isX86),
                 },
                 // FPSTK and FIXED_VA: consume stream data to keep reader aligned, but no public
                 // DebugVarLocKind exists for these rarely-used location types.
-                VarLocType.VLT_FPSTK => ConsumeAndDefault(reader.ReadUInt(), startOffset, endOffset, varNumber),
-                VarLocType.VLT_FIXED_VA => ConsumeAndDefault(reader.ReadUInt(), startOffset, endOffset, varNumber),
+                VarLocType.VLT_FPSTK => ConsumeAndDefault(reader.ReadUInt(), startOffset, endOffset, varNumber, returnValueILOffset),
+                VarLocType.VLT_FIXED_VA => ConsumeAndDefault(reader.ReadUInt(), startOffset, endOffset, varNumber, returnValueILOffset),
                 _ => new DebugVarInfo
                 {
-                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+                    StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
                 },
             };
         }
     }
 
-    private static DebugVarInfo ConsumeAndDefault(uint _, uint startOffset, uint endOffset, uint varNumber) => new()
+    private static DebugVarInfo ConsumeAndDefault(uint _, uint startOffset, uint endOffset, uint varNumber, uint returnValueILOffset) => new()
     {
-        StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber,
+        StartOffset = startOffset, EndOffset = endOffset, VarNumber = varNumber, ReturnValueILOffset = returnValueILOffset,
     };
 
     private static int ReadEncodedStackOffset(NibbleReader reader, bool isX86)

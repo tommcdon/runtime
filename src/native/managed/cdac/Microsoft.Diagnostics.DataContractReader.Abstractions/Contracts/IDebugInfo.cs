@@ -57,6 +57,11 @@ public readonly struct DebugVarInfo
     public uint StartOffset { get; init; }
     public uint EndOffset { get; init; }
     public uint VarNumber { get; init; }
+    /// <summary>
+    /// When VarNumber == CALL_RETURN_ILNUM, this identifies the IL offset of the call
+    /// instruction whose return value is stored in this home. Zero otherwise.
+    /// </summary>
+    public uint ReturnValueILOffset { get; init; }
     public DebugVarLocKind Kind { get; init; }
     public bool IsByRef { get; init; }
 

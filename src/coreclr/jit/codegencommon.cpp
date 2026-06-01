@@ -1778,6 +1778,10 @@ void CodeGen::genEmitCallWithCurrentGC(EmitCallParams& params)
         return;
     }
 
+    // Emit a CALL_INSTRUCTION sequence point for the call site. This is used by the debugger
+    // for stepping scenarios independent of managed return value support.
+    genIPmappingAdd(IPmappingDscKind::Normal, di, false);
+
     emitLocation retLoc;
     retLoc.CaptureLocation(GetEmitter());
 
