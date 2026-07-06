@@ -941,6 +941,19 @@ void Compiler::eeDispVar(ICorDebugInfo::NativeVarInfo* var)
 
             printf("%s-%s", getRegName(toJitRegNum(var->loc.vlRegReg.vlrrReg1)),
                    getRegName(toJitRegNum(var->loc.vlRegReg.vlrrReg2)));
+#elif defined(TARGET_ARM64)
+            auto toJitRegNum = [](ICorDebugInfo::RegNum reg) -> regNumber {
+                unsigned val = static_cast<unsigned>(reg);
+                if (val >= static_cast<unsigned>(ICorDebugInfo::REGNUM_COUNT))
+                {
+                    return static_cast<regNumber>(REG_FP_FIRST + val -
+                                                  static_cast<unsigned>(ICorDebugInfo::REGNUM_COUNT));
+                }
+                return static_cast<regNumber>(reg);
+            };
+
+            printf("%s-%s", getRegName(toJitRegNum(var->loc.vlRegReg.vlrrReg1)),
+                   getRegName(toJitRegNum(var->loc.vlRegReg.vlrrReg2)));
 #else
             printf("%s-%s", getRegName(var->loc.vlRegReg.vlrrReg1), getRegName(var->loc.vlRegReg.vlrrReg2));
 #endif

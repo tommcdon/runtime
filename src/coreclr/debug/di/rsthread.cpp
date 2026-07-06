@@ -8422,6 +8422,33 @@ HRESULT CordbJITILFrame::GetNativeVariable(CordbType *type,
                 break;
             }
         }
+#elif defined(TARGET_ARM64)
+        {
+            // ARM64 encodes an FP (V) register packed into VLT_REG_REG as
+            // (REGNUM_COUNT + <0-based V register index>); integer registers keep
+            // their natural RegNum values, which are always < REGNUM_COUNT. See
+            // CodeGenInterface::siVarLoc::storeVariableInRegisters. This is used to
+            // inspect HFA returns such as a struct of two doubles (V0+V1).
+            const unsigned fpBase  = static_cast<unsigned>(ICorDebugInfo::REGNUM_COUNT);
+            const unsigned lowRaw  = static_cast<unsigned>(pNativeVarInfo->loc.vlRegReg.vlrrReg1);
+            const unsigned highRaw = static_cast<unsigned>(pNativeVarInfo->loc.vlRegReg.vlrrReg2);
+            const bool     lowIsFloat  = lowRaw >= fpBase;
+            const bool     highIsFloat = highRaw >= fpBase;
+
+            if (lowIsFloat || highIsFloat)
+            {
+                hr = m_nativeFrame->GetLocalTwoRegisterValue(
+                    lowIsFloat ? lowRaw - fpBase
+                               : ConvertRegNumToCorDebugRegister(pNativeVarInfo->loc.vlRegReg.vlrrReg1),
+                    lowIsFloat,
+                    highIsFloat ? highRaw - fpBase
+                                : ConvertRegNumToCorDebugRegister(pNativeVarInfo->loc.vlRegReg.vlrrReg2),
+                    highIsFloat,
+                    type,
+                    ppValue);
+                break;
+            }
+        }
 #endif
         hr = m_nativeFrame->GetLocalDoubleRegisterValue(
                             ConvertRegNumToCorDebugRegister(pNativeVarInfo->loc.vlRegReg.vlrrReg2),

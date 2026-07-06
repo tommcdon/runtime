@@ -1847,11 +1847,15 @@ void CodeGen::genEmitCallWithCurrentGC(EmitCallParams& params)
         {
             return;
         }
-#elif !defined(TARGET_AMD64)
-        // This unified RegNum encoding is implemented only for AMD64. Other 64-bit
-        // targets still need dedicated encodings to represent FP-containing
-        // two-register returns without ambiguity, so suppress those cases here
-        // instead of emitting an encoding the debugger cannot decode.
+#elif !defined(TARGET_AMD64) && !defined(TARGET_ARM64)
+        // AMD64 and ARM64 can encode FP-containing two-register returns: AMD64 via
+        // its unified RegNum enumeration (which includes the XMM registers), and
+        // ARM64 via the REGNUM_COUNT-based FP encoding in storeVariableInRegisters
+        // (with matching decode in the DBI). Other 64-bit targets (LoongArch64,
+        // RISC-V64) do not yet implement the debugger-side floating-point read
+        // path, so suppress FP-containing cases there instead of emitting an
+        // encoding the debugger cannot decode. A pair of integer registers is
+        // still encoded below as VLT_REG_REG.
         if (!genIsValidIntReg(reg1) || !genIsValidIntReg(reg2))
         {
             return;
