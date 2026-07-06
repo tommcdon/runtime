@@ -212,18 +212,22 @@ void CodeGenInterface::siVarLoc::storeVariableInRegisters(regNumber reg, regNumb
     {
         if (genIsValidFloatReg(reg))
         {
-#ifdef TARGET_AMD64
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+            // AMD64/ARM64 enumerate the FP registers in the debug RegNum enum
+            // (XMM0-15 / V0-31), so store the mapped RegNum. This keeps the single-FP
+            // encoding identical to getSiVarLoc and lets the DBI decode uniformly via
+            // ConvertRegNumToCorDebugRegister.
             ICorDebugInfo::RegNum debugReg = mapRegNumToDebugRegNum(reg);
             if (debugReg == ICorDebugInfo::REGNUM_COUNT)
             {
-                // XMM16+ cannot be encoded in the debug info.
+                // XMM16+ (AVX-512) cannot be encoded in the debug info.
                 vlType = VLT_INVALID;
                 return;
             }
             vlType       = VLT_REG_FP;
             vlReg.vlrReg = static_cast<regNumber>(debugReg);
 #else
-            // Non-AMD64: store 0-based FP register index (DBI adds platform base)
+            // Other targets: store 0-based FP register index (DBI adds platform base)
             vlType       = VLT_REG_FP;
             vlReg.vlrReg = static_cast<regNumber>(reg - REG_FP_FIRST);
 #endif
@@ -636,7 +640,9 @@ void CodeGenInterface::dumpSiVarLoc(const siVarLoc* varLoc) const
             break;
 
         case VLT_REG_FP:
-#ifdef TARGET_AMD64
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+            // AMD64/ARM64 store the FP register as a debug RegNum (REGNUM_FP_FIRST-based);
+            // map it back to a JIT regNumber for display.
             printf("%s", getRegName(static_cast<regNumber>(REG_FP_FIRST + varLoc->vlReg.vlrReg -
                                                            ICorDebugInfo::REGNUM_FP_FIRST)));
 #else

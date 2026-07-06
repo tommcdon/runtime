@@ -8357,11 +8357,11 @@ HRESULT CordbJITILFrame::GetNativeVariable(CordbType *type,
     case ICorDebugInfo::VLT_REG_FP:
 #if defined(TARGET_ARM) // @ARMTODO
         hr = E_NOTIMPL;
-#elif defined(TARGET_AMD64)
+#elif defined(TARGET_AMD64) || defined(TARGET_ARM64)
+        // AMD64/ARM64 enumerate the FP registers in the debug RegNum enum
+        // (XMM0-15 / V0-31), so g_JITToCorDbgReg maps vlrReg directly to the
+        // corresponding CorDebugRegister.
         hr = m_nativeFrame->GetLocalFloatingPointValue(ConvertRegNumToCorDebugRegister(pNativeVarInfo->loc.vlReg.vlrReg),
-                                                       type, ppValue);
-#elif defined(TARGET_ARM64)
-        hr = m_nativeFrame->GetLocalFloatingPointValue(pNativeVarInfo->loc.vlReg.vlrReg + REGISTER_ARM64_V0,
                                                        type, ppValue);
 #elif defined(TARGET_LOONGARCH64)
         hr = m_nativeFrame->GetLocalFloatingPointValue(pNativeVarInfo->loc.vlReg.vlrReg + REGISTER_LOONGARCH64_F0,
