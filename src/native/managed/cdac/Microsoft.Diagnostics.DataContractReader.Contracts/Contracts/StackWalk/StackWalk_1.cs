@@ -855,6 +855,14 @@ internal partial class StackWalk_1 : IStackWalk
             case StackWalkState.InitialNativeContext:
             case StackWalkState.NativeMarker:
             {
+                // Native UnwindStackWalkFrame captures cbStackParameterSize as a fresh
+                // per-step local that defaults to 0, and only sets it when the frame being
+                // left is a frameless managed method (SFITER_FRAMELESS_METHOD). The x86
+                // callee-popped-args ESP adjustment is therefore applied only at an immediate
+                // managed-frameless -> native-marker (M2U) transition. Leaving a native frame
+                // must reset the size to 0 so consecutive native-marker frames don't reuse a
+                // stale parameter size from an earlier managed frame.
+                handle.LastFramelessStackParameterSize = 0;
                 TargetCodePointer ip = handle.Context.InstructionPointer;
                 HijackKind hijackKind = _target.Contracts.Debugger.GetHijackKind(ip);
                 if (hijackKind != HijackKind.None)

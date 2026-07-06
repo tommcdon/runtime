@@ -1752,13 +1752,13 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
 
                 // ctx is intentionally left as 0 (consumer does not read for cStubFrame).
                 Debugger_STRData data = default;
-                data.fp = frame.FrameAddress.Value;
+                data.fp = (nuint)frame.FrameAddress.Value;
                 data.vmCurrentAppDomainToken = currentAppDomain.Value;
                 data.eType = Debugger_STRData.EType.cStubFrame;
-                data.stubFrame.funcMetadataToken = funcMetadataToken;
-                data.stubFrame.vmAssembly = vmAssembly.Value;
-                data.stubFrame.vmMethodDesc = vmMethodDesc.Value;
-                data.stubFrame.frameType = (int)ToCorDebugInternalFrameType(frame.InternalFrameType);
+                data.u.stubFrame.funcMetadataToken = funcMetadataToken;
+                data.u.stubFrame.vmAssembly = vmAssembly.Value;
+                data.u.stubFrame.vmMethodDesc = vmMethodDesc.Value;
+                data.u.stubFrame.frameType = (int)ToCorDebugInternalFrameType(frame.InternalFrameType);
 #if DEBUG
                 cdacFrames?.Add(data);
 #endif
@@ -1788,10 +1788,10 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
                     Debug.Assert(c.fp == d.fp, $"Frame[{i}] fp mismatch - cDAC: 0x{c.fp:x}, DAC: 0x{d.fp:x}");
                     Debug.Assert(c.vmCurrentAppDomainToken == d.vmCurrentAppDomainToken, $"Frame[{i}] vmCurrentAppDomainToken mismatch - cDAC: 0x{c.vmCurrentAppDomainToken:x}, DAC: 0x{d.vmCurrentAppDomainToken:x}");
                     Debug.Assert(c.eType == d.eType, $"Frame[{i}] eType mismatch - cDAC: {c.eType}, DAC: {d.eType}");
-                    Debug.Assert(c.stubFrame.funcMetadataToken == d.stubFrame.funcMetadataToken, $"Frame[{i}] funcMetadataToken mismatch - cDAC: 0x{c.stubFrame.funcMetadataToken:x}, DAC: 0x{d.stubFrame.funcMetadataToken:x}");
-                    Debug.Assert(c.stubFrame.vmAssembly == d.stubFrame.vmAssembly, $"Frame[{i}] vmAssembly mismatch - cDAC: 0x{c.stubFrame.vmAssembly:x}, DAC: 0x{d.stubFrame.vmAssembly:x}");
-                    Debug.Assert(c.stubFrame.vmMethodDesc == d.stubFrame.vmMethodDesc, $"Frame[{i}] vmMethodDesc mismatch - cDAC: 0x{c.stubFrame.vmMethodDesc:x}, DAC: 0x{d.stubFrame.vmMethodDesc:x}");
-                    Debug.Assert(c.stubFrame.frameType == d.stubFrame.frameType, $"Frame[{i}] frameType mismatch - cDAC: {c.stubFrame.frameType}, DAC: {d.stubFrame.frameType}");
+                    Debug.Assert(c.u.stubFrame.funcMetadataToken == d.u.stubFrame.funcMetadataToken, $"Frame[{i}] funcMetadataToken mismatch - cDAC: 0x{c.u.stubFrame.funcMetadataToken:x}, DAC: 0x{d.u.stubFrame.funcMetadataToken:x}");
+                    Debug.Assert(c.u.stubFrame.vmAssembly == d.u.stubFrame.vmAssembly, $"Frame[{i}] vmAssembly mismatch - cDAC: 0x{c.u.stubFrame.vmAssembly:x}, DAC: 0x{d.u.stubFrame.vmAssembly:x}");
+                    Debug.Assert(c.u.stubFrame.vmMethodDesc == d.u.stubFrame.vmMethodDesc, $"Frame[{i}] vmMethodDesc mismatch - cDAC: 0x{c.u.stubFrame.vmMethodDesc:x}, DAC: 0x{d.u.stubFrame.vmMethodDesc:x}");
+                    Debug.Assert(c.u.stubFrame.frameType == d.u.stubFrame.frameType, $"Frame[{i}] frameType mismatch - cDAC: {c.u.stubFrame.frameType}, DAC: {d.u.stubFrame.frameType}");
                 }
             }
         }

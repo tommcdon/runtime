@@ -195,7 +195,7 @@ public struct Debugger_JITFuncData
     public ulong vmNativeCodeMethodDescToken;
     public Interop.BOOL fIsFilterFrame;
     public ulong parentNativeOffset;
-    public ulong fpParentOrSelf;
+    public nuint fpParentOrSelf;                   // FramePointer (host-pointer-sized: 4 bytes on 32-bit, 8 on 64-bit)
     public Interop.BOOL isInstantiatedGeneric;
     public Interop.BOOL justAfterILThrow;
 }
@@ -228,11 +228,19 @@ public struct DebuggerIPCE_STRData_StubFrame
 // the DI during a stack walk. Mirrors the native Debugger_STRData struct
 // defined in src/coreclr/debug/inc/dbgipcevents.h.
 //
+// `fp` (a FramePointer wrapping an LPVOID) and `ctx` (a DT_CONTEXT*) are
+// host-pointer-sized, so they are modeled as nuint: 4 bytes on 32-bit targets
+// and 8 bytes on 64-bit. In contrast the VMPTR/CORDB_ADDRESS fields are always
+// 8 bytes regardless of target bitness. Because the pointer-sized fields change
+// size, the outer struct uses sequential layout so the runtime computes the
+// offset of the frame-data union correctly for each bitness: the union lands at
+// offset 24 on 32-bit and 32 on 64-bit, matching the native anonymous union.
+//
 // `ctx` is a pointer into dbi-allocated memory.
 // The DAC writes the populated context through this pointer rather
 // than storing it inline. Code paths that do not produce a context
 // (e.g. EnumerateInternalFrames for cStubFrame entries) leave it as 0.
-[StructLayout(LayoutKind.Explicit)]
+[StructLayout(LayoutKind.Sequential)]
 public struct Debugger_STRData
 {
     public enum EType
@@ -242,12 +250,21 @@ public struct Debugger_STRData
         cRuntimeNativeFrame = 2,
     }
 
-    [FieldOffset(0)] public ulong fp;                           // FramePointer
-    [FieldOffset(8)] public ulong ctx;                          // DT_CONTEXT*
-    [FieldOffset(16)] public ulong vmCurrentAppDomainToken;     // VMPTR_AppDomain
-    [FieldOffset(24)] public EType eType;
-    [FieldOffset(32)] public DebuggerIPCE_STRData_MethodFrame v;
-    [FieldOffset(32)] public DebuggerIPCE_STRData_StubFrame stubFrame;
+    public nuint fp;                          // FramePointer (host-pointer-sized)
+    public nuint ctx;                         // DT_CONTEXT* (host-pointer-sized)
+    public ulong vmCurrentAppDomainToken;     // VMPTR_AppDomain (always 8 bytes)
+    public EType eType;
+    public FrameDataUnion u;
+
+    // Mirrors the native anonymous union: the v (method frame) and stubFrame
+    // variants overlap. Kept in a nested explicit-layout struct so the outer
+    // struct can stay sequential and remain bitness-correct.
+    [StructLayout(LayoutKind.Explicit)]
+    public struct FrameDataUnion
+    {
+        [FieldOffset(0)] public DebuggerIPCE_STRData_MethodFrame v;
+        [FieldOffset(0)] public DebuggerIPCE_STRData_StubFrame stubFrame;
+    }
 }
 
 #pragma warning restore CS0649
