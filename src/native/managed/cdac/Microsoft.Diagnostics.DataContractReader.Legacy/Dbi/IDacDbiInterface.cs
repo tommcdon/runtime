@@ -195,7 +195,7 @@ public struct Debugger_JITFuncData
     public ulong vmNativeCodeMethodDescToken;
     public Interop.BOOL fIsFilterFrame;
     public ulong parentNativeOffset;
-    public nuint fpParentOrSelf;                   // FramePointer (host-pointer-sized: 4 bytes on 32-bit, 8 on 64-bit)
+    public nuint fpParentOrSelf;                   // FramePointer (host-pointer-sized: 4 bytes on a 32-bit host, 8 on 64-bit)
     public Interop.BOOL isInstantiatedGeneric;
     public Interop.BOOL justAfterILThrow;
 }
@@ -229,12 +229,18 @@ public struct DebuggerIPCE_STRData_StubFrame
 // defined in src/coreclr/debug/inc/dbgipcevents.h.
 //
 // `fp` (a FramePointer wrapping an LPVOID) and `ctx` (a DT_CONTEXT*) are
-// host-pointer-sized, so they are modeled as nuint: 4 bytes on 32-bit targets
-// and 8 bytes on 64-bit. In contrast the VMPTR/CORDB_ADDRESS fields are always
-// 8 bytes regardless of target bitness. Because the pointer-sized fields change
-// size, the outer struct uses sequential layout so the runtime computes the
-// offset of the frame-data union correctly for each bitness: the union lands at
-// offset 24 on 32-bit and 32 on 64-bit, matching the native anonymous union.
+// host-pointer-sized, so they are modeled as nuint: 4 bytes on a 32-bit host
+// and 8 bytes on 64-bit. This is HOST bitness (the process the cDAC and native
+// mscordbi share), NOT the target's pointer size -- the struct is a shared ABI
+// with native mscordbi in the same process, so its layout must follow host
+// bitness. For the in-process DBI path host and target bitness are always equal
+// (enforced by CompatibleHostAndTargetPlatforms in shimlocaldatatarget.cpp), so
+// this also matches the target today. In contrast the VMPTR/CORDB_ADDRESS fields
+// are always 8 bytes regardless of bitness. Because the pointer-sized fields
+// change size, the outer struct uses sequential layout so the runtime computes
+// the offset of the frame-data union correctly for each bitness: the union lands
+// at offset 24 on a 32-bit host and 32 on 64-bit, matching the native anonymous
+// union.
 //
 // `ctx` is a pointer into dbi-allocated memory.
 // The DAC writes the populated context through this pointer rather
