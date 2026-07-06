@@ -160,9 +160,13 @@ bool CodeGenInterface::siVarLoc::vlIsOnStack() const
 // static
 ICorDebugInfo::RegNum CodeGenInterface::siVarLoc::mapRegNumToDebugRegNum(regNumber reg)
 {
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
+    constexpr unsigned fpRegDebugNumBase = ICorDebugInfo::REGNUM_FP_FIRST;
 #ifdef TARGET_AMD64
-    constexpr unsigned fpRegDebugNumBase  = ICorDebugInfo::REGNUM_FP_FIRST;
-    constexpr unsigned maxEncodableFpRegs = 16; // Only XMM0-XMM15 are in RegNum
+    constexpr unsigned maxEncodableFpRegs = 16; // Only XMM0-XMM15
+#else
+    constexpr unsigned maxEncodableFpRegs = 32; // V0-V31
+#endif
 #else
     constexpr unsigned fpRegDebugNumBase  = 0;
     constexpr unsigned maxEncodableFpRegs = 0;
@@ -176,9 +180,7 @@ ICorDebugInfo::RegNum CodeGenInterface::siVarLoc::mapRegNumToDebugRegNum(regNumb
     if (genIsValidFloatReg(reg))
     {
         unsigned fpIndex = reg - REG_FP_FIRST;
-#ifdef TARGET_AMD64
-        // Only XMM0-XMM15 are representable in the debug RegNum enum.
-        // XMM16-XMM31 (AVX-512) cannot be encoded.
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
         if (fpIndex >= maxEncodableFpRegs)
         {
             return ICorDebugInfo::REGNUM_COUNT; // sentinel: caller checks for this
@@ -240,7 +242,7 @@ void CodeGenInterface::siVarLoc::storeVariableInRegisters(regNumber reg, regNumb
     }
     else
     {
-#ifdef TARGET_AMD64
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
         ICorDebugInfo::RegNum debugReg1 = mapRegNumToDebugRegNum(reg);
         ICorDebugInfo::RegNum debugReg2 = mapRegNumToDebugRegNum(otherReg);
         if (debugReg1 == ICorDebugInfo::REGNUM_COUNT || debugReg2 == ICorDebugInfo::REGNUM_COUNT)
@@ -251,33 +253,6 @@ void CodeGenInterface::siVarLoc::storeVariableInRegisters(regNumber reg, regNumb
         vlType            = VLT_REG_REG;
         vlRegReg.vlrrReg1 = static_cast<regNumber>(debugReg1);
         vlRegReg.vlrrReg2 = static_cast<regNumber>(debugReg2);
-#elif defined(TARGET_ARM64)
-        // ARM64: the debug-info RegNum enumeration does not include the SIMD/FP (V)
-        // registers, so a floating-point register packed into VLT_REG_REG is encoded
-        // as (REGNUM_COUNT + <0-based V register index>). Integer registers keep their
-        // natural RegNum values, which are always < REGNUM_COUNT. The DBI decodes an
-        // operand as floating-point when its value is >= REGNUM_COUNT. This is what
-        // enables inspecting HFA returns such as a struct of two doubles (V0+V1).
-        {
-            auto encodeReg = [](regNumber r) -> regNumber {
-                if (genIsValidFloatReg(r))
-                {
-                    return static_cast<regNumber>(ICorDebugInfo::REGNUM_COUNT + (r - REG_FP_FIRST));
-                }
-                return r;
-            };
-
-            if ((!genIsValidIntReg(reg) && !genIsValidFloatReg(reg)) ||
-                (!genIsValidIntReg(otherReg) && !genIsValidFloatReg(otherReg)))
-            {
-                vlType = VLT_INVALID;
-                return;
-            }
-
-            vlType            = VLT_REG_REG;
-            vlRegReg.vlrrReg1 = encodeReg(reg);
-            vlRegReg.vlrrReg2 = encodeReg(otherReg);
-        }
 #else
         // Other non-AMD64 targets: VLT_REG_REG only supports int registers. If either
         // is FP, we cannot encode this — fall back to VLT_INVALID.
@@ -686,7 +661,7 @@ void CodeGenInterface::dumpSiVarLoc(const siVarLoc* varLoc) const
             break;
 
         case VLT_REG_REG:
-#ifdef TARGET_AMD64
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
         {
             // Map RegNum values (which may include FP register indices) back to
             // JIT regNumber for display purposes.

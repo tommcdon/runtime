@@ -8398,7 +8398,7 @@ HRESULT CordbJITILFrame::GetNativeVariable(CordbType *type,
         break;
 
     case ICorDebugInfo::VLT_REG_REG:
-#if defined(TARGET_AMD64)
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
         {
             const ICorDebugInfo::RegNum lowReg  = pNativeVarInfo->loc.vlRegReg.vlrrReg1;
             const ICorDebugInfo::RegNum highReg = pNativeVarInfo->loc.vlRegReg.vlrrReg2;
@@ -8407,42 +8407,15 @@ HRESULT CordbJITILFrame::GetNativeVariable(CordbType *type,
 
             if (lowIsFloat || highIsFloat)
             {
-                // AMD64 extends RegNum with XMM registers, so VLT_REG_REG can
-                // represent mixed int/fp pairs. Other targets still require
-                // dedicated encodings for FP-containing multi-register values.
+                // AMD64/ARM64 extend RegNum with FP registers (XMM/V), so
+                // VLT_REG_REG can represent mixed int/fp pairs. FP register
+                // indices for GetLocalTwoRegisterValue are 0-based.
                 hr = m_nativeFrame->GetLocalTwoRegisterValue(
                     lowIsFloat ? lowReg - ICorDebugInfo::REGNUM_FP_FIRST
                                : ConvertRegNumToCorDebugRegister(lowReg),
                     lowIsFloat,
                     highIsFloat ? highReg - ICorDebugInfo::REGNUM_FP_FIRST
                                 : ConvertRegNumToCorDebugRegister(highReg),
-                    highIsFloat,
-                    type,
-                    ppValue);
-                break;
-            }
-        }
-#elif defined(TARGET_ARM64)
-        {
-            // ARM64 encodes an FP (V) register packed into VLT_REG_REG as
-            // (REGNUM_COUNT + <0-based V register index>); integer registers keep
-            // their natural RegNum values, which are always < REGNUM_COUNT. See
-            // CodeGenInterface::siVarLoc::storeVariableInRegisters. This is used to
-            // inspect HFA returns such as a struct of two doubles (V0+V1).
-            const unsigned fpBase  = static_cast<unsigned>(ICorDebugInfo::REGNUM_COUNT);
-            const unsigned lowRaw  = static_cast<unsigned>(pNativeVarInfo->loc.vlRegReg.vlrrReg1);
-            const unsigned highRaw = static_cast<unsigned>(pNativeVarInfo->loc.vlRegReg.vlrrReg2);
-            const bool     lowIsFloat  = lowRaw >= fpBase;
-            const bool     highIsFloat = highRaw >= fpBase;
-
-            if (lowIsFloat || highIsFloat)
-            {
-                hr = m_nativeFrame->GetLocalTwoRegisterValue(
-                    lowIsFloat ? lowRaw - fpBase
-                               : ConvertRegNumToCorDebugRegister(pNativeVarInfo->loc.vlRegReg.vlrrReg1),
-                    lowIsFloat,
-                    highIsFloat ? highRaw - fpBase
-                                : ConvertRegNumToCorDebugRegister(pNativeVarInfo->loc.vlRegReg.vlrrReg2),
                     highIsFloat,
                     type,
                     ppValue);

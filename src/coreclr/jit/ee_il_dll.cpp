@@ -928,26 +928,13 @@ void Compiler::eeDispVar(ICorDebugInfo::NativeVarInfo* var)
 
         case CodeGenInterface::VLT_REG_REG:
         {
-#ifdef TARGET_AMD64
+#if defined(TARGET_AMD64) || defined(TARGET_ARM64)
             auto toJitRegNum = [](ICorDebugInfo::RegNum reg) -> regNumber {
                 unsigned val     = static_cast<unsigned>(reg);
                 unsigned fpFirst = static_cast<unsigned>(ICorDebugInfo::REGNUM_FP_FIRST);
                 if (val >= fpFirst)
                 {
                     return static_cast<regNumber>(REG_FP_FIRST + val - fpFirst);
-                }
-                return static_cast<regNumber>(reg);
-            };
-
-            printf("%s-%s", getRegName(toJitRegNum(var->loc.vlRegReg.vlrrReg1)),
-                   getRegName(toJitRegNum(var->loc.vlRegReg.vlrrReg2)));
-#elif defined(TARGET_ARM64)
-            auto toJitRegNum = [](ICorDebugInfo::RegNum reg) -> regNumber {
-                unsigned val = static_cast<unsigned>(reg);
-                if (val >= static_cast<unsigned>(ICorDebugInfo::REGNUM_COUNT))
-                {
-                    return static_cast<regNumber>(REG_FP_FIRST + val -
-                                                  static_cast<unsigned>(ICorDebugInfo::REGNUM_COUNT));
                 }
                 return static_cast<regNumber>(reg);
             };
