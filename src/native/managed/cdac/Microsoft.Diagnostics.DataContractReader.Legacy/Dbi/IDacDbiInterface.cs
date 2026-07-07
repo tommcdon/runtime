@@ -816,7 +816,7 @@ public unsafe partial interface IDacDbiInterface
     int GetAssemblyFromModule(ulong vmModule, ulong* pVmAssembly);
 
     [PreserveSig]
-    int ParseContinuation(ulong continuationAddress, nuint* pDiagnosticIP, ulong* pNextContinuation, uint* pState);
+    int ParseContinuation(ulong continuationAddress, ulong* pDiagnosticIP, ulong* pNextContinuation, uint* pState);
 
     [PreserveSig]
     int EnumerateAsyncLocals(ulong vmMethod, ulong codeAddr, uint state,
