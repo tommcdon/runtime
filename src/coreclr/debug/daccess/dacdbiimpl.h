@@ -716,7 +716,7 @@ public:
     ULONG32 GetStackParameterSize(EECodeInfo * pCodeInfo);
 
     // Return the FramePointer of the current frame at which the stackwalker is stopped.
-    HRESULT STDMETHODCALLTYPE GetFramePointer(StackWalkHandle pSFIHandle, OUT FramePointer * pRetVal);
+    HRESULT STDMETHODCALLTYPE GetFramePointer(StackWalkHandle pSFIHandle, OUT CORDB_ADDRESS * pRetVal);
 
     FramePointer GetFramePointerWorker(StackFrameIterator * pIter);
 

@@ -581,7 +581,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::EnumerateInternalFrames(VMPTR_Thr
             frameData.stubFrame.frameType = GetInternalFrameType(pFrame);
             if (frameData.stubFrame.frameType != STUBFRAME_NONE)
             {
-                frameData.fp = FramePointer::MakeFramePointer(PTR_HOST_TO_TADDR(pFrame));
+                frameData.fp = PTR_TO_CORDB_ADDRESS(PTR_HOST_TO_TADDR(pFrame));
 
                 frameData.vmCurrentAppDomainToken.SetHostPtr(pAppDomain);
 
@@ -638,7 +638,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetStackParameterSize(CORDB_ADDRE
 }
 
 // Return the FramePointer of the current frame at which the stackwalker is stopped.
-HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetFramePointer(StackWalkHandle pSFIHandle, OUT FramePointer * pRetVal)
+HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetFramePointer(StackWalkHandle pSFIHandle, OUT CORDB_ADDRESS * pRetVal)
 {
     DD_ENTER_MAY_THROW;
 
@@ -647,7 +647,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetFramePointer(StackWalkHandle p
     {
 
         StackFrameIterator * pIter = GetIteratorFromHandle(pSFIHandle);
-        *pRetVal = GetFramePointerWorker(pIter);
+        *pRetVal = PTR_TO_CORDB_ADDRESS(GetFramePointerWorker(pIter).GetSPValue());
     }
     EX_CATCH_HRESULT(hr);
     return hr;
@@ -746,7 +746,7 @@ void DacDbiInterfaceImpl::InitFrameData(StackFrameIterator *   pIter,
     // do common initialization of Debugger_STRData for both managed stack frames and explicit frames
     //
 
-    pFrameData->fp = GetFramePointerWorker(pIter);
+    pFrameData->fp = PTR_TO_CORDB_ADDRESS(GetFramePointerWorker(pIter).GetSPValue());
 
     pFrameData->vmCurrentAppDomainToken.SetHostPtr(AppDomain::GetCurrentDomain());
 
@@ -754,8 +754,8 @@ void DacDbiInterfaceImpl::InitFrameData(StackFrameIterator *   pIter,
     {
         pFrameData->eType = Debugger_STRData::cRuntimeNativeFrame;
 
-        _ASSERTE(pFrameData->ctx != NULL);
-        GetStackWalkCurrentContext(pIter, pFrameData->ctx);
+        _ASSERTE(pFrameData->ctx != 0);
+        GetStackWalkCurrentContext(pIter, (DT_CONTEXT *)CORDB_ADDRESS_TO_PTR(pFrameData->ctx));
     }
     else if (ft == kManagedStackFrame)
     {
@@ -785,8 +785,8 @@ void DacDbiInterfaceImpl::InitFrameData(StackFrameIterator *   pIter,
 
         pFrameData->eType = Debugger_STRData::cMethodFrame;
 
-        _ASSERTE(pFrameData->ctx != NULL);
-        GetStackWalkCurrentContext(pIter, pFrameData->ctx);
+        _ASSERTE(pFrameData->ctx != 0);
+        GetStackWalkCurrentContext(pIter, (DT_CONTEXT *)CORDB_ADDRESS_TO_PTR(pFrameData->ctx));
 
         //
         // initialize the fields in Debugger_STRData::v
@@ -948,7 +948,7 @@ void DacDbiInterfaceImpl::InitParentFrameInfo(CrawlFrame * pCF,
         // to the ExInfo when we are checking if a particular frame is the parent frame.
         //
 
-        pJITFuncData->fpParentOrSelf = FramePointer::MakeFramePointer(sfParent.SP);
+        pJITFuncData->fpParentOrSelf = PTR_TO_CORDB_ADDRESS(sfParent.SP);
         pJITFuncData->parentNativeOffset = dwParentOffset;
     }
     else
@@ -961,7 +961,7 @@ void DacDbiInterfaceImpl::InitParentFrameInfo(CrawlFrame * pCF,
         // to the ExInfo when we are checking if a particular frame is the parent frame.
         //
 
-        pJITFuncData->fpParentOrSelf = FramePointer::MakeFramePointer(sfSelf.SP);
+        pJITFuncData->fpParentOrSelf = PTR_TO_CORDB_ADDRESS(sfSelf.SP);
         pJITFuncData->parentNativeOffset = 0;
     }
 }

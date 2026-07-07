@@ -1234,7 +1234,7 @@ public:
     //    The FramePointer of an explicit frame is just the stack address of the explicit frame.
     //
 
-    virtual HRESULT STDMETHODCALLTYPE GetFramePointer(StackWalkHandle pSFIHandle, OUT FramePointer * pRetVal) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetFramePointer(StackWalkHandle pSFIHandle, OUT CORDB_ADDRESS * pRetVal) = 0;
 
     //
     // Check whether the specified CONTEXT is the CONTEXT of the leaf frame.  This function doesn't care

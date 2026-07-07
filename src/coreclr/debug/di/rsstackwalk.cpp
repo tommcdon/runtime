@@ -583,7 +583,7 @@ HRESULT CordbStackWalk::GetFrameWorker(ICorDebugFrame ** ppFrame)
     // populated context through this pointer.
     DT_CONTEXT          frameCtx;
     ZeroMemory(&frameCtx, sizeof(frameCtx));
-    frameData.ctx = &frameCtx;
+    frameData.ctx = PTR_TO_CORDB_ADDRESS(&frameCtx);
 
     IDacDbiInterface::FrameType ft = IDacDbiInterface::kInvalid;
 
@@ -686,7 +686,7 @@ HRESULT CordbStackWalk::GetFrameWorker(ICorDebugFrame ** ppFrame)
 
         // Create the native frame.
         CordbNativeFrame* pNativeFrame = new CordbNativeFrame(m_pCordbThread,
-                                                              frameData.fp,
+                                                              FramePointer::MakeFramePointer(CORDB_ADDRESS_TO_PTR(frameData.fp)),
                                                               pNativeCode,
                                                               (SIZE_T)pJITFuncData->nativeOffset,
                                                               (TADDR)frameData.v.taAmbientESP,
@@ -829,7 +829,7 @@ HRESULT CordbStackWalk::GetFrameWorker(ICorDebugFrame ** ppFrame)
         _ASSERTE(pCurrentAppDomain != NULL);
 
         CordbRuntimeUnwindableFrame * pRuntimeFrame = new CordbRuntimeUnwindableFrame(m_pCordbThread,
-                                                                                      frameData.fp,
+                                                                                      FramePointer::MakeFramePointer(CORDB_ADDRESS_TO_PTR(frameData.fp)),
                                                                                       pCurrentAppDomain,
                                                                                       &frameCtx);
 

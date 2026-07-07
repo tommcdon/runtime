@@ -519,7 +519,11 @@ struct MSLAYOUT Debugger_JITFuncData
 
     BOOL fIsFilterFrame;
     ULONG64 parentNativeOffset;
-    FramePointer fpParentOrSelf;
+    // Normalized to a fixed 64-bit width (CORDB_ADDRESS) rather than a host-sized
+    // FramePointer so this IPC struct has an identical layout on all bitnesses,
+    // allowing a 64-bit DBI to consume a 32-bit target. The RS converts to/from
+    // FramePointer at the boundary.
+    CORDB_ADDRESS fpParentOrSelf;
 
     // indicates if the MethodDesc is a generic function or a method inside a generic class (or
     // both!).
@@ -538,8 +542,15 @@ struct MSLAYOUT Debugger_JITFuncData
 #endif                          // ARM context structures have a 16-byte alignment requirement
 struct MSLAYOUT Debugger_STRData
 {
-    FramePointer            fp;
-    DT_CONTEXT *            ctx;
+    // fp and ctx are normalized to a fixed 64-bit width (CORDB_ADDRESS) rather than
+    // host-sized types (FramePointer / DT_CONTEXT*) so this IPC struct has an identical
+    // layout regardless of host or target bitness, allowing a 64-bit DBI to consume a
+    // 32-bit target. The RS converts to/from the host representation at the boundary:
+    //  - fp  carries a (target) stack/frame pointer value.
+    //  - ctx carries the (host) address of a dbi-allocated DT_CONTEXT buffer that the
+    //        DAC writes the populated context through.
+    CORDB_ADDRESS           fp;
+    CORDB_ADDRESS           ctx;
     VMPTR_AppDomain         vmCurrentAppDomainToken;
 
 
