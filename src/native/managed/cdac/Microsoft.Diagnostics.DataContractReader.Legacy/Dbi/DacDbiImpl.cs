@@ -5403,7 +5403,7 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
         return hr;
     }
 
-    public int ParseContinuation(ulong continuationAddress, ulong* pDiagnosticIP, ulong* pNextContinuation, uint* pState)
+    public int ParseContinuation(ulong continuationAddress, nuint* pDiagnosticIP, ulong* pNextContinuation, uint* pState)
     {
         int hr = HResults.S_OK;
         try
@@ -5412,7 +5412,7 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
                 throw new ArgumentException("Output pointers must not be null.");
 
             ContinuationInfo info = _target.Contracts.Object.GetContinuationInfo(new TargetPointer(continuationAddress));
-            *pDiagnosticIP = info.DiagnosticIP.Value;
+            *pDiagnosticIP = (nuint)info.DiagnosticIP.Value;
             *pNextContinuation = info.Next.Value;
             *pState = info.State;
         }
@@ -5423,7 +5423,7 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
 #if DEBUG
         if (_legacy is not null)
         {
-            ulong diagnosticIPLocal;
+            nuint diagnosticIPLocal;
             ulong nextLocal;
             uint stateLocal;
             int hrLocal = _legacy.ParseContinuation(continuationAddress, &diagnosticIPLocal, &nextLocal, &stateLocal);
