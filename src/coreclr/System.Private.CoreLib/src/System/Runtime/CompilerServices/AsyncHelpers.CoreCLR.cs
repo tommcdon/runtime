@@ -766,7 +766,7 @@ namespace System.Runtime.CompilerServices
                 m_stateObject = value;
             }
 
-            internal unsafe bool HandleSuspended(AsyncInstrumentation.Flags flags, ref RuntimeAsyncAwaitState state)
+            internal unsafe bool HandleSuspended(ref RuntimeAsyncAwaitState state)
             {
                 Thread? currentThread = state.CurrentThread;
                 Debug.Assert(currentThread != null);
@@ -807,30 +807,6 @@ namespace System.Runtime.CompilerServices
                         // forwarding and makes these wrappers minimal cost.
                         Debug.Assert(taskCont.Task != null);
                         taskCont.RuntimeAsyncTask = this;
-
-                        // Emit the TPL TaskWaitBegin for this await (this awaits taskCont.Task), as traditional
-                        // async does in TaskAwaiter.OnCompleted, so async-causality consumers observe the
-                        // RuntimeAsync await chain.
-                        TplEventSource asyncLog = TplEventSource.Log;
-                        if (asyncLog.IsEnabled())
-                        {
-                            Task awaitedTask = taskCont.Task;
-                            asyncLog.TaskWaitBegin(
-                                m_taskScheduler != null ? m_taskScheduler.Id : TaskScheduler.Default.Id,
-                                Id,
-                                awaitedTask.Id,
-                                TplEventSource.TaskWaitBehavior.Asynchronous,
-                                Id);
-                            // Back-fill the Main-ward await edges with the established ETW activity so an
-                            // activity-bucketing cross-process consumer can chain a request's correlated leaf
-                            // up to the initiating user method. Gated on the async-debugger instrumentation
-                            // being active, so this only runs while a debugger is reconstructing async call
-                            // stacks -- pure ETW/profiler tracing (and the no-tracing happy path) pay nothing.
-                            if (AsyncInstrumentation.IsEnabled.AsyncDebugger(flags))
-                            {
-                                EmitActivityLadder(asyncLog);
-                            }
-                        }
 
                         if (!taskCont.Task.AddTaskContinuation(taskCont, addBeforeOthers: false))
                         {
@@ -901,89 +877,26 @@ namespace System.Runtime.CompilerServices
                 return false;
             }
 
-            // Re-emit the RuntimeAsync await-chain edges with the established ETW activity id so an
-            // activity-bucketing cross-process consumer reaches the initiating user method (e.g. Main).
-            // Background: traditional async emits a TaskWaitBegin per awaiting method (each is its own
-            // Task), forming a leaf->...->Main ladder that a consumer buckets by the ambient activity id.
-            // RuntimeAsync collapses the chain into one RuntimeAsyncTask per task-returning method and
-            // emits each frame's edge when that frame suspends; on the cold first cross-process request
-            // the outer (Main-side) frames suspend BEFORE the request activity exists, so their edges are
-            // emitted with GUID_NULL and dropped by activity-bucketing consumers. Once a deeper frame
-            // later suspends WITH the activity established, walk UP the task-continuation graph
-            // (RuntimeAsyncTaskContinuation.RuntimeAsyncTask, and across the RA->traditional boundary to
-            // the awaiting state-machine box) and re-emit those real-id edges carrying the activity, so the
-            // consumer's ladder reaches Main.
-            private unsafe void EmitActivityLadder(TplEventSource log)
-            {
-                Guid act = System.Diagnostics.Tracing.EventSource.CurrentThreadActivityId;
-                // Only back-fill once the ambient activity is established; otherwise there is nothing for an
-                // activity-bucketing consumer to correlate (matches traditional-async cold behavior).
-                if (act == Guid.Empty)
-                    return;
-
-                int schedId = m_taskScheduler != null ? m_taskScheduler.Id : TaskScheduler.Default.Id;
-
-                // Walk UP the task-continuation-object graph (as the debugger / traditional async does)
-                // from this RAT toward the initiating user method, re-emitting each outer->inner RAT await
-                // edge with the now-established activity. This back-fills the Main-ward connective edges
-                // that were originally emitted cold (GUID_NULL) and dropped by activity-bucketing consumers.
-                //
-                // This runs only while the async debugger is reconstructing stacks (gated by the caller on
-                // AsyncDebugger flags), so it carries no per-frame amortization state: re-emitting a frame's
-                // up-chain on each suspension is acceptable because the extra TaskWaitBegin edges are benign
-                // to an activity-bucketing consumer, and the RAT stays free of any always-on back-fill field.
-                //
-                // Termination is guaranteed without allocation. In a valid state the chain is acyclic and
-                // ends at the root state-machine box (no continuation) or a fan-in node (which our unwrap
-                // does not follow). Floyd's tortoise-and-hare bounds any cycle a torn concurrent read of a
-                // continuation field could momentarily expose, so a corrupt graph cannot spin here forever.
-                Task inner = this;
-                Task tortoise = this;
-                bool advanceTortoise = false;
-                while (true)
-                {
-                    Task? outer = NextOuter(inner);
-                    if (outer == null || ReferenceEquals(outer, inner))
-                        break;
-
-                    log.TaskWaitBegin(schedId, outer.Id, inner.Id, TplEventSource.TaskWaitBehavior.Asynchronous, outer.Id);
-                    inner = outer;
-
-                    if (advanceTortoise)
-                    {
-                        tortoise = NextOuter(tortoise) ?? tortoise;
-                        if (ReferenceEquals(tortoise, inner))
-                            break;                       // cycle detected (corrupt/torn continuation graph)
-                    }
-                    advanceTortoise = !advanceTortoise;
-                }
-
-                // Map a frame to its awaiting (Main-ward) outer task by unwrapping the continuation object,
-                // handling the same shapes the debugger / traditional async walk understands.
-                static Task? NextOuter(Task frame)
-                {
-                    object? contObj = frame.DiagnosticsContinuationObject;
-                    if (contObj is RuntimeAsyncTaskContinuation rtc && rtc.RuntimeAsyncTask is Task raOuter)
-                        return raOuter;                  // RA frame: outer runtime-async task
-                    if (contObj is Task tOuter)
-                        return tOuter;                   // traditional async state-machine box (e.g. Main)
-                    if (contObj is Action actOuter)
-                        // Unwrap ContinuationWrapper/Action to the awaiting state-machine box (the same path
-                        // the debugger uses). This bridges the RA->traditional boundary up to Main.
-                        return AsyncMethodBuilderCore.TryGetStateMachineBox(actOuter) as Task;
-                    return null;
-                }
-            }
-
             internal void InstrumentedHandleSuspended(AsyncInstrumentation.Flags flags, ref RuntimeAsyncAwaitState state)
             {
                 if (AsyncInstrumentation.IsEnabled.AsyncDebugger(flags))
                 {
                     Continuation? nextContinuation = state.SentinelContinuation!.Next;
+                    Task? awaitedTask = (nextContinuation as RuntimeAsyncTaskContinuation)?.Task;
 
                     AsyncDebugger.HandleSuspended(nextContinuation);
 
-                    if (!HandleSuspended(flags, ref state))
+                    if (awaitedTask is not null)
+                    {
+                        TplEventSource.Log.TaskWaitBegin(
+                            m_taskScheduler != null ? m_taskScheduler.Id : TaskScheduler.Default.Id,
+                            Id,
+                            awaitedTask.Id,
+                            TplEventSource.TaskWaitBehavior.Asynchronous,
+                            Id);
+                    }
+
+                    if (!HandleSuspended(ref state))
                     {
                         AsyncDebugger.HandleSuspendedFailed(this, nextContinuation);
                     }
@@ -991,7 +904,7 @@ namespace System.Runtime.CompilerServices
                     return;
                 }
 
-                HandleSuspended(flags, ref state);
+                HandleSuspended(ref state);
             }
 
 #pragma warning disable CA1822 // Mark members as static
@@ -1053,7 +966,7 @@ namespace System.Runtime.CompilerServices
                         if (newContinuation != null)
                         {
                             newContinuation.Next = nextContinuation;
-                            HandleSuspended(AsyncInstrumentation.Flags.Disabled, ref awaitState);
+                            HandleSuspended(ref awaitState);
 
                             contexts.Pop(awaitState.CurrentThread!);
                             awaitState.Pop();
@@ -1382,7 +1295,7 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            task.HandleSuspended(AsyncInstrumentation.Flags.Disabled, ref state);
+            task.HandleSuspended(ref state);
             contexts.Pop(state.CurrentThread!);
         }
 

@@ -169,11 +169,6 @@ namespace System.Threading.Tasks
         // m_continuationObject is set to this when the task completes.
         private static readonly object s_taskCompletionSentinel = new object();
 
-        // Exposes the continuation object to the RuntimeAsync cross-process await-edge back-fill, which
-        // walks the task-continuation graph (RuntimeAsyncTask -> awaiting task) to re-emit activity-
-        // carrying TaskWaitBegin edges. Kept internal; consumed by AsyncHelpers.RuntimeAsyncTask.
-        internal object? DiagnosticsContinuationObject => m_continuationObject;
-
         // A private flag that would be set (only) by the debugger
         // When true the Async Causality logging trace is enabled as well as a dictionary to relate operation ids with Tasks
         // The debugger sets this field together with the AsyncInstrumentation.Flags.Synchronize bit in
