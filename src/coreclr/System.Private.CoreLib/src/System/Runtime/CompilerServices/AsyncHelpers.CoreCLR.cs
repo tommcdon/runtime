@@ -881,8 +881,19 @@ namespace System.Runtime.CompilerServices
                 if (AsyncInstrumentation.IsEnabled.AsyncDebugger(flags))
                 {
                     Continuation? nextContinuation = state.SentinelContinuation!.Next;
+                    Task? awaitedTask = (nextContinuation as RuntimeAsyncTaskContinuation)?.Task;
 
                     AsyncDebugger.HandleSuspended(nextContinuation);
+
+                    if (awaitedTask is not null)
+                    {
+                        TplEventSource.Log.TaskWaitBegin(
+                            m_taskScheduler != null ? m_taskScheduler.Id : TaskScheduler.Default.Id,
+                            Id,
+                            awaitedTask.Id,
+                            TplEventSource.TaskWaitBehavior.Asynchronous,
+                            Id);
+                    }
 
                     if (!HandleSuspended(ref state))
                     {
