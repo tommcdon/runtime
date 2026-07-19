@@ -10,10 +10,10 @@ namespace System.Diagnostics
     public partial class StackTrace
     {
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "StackTrace_GetStackFramesInternal")]
-        private static partial void GetStackFramesInternal(ObjectHandleOnStack sfh, [MarshalAs(UnmanagedType.Bool)] bool fNeedFileInfo, ObjectHandleOnStack e);
+        private static partial void GetStackFramesInternal(ObjectHandleOnStack sfh, [MarshalAs(UnmanagedType.Bool)] bool fNeedFileInfo, ObjectHandleOnStack e, [MarshalAs(UnmanagedType.Bool)] bool asyncStitching);
 
-        internal static void GetStackFramesInternal(StackFrameHelper sfh, bool fNeedFileInfo, Exception? e)
-            => GetStackFramesInternal(ObjectHandleOnStack.Create(ref sfh), fNeedFileInfo, ObjectHandleOnStack.Create(ref e));
+        internal static void GetStackFramesInternal(StackFrameHelper sfh, bool fNeedFileInfo, Exception? e, bool asyncStitching = false)
+            => GetStackFramesInternal(ObjectHandleOnStack.Create(ref sfh), fNeedFileInfo, ObjectHandleOnStack.Create(ref e), asyncStitching);
 
         internal static int CalculateFramesToSkip(StackFrameHelper StackF, int iNumFrames)
         {
@@ -48,22 +48,22 @@ namespace System.Diagnostics
             CaptureStackTrace(skipFrames, fNeedFileInfo, exception);
         }
 
-        private void InitializeForCurrentThread(int skipFrames, bool fNeedFileInfo)
+        private void InitializeForCurrentThread(int skipFrames, bool fNeedFileInfo, bool asyncStitching = false)
         {
-            CaptureStackTrace(skipFrames, fNeedFileInfo, null);
+            CaptureStackTrace(skipFrames, fNeedFileInfo, null, asyncStitching);
         }
 
         /// <summary>
         /// Retrieves an object with stack trace information encoded.
         /// It leaves out the first "iSkip" lines of the stacktrace.
         /// </summary>
-        private void CaptureStackTrace(int skipFrames, bool fNeedFileInfo, Exception? e)
+        private void CaptureStackTrace(int skipFrames, bool fNeedFileInfo, Exception? e, bool asyncStitching = false)
         {
             _methodsToSkip = skipFrames;
 
             StackFrameHelper StackF = new StackFrameHelper();
 
-            StackF.InitializeSourceInfo(fNeedFileInfo, e);
+            StackF.InitializeSourceInfo(fNeedFileInfo, e, asyncStitching);
 
             _numOfFrames = StackF.GetNumberOfFrames();
 

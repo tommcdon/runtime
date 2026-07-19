@@ -863,5 +863,153 @@ namespace System.Diagnostics.Tests
                     Assert.NotNull(stackFrame.GetMethod());
             }
         }
+
+        [ConditionalFact(typeof(RemoteExecutor), nameof(RemoteExecutor.IsSupported))]
+        public void EnvironmentStackTrace_AsyncContinuationStitching()
+        {
+            RemoteExecutor.Invoke(static () =>
+            {
+                if (!PlatformDetection.IsRuntimeAsyncSupported)
+                    return;
+
+                string stackTrace = AsyncStitchingOuter().GetAwaiter().GetResult();
+
+                Assert.Contains(nameof(AsyncStitchingMiddle), stackTrace);
+                Assert.Contains(nameof(AsyncStitchingOuter), stackTrace);
+                Assert.DoesNotContain("DispatchContinuations", stackTrace);
+            }).Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<string> AsyncStitchingOuter()
+        {
+            return await AsyncStitchingMiddle();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<string> AsyncStitchingMiddle()
+        {
+            await AsyncStitchingInner();
+            return Environment.AsyncStackTrace;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task AsyncStitchingInner()
+        {
+            // Task.Delay forces timer-based completion ensuring actual async
+            // resume through DispatchContinuations on both CoreCLR and NativeAOT.
+            await Task.Delay(1);
+        }
+
+        [ConditionalFact(typeof(RemoteExecutor), nameof(RemoteExecutor.IsSupported))]
+        public void StackTrace_PublicCtor_IncludesAsyncContinuationFrames()
+        {
+            RemoteExecutor.Invoke(static () =>
+            {
+                if (!PlatformDetection.IsRuntimeAsyncSupported)
+                    return;
+
+                StackTrace trace = PublicCtorOuter().GetAwaiter().GetResult();
+
+                // The formatted output always reflects the stitched async chain, including on
+                // NativeAOT where per-frame reflection metadata may be unavailable (see VerifyFrames).
+                string text = trace.ToString();
+                Assert.Contains(nameof(PublicCtorMiddle), text);
+                Assert.Contains(nameof(PublicCtorOuter), text);
+                Assert.DoesNotContain("DispatchContinuations", text);
+
+                // Where reflection metadata is available (i.e. not NativeAOT), the spliced
+                // continuation frames should also resolve their methods via the object model.
+                if (!PlatformDetection.IsNativeAot)
+                {
+                    StackFrame[] frames = trace.GetFrames();
+                    Assert.Contains(frames, f => f.GetMethod()?.Name == nameof(PublicCtorMiddle));
+                    Assert.Contains(frames, f => f.GetMethod()?.Name == nameof(PublicCtorOuter));
+                }
+            }).Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<StackTrace> PublicCtorOuter()
+        {
+            return await PublicCtorMiddle();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<StackTrace> PublicCtorMiddle()
+        {
+            await PublicCtorInner();
+            return new StackTrace(skipFrames: 0, fNeedFileInfo: false, fIncludeAsyncContinuationFrames: true);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task PublicCtorInner()
+        {
+            await Task.Delay(1);
+        }
+
+        [ConditionalFact(typeof(RemoteExecutor), nameof(RemoteExecutor.IsSupported))]
+        public void EnvironmentStackTrace_AsyncFrameHiding_DefaultOn()
+        {
+            RemoteExecutor.Invoke(static () =>
+            {
+                if (!PlatformDetection.IsRuntimeAsyncSupported)
+                    return;
+
+                (string preAwait, string postAwait) = FrameHidingSyncCaller();
+
+                // Both traces should contain runtime async method names
+                Assert.Contains(nameof(FrameHidingMiddle), preAwait);
+                Assert.Contains(nameof(FrameHidingOuter), preAwait);
+                Assert.Contains(nameof(FrameHidingMiddle), postAwait);
+                Assert.Contains(nameof(FrameHidingOuter), postAwait);
+
+                // With hiding ON (default), the sync caller should NOT appear in pre-await
+                // This makes pre-await and post-await traces consistent.
+                Assert.DoesNotContain(nameof(FrameHidingSyncCaller), preAwait);
+            }).Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static (string preAwait, string postAwait) FrameHidingSyncCaller()
+        {
+            return FrameHidingOuter().GetAwaiter().GetResult();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<(string, string)> FrameHidingOuter()
+        {
+            return await FrameHidingMiddle();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<(string, string)> FrameHidingMiddle()
+        {
+            string preAwait = Environment.AsyncStackTrace;
+            await FrameHidingInner();
+            string postAwait = Environment.AsyncStackTrace;
+            return (preAwait, postAwait);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task FrameHidingInner()
+        {
+            await Task.Delay(1);
+        }
+
+        // Note: sync-bridge / multi-RuntimeAsyncTask waiter-chain scenarios (an ASP.NET-style
+        // middleware pipeline with sync dispatch layers between v2 async methods) are covered by
+        // the runtime-async-configured tests in src/tests/async/env-stacktrace. They require the
+        // optimized, runtime-async-enabled assembly to reliably form separate suspended
+        // RuntimeAsyncTasks, which does not reproduce in this Debug library test harness.
     }
 }

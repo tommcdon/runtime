@@ -208,6 +208,7 @@ namespace System.Diagnostics
         public StackTrace(System.Exception e, int skipFrames, bool fNeedFileInfo) { }
         public StackTrace(int skipFrames) { }
         public StackTrace(int skipFrames, bool fNeedFileInfo) { }
+        public StackTrace(int skipFrames, bool fNeedFileInfo, bool fIncludeAsyncContinuationFrames) { }
         public virtual int FrameCount { get { throw null; } }
         public virtual System.Diagnostics.StackFrame? GetFrame(int index) { throw null; }
         public virtual System.Diagnostics.StackFrame[] GetFrames() { throw null; }

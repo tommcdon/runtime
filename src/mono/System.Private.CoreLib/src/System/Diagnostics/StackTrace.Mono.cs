@@ -39,8 +39,12 @@ namespace System.Diagnostics
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
             Justification = "StackFrame.GetMethod is getting compared to null but nothing else on it is touched.")]
         [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        private void InitializeForCurrentThread(int skipFrames, bool needFileInfo)
+        private void InitializeForCurrentThread(int skipFrames, bool needFileInfo, bool asyncStitching = false)
         {
+            // Mono does not support runtime async (v2), so there are no continuations to stitch;
+            // asyncStitching is accepted for signature parity with other runtimes and ignored.
+            _ = asyncStitching;
+
             skipFrames += 2; // Current method + parent ctor
 
             StackFrame sf;

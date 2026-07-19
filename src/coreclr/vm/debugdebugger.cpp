@@ -177,6 +177,386 @@ extern "C" void QCALLTYPE DebugDebugger_Log(INT32 Level, PCWSTR pwzModule, PCWST
 #endif // DEBUGGING_SUPPORTED
 }
 
+bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    // Use the CoreLib binder to get AsyncDispatcherInfo and its t_current field.
+    FieldDesc* pTCurrentField = CoreLibBinder::GetField(FIELD__ASYNC_DISPATCHER_INFO__T_CURRENT);
+    MethodTable* pDispatcherInfoMT = CoreLibBinder::GetClass(CLASS__ASYNC_DISPATCHER_INFO);
+
+    Thread * pThread = GetThread();
+
+    pDispatcherInfoMT->EnsureTlsIndexAllocated();
+    PTR_BYTE base = pDispatcherInfoMT->GetNonGCThreadStaticsBasePointer(pThread);
+    if (base == NULL)
+        return false;
+
+    // ResumeInfo is an unmanaged struct stored in a Continuation's ResumeInfo pointer:
+    //   [0]             delegate*  Resume       (function pointer to IL_STUB_AsyncResume)
+    //   [sizeof(void*)] void*      DiagnosticIP (code pointer into the original async method)
+    struct ResumeInfoLayout
+    {
+        PCODE Resume;
+        PCODE DiagnosticIP;
+    };
+
+    SIZE_T offset = pTCurrentField->GetOffset();
+    AsyncDispatcherInfoLayout** ppDispatcherInfo = (AsyncDispatcherInfoLayout**)((PTR_BYTE)base + offset);
+    if (ppDispatcherInfo == NULL || *ppDispatcherInfo == NULL)
+        return false;
+
+    // Fields and types needed for walking the task waiter chain.
+    FieldDesc* pContObjField = CoreLibBinder::GetField(FIELD__TASK__CONTINUATION_OBJECT);
+    FieldDesc* pStateObjField = CoreLibBinder::GetField(FIELD__TASK__STATE_OBJECT);
+    FieldDesc* pDelegateTargetField = CoreLibBinder::GetField(FIELD__DELEGATE__TARGET);
+    MethodTable* pRATMT = CoreLibBinder::GetClass(CLASS__RUNTIME_ASYNC_TASK);
+    MethodTable* pTaskMT = CoreLibBinder::GetClass(CLASS__TASK);
+
+    struct
+    {
+        CONTINUATIONREF continuation;
+        CONTINUATIONREF pNext;
+        OBJECTREF currentTaskRef;
+        OBJECTREF contObjRef;
+        OBJECTREF stateObjRef;
+        OBJECTREF delegateTargetRef;
+        OBJECTREF intermediateTaskRef;
+    } gc{};
+    GCPROTECT_BEGIN(gc)
+    {
+        AsyncDispatcherInfoLayout* pDispatcherInfo = *ppDispatcherInfo;
+
+        // Capture CurrentTask from the innermost dispatcher for waiter chain walking.
+        if (pDispatcherInfo != NULL)
+        {
+            gc.currentTaskRef = pDispatcherInfo->CurrentTask;
+        }
+
+        // Helper: walk a linked list of Continuation objects and append resolved resume
+        // data. Each Continuation has a ResumeInfo pointer to an IL_STUB_AsyncResume
+        // dynamic method; we resolve through to the actual target MethodDesc.
+        // Uses gc.continuation and gc.pNext for GC protection.
+        auto fnAppendResumesFromChain = [&](CONTINUATIONREF head)
+        {
+            gc.continuation = head;
+            while (gc.continuation != NULL)
+            {
+                gc.pNext = gc.continuation->GetNext();
+                ResumeInfoLayout* pResumeInfo = (ResumeInfoLayout*)gc.continuation->GetResumeInfo();
+
+                if (pResumeInfo != NULL && pResumeInfo->Resume != NULL)
+                {
+                    MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResumeInfo->Resume);
+                    if (pMD != NULL && pMD->IsDynamicMethod())
+                    {
+                        MethodDesc* pTargetMD = nullptr;
+
+                        // Try resolving through the ILStubResolver first (JIT'd stubs).
+                        PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
+                        if (pILResolver != nullptr)
+                        {
+                            pTargetMD = pILResolver->GetStubTargetMethodDesc();
+                        }
+
+                        // Fallback: resolve target MethodDesc from DiagnosticIP via EECodeInfo.
+                        // This handles R2R precompiled async resume stubs where the ILStubResolver
+                        // is not available.
+                        if (pTargetMD == nullptr && pResumeInfo->DiagnosticIP != NULL)
+                        {
+                            EECodeInfo diagCodeInfo((PCODE)pResumeInfo->DiagnosticIP);
+                            if (diagCodeInfo.IsValid())
+                            {
+                                pTargetMD = diagCodeInfo.GetMethodDesc();
+                            }
+                        }
+
+                        if (pTargetMD != nullptr && pResumeInfo->DiagnosticIP != NULL)
+                        {
+                            pContinuationResumeList->Append({ pTargetMD, pResumeInfo->DiagnosticIP });
+                        }
+                    }
+                }
+
+                gc.continuation = gc.pNext;
+            }
+        };
+
+        // Walk the dispatcher chain and extract NextContinuation chains.
+        // These represent frames from the current v2 async method (before suspension).
+        while (pDispatcherInfo != NULL)
+        {
+            if (pDispatcherInfo->NextContinuation == NULL)
+            {
+                pDispatcherInfo = (AsyncDispatcherInfoLayout*)pDispatcherInfo->Next;
+                continue;
+            }
+
+            fnAppendResumesFromChain((CONTINUATIONREF)pDispatcherInfo->NextContinuation);
+
+            // Only process continuations from the innermost (first) dispatcher in the chain.
+            break;
+        }
+
+        // Walk the task waiter chain to recover frames from callers that are awaiting
+        // the current task. After suspension, each v2 async method creates its own
+        // RuntimeAsyncTask; the caller's RuntimeAsyncTask is registered as a waiter on
+        // the callee's Task via m_continuationObject. The waiter's m_stateObject holds
+        // the stored continuation chain (resume points) for its own call stack frames.
+        //
+        // m_continuationObject can be:
+        //   - null: no continuations
+        //   - A RuntimeAsyncTask directly
+        //   - A RuntimeAsyncTaskContinuation whose RuntimeAsyncTask field is the waiter
+        //   - A Delegate whose _target is a RuntimeAsyncTask (registered via UnsafeOnCompleted)
+        //   - A Delegate whose _target is a v1 async state machine (mixed v1/v2 pipeline)
+        //   - A List<object> containing any of the above (multiple waiters)
+        //   - s_taskCompletionSentinel (task already completed)
+
+        // Helper: extract the state-machine MoveNext MethodDesc from a v1 async box.
+        // A v1 async method's continuation is an AsyncStateMachineBox<TStateMachine> (a Task
+        // subclass) that stores the compiler-generated state machine in a "StateMachine" field.
+        // The state machine implements IAsyncStateMachine; its MoveNext holds the method's code,
+        // which the managed stack-trace formatter maps back to the original async method.
+        // Returns NULL if obj is not a v1 async state machine box.
+        auto fnGetBoxMoveNext = [&](OBJECTREF obj) -> MethodDesc*
+        {
+            if (obj == NULL)
+                return NULL;
+
+            // Capture the MethodTable once; MethodTables are not moved by the GC, so the
+            // remainder of this helper (which may trigger a GC) never dereferences obj again.
+            MethodTable* pMT = obj->GetMethodTable();
+
+            ApproxFieldDescIterator fieldIter(pMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+            FieldDesc* pFD;
+            while ((pFD = fieldIter.Next()) != NULL)
+            {
+                LPCUTF8 fieldName;
+                if (FAILED(pFD->GetName_NoThrow(&fieldName)) || fieldName == NULL)
+                    continue;
+                if (strcmp(fieldName, "StateMachine") != 0)
+                    continue;
+
+                TypeHandle thSM = pFD->LookupFieldTypeHandle();
+                if (thSM.IsNull())
+                    return NULL;
+
+                MethodTable* pSMMT = thSM.GetMethodTable();
+                if (pSMMT == NULL)
+                    return NULL;
+
+                // Resolve IAsyncStateMachine.MoveNext on the concrete state machine type.
+                MethodDesc* pItfMoveNext = CoreLibBinder::GetMethod(METHOD__IASYNC_STATE_MACHINE__MOVE_NEXT);
+                MethodDesc* pMoveNext = pSMMT->GetMethodDescForInterfaceMethod(pItfMoveNext, FALSE /* throwOnConflict */);
+                // For value-type state machines, interface resolution may yield an unboxing stub;
+                // unwrap to the real MoveNext so we get its jitted code and correct display method.
+                if (pMoveNext != NULL && pMoveNext->IsUnboxingStub())
+                    pMoveNext = pMoveNext->GetWrappedMethodDesc();
+                return pMoveNext;
+            }
+
+            return NULL;
+        };
+
+        // Helper: true if pMT is a StateMachine field-bearing box (GC-non-triggering).
+        auto fnHasStateMachineField = [&](MethodTable* pBoxMT) -> bool
+        {
+            ApproxFieldDescIterator it(pBoxMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+            FieldDesc* pFD;
+            while ((pFD = it.Next()) != NULL)
+            {
+                LPCUTF8 n;
+                if (SUCCEEDED(pFD->GetName_NoThrow(&n)) && n != NULL && strcmp(n, "StateMachine") == 0)
+                    return true;
+            }
+            return false;
+        };
+
+        // Helper: true if the given type is a waiter Task -- a RuntimeAsyncTask (v2) or an
+        // AsyncStateMachineBox (v1, a Task subclass carrying a StateMachine field).
+        auto fnIsWaiterTask = [&](MethodTable* pCandMT) -> bool
+        {
+            if (pCandMT->HasSameTypeDefAs(pRATMT))
+                return true;
+            for (MethodTable* pWalk = pCandMT; pWalk != NULL; pWalk = pWalk->GetParentMethodTable())
+            {
+                if (pWalk->HasSameTypeDefAs(pTaskMT))
+                    return fnHasStateMachineField(pCandMT);
+            }
+            return false;
+        };
+
+        // Helper: resolve a continuation object to the immediate waiter Task -- either a
+        // RuntimeAsyncTask (v2) or an AsyncStateMachineBox (v1). Unlike a v2-only walk, this
+        // does NOT skip over v1 boxes; it returns the first waiter Task so its frame can be
+        // recovered. Uses only GC-non-triggering operations so the caller can protect the
+        // result before performing any type resolution on it.
+        auto fnUnwrapToWaiter = [&](OBJECTREF obj) -> OBJECTREF
+        {
+            if (obj == NULL)
+                return NULL;
+
+            MethodTable* pMT = obj->GetMethodTable();
+
+            // The object is itself the waiter Task (RuntimeAsyncTask or box).
+            if (fnIsWaiterTask(pMT))
+                return obj;
+
+            // Delegate: the _target is the waiter (v1 box's MoveNextAction, or a delegate
+            // registered directly on a RuntimeAsyncTask).
+            if (pMT->IsDelegate())
+            {
+                OBJECTREF target = pDelegateTargetField->GetRefValue(obj);
+                if (target != NULL && fnIsWaiterTask(target->GetMethodTable()))
+                    return target;
+                return NULL;
+            }
+
+            // Wrapper continuation types. Resolve to the waiter without following back-references:
+            //   - RuntimeAsyncTaskContinuation: the "RuntimeAsyncTask" field is the waiter (its
+            //     "Task" field points back to the callee and must be ignored).
+            //   - TaskContinuation subclasses: an Action-typed field whose target is the waiter.
+            for (MethodTable* pWalkMT = pMT; pWalkMT != NULL; pWalkMT = pWalkMT->GetParentMethodTable())
+            {
+                ApproxFieldDescIterator iter(pWalkMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+                FieldDesc* pFD;
+                while ((pFD = iter.Next()) != NULL)
+                {
+                    if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
+                        continue;
+
+                    OBJECTREF fieldVal = pFD->GetRefValue(obj);
+                    if (fieldVal == NULL)
+                        continue;
+
+                    MethodTable* pFieldMT = fieldVal->GetMethodTable();
+
+                    // A delegate field: its target is the waiter (RAT or v1 box).
+                    if (pFieldMT->IsDelegate())
+                    {
+                        OBJECTREF target = pDelegateTargetField->GetRefValue(fieldVal);
+                        if (target != NULL && fnIsWaiterTask(target->GetMethodTable()))
+                            return target;
+                        continue;
+                    }
+
+                    // The waiter stored directly (RuntimeAsyncTaskContinuation.RuntimeAsyncTask).
+                    // Match by field name to avoid following callee back-references.
+                    LPCUTF8 fieldName;
+                    if (FAILED(pFD->GetName_NoThrow(&fieldName)) || fieldName == NULL)
+                        continue;
+                    if (strcmp(fieldName, "RuntimeAsyncTask") == 0 && fnIsWaiterTask(pFieldMT))
+                        return fieldVal;
+                }
+            }
+
+            return NULL;
+        };
+
+        // Helper: given the m_continuationObject value, find the single unambiguous waiter Task.
+        // Handles single objects (via fnUnwrapToWaiter) and List<object> collections.
+        auto fnFindWaiter = [&](OBJECTREF contObj) -> OBJECTREF
+        {
+            if (contObj == NULL)
+                return NULL;
+
+            OBJECTREF waiter = fnUnwrapToWaiter(contObj);
+            if (waiter != NULL)
+                return waiter;
+
+            MethodTable* pMT = contObj->GetMethodTable();
+
+            // List<object>: scan the backing Object[] for a single waiter.
+            OBJECTREF found = NULL;
+            int waiterCount = 0;
+            ApproxFieldDescIterator iter(pMT, ApproxFieldDescIterator::INSTANCE_FIELDS);
+            FieldDesc* pFD;
+            while ((pFD = iter.Next()) != NULL)
+            {
+                if (pFD->GetFieldType() != ELEMENT_TYPE_CLASS)
+                    continue;
+
+                OBJECTREF fieldVal = pFD->GetRefValue(contObj);
+                if (fieldVal == NULL || !fieldVal->GetMethodTable()->IsArray())
+                    continue;
+
+                PTRARRAYREF arrRef = (PTRARRAYREF)(OBJECTREF)fieldVal;
+                DWORD count = arrRef->GetNumComponents();
+                for (DWORD i = 0; i < count && waiterCount <= 1; i++)
+                {
+                    OBJECTREF elem = arrRef->GetAt(i);
+                    if (elem == NULL)
+                        continue;
+
+                    OBJECTREF unwrapped = fnUnwrapToWaiter(elem);
+                    if (unwrapped != NULL)
+                    {
+                        found = unwrapped;
+                        waiterCount++;
+                    }
+                }
+                break; // processed the backing array
+            }
+
+            // Only return if exactly one waiter was found (unambiguous).
+            return (waiterCount == 1) ? found : NULL;
+        };
+
+        // Walk the task waiter chain to recover caller frames. At each hop, the current task's
+        // m_continuationObject identifies the waiter awaiting it. The waiter is either:
+        //   - A RuntimeAsyncTask (v2): its stored continuation chain (m_stateObject) holds the
+        //     caller's suspended frames, which we append directly.
+        //   - An AsyncStateMachineBox (v1): a classic async state machine. We recover its single
+        //     MoveNext frame (mapped by the formatter back to the original async method),
+        //     enabling stitching across v2 -> v1 boundaries (e.g. an ASP.NET middleware
+        //     pipeline whose framework methods are classic async).
+        // The waiter is itself a Task, so we advance to it and continue walking its own chain.
+        int depth = 0;
+        while (gc.currentTaskRef != NULL && depth < 20)
+        {
+            gc.contObjRef = pContObjField->GetRefValue(gc.currentTaskRef);
+            OBJECTREF waiterRef = fnFindWaiter(gc.contObjRef);
+            gc.contObjRef = NULL;
+            if (waiterRef == NULL)
+                break;
+
+            // Protect the waiter before performing any type resolution on it.
+            gc.currentTaskRef = waiterRef;
+
+            if (gc.currentTaskRef->GetMethodTable()->HasSameTypeDefAs(pRATMT))
+            {
+                // v2 waiter: append its stored continuation chain.
+                gc.stateObjRef = pStateObjField->GetRefValue(gc.currentTaskRef);
+                if (gc.stateObjRef != NULL)
+                {
+                    fnAppendResumesFromChain((CONTINUATIONREF)gc.stateObjRef);
+                    gc.stateObjRef = NULL;
+                }
+            }
+            else
+            {
+                // v1 waiter (async state machine box): append the MoveNext frame.
+                MethodDesc* pMoveNext = fnGetBoxMoveNext(gc.currentTaskRef);
+                PCODE ip = (pMoveNext != NULL) ? pMoveNext->GetNativeCodeAnyVersion() : (PCODE)NULL;
+                if (pMoveNext != NULL && ip != (PCODE)NULL)
+                    pContinuationResumeList->Append({ pMoveNext, ip });
+            }
+
+            depth++;
+        }
+    }
+    GCPROTECT_END();
+
+    return true;
+}
+
 static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
 {
     CONTRACTL
@@ -199,9 +579,30 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
     }
 
     DebugStackTrace::GetStackFramesData* pData = (DebugStackTrace::GetStackFramesData*)data;
-    if (pData->cElements >= pData->cElementsAllocated)
+
+    if (pFunc != NULL && pData->fAsyncStitching)
     {
-        DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*pData->cElementsAllocated];
+        if (pFunc->IsAsyncMethod())
+        {
+            pData->fAsyncFramesPresent = TRUE;
+        }
+        else
+        {
+            if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
+            {
+                DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
+            }
+            else if (pData->fAsyncFramesPresent)
+            {
+                return SWA_CONTINUE;
+            }
+        }
+    }
+
+    int cNumAlloc = pData->cElements + pData->continuationResumeList.GetCount();
+    if (cNumAlloc >= pData->cElementsAllocated)
+    {
+        DebugStackTrace::Element* pTemp = new (nothrow) DebugStackTrace::Element[2*cNumAlloc];
         if (pTemp == NULL)
         {
             return SWA_ABORT;
@@ -212,36 +613,70 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         delete [] pData->pElements;
 
         pData->pElements = pTemp;
-        pData->cElementsAllocated *= 2;
+        pData->cElementsAllocated = 2*cNumAlloc;
     }
 
     PCODE ip;
     DWORD dwNativeOffset;
 
-    if (pCf->IsFrameless())
+    if (pData->continuationResumeList.GetCount() == 0)
     {
-        // Real method with jitted code.
-        dwNativeOffset = pCf->GetRelOffset();
-        ip = GetControlPC(pCf->GetRegisterSet());
+        if (pCf->IsFrameless())
+        {
+            // Real method with jitted code.
+            dwNativeOffset = pCf->GetRelOffset();
+            ip = GetControlPC(pCf->GetRegisterSet());
+        }
+        else
+        {
+            ip = (PCODE)NULL;
+            dwNativeOffset = 0;
+        }
+
+        // Pass on to InitPass2 that the IP has already been adjusted (decremented by 1)
+        INT flags = pCf->IsIPadjusted() ? STEF_IP_ADJUSTED : 0;
+
+        pData->pElements[pData->cElements].InitPass1(
+                dwNativeOffset,
+                pFunc,
+                ip,
+                flags);
+
+        // We'll init the IL offsets outside the TSL lock.
+
+        ++pData->cElements;
     }
     else
     {
-        ip = (PCODE)NULL;
-        dwNativeOffset = 0;
+        // inject runtime async continuations if any
+        for (UINT32 i = 0; i < pData->continuationResumeList.GetCount() && (pData->NumFramesRequested == 0 || pData->cElements < pData->NumFramesRequested); i++)
+        {
+            DebugStackTrace::ResumeData& resumeData = pData->continuationResumeList[i];
+            MethodDesc* pResumeMd = resumeData.pResumeMd;
+            PCODE pResumeIp = resumeData.pResumeIp;
+
+            if (pResumeIp == NULL)
+                continue;
+
+            DWORD dwNativeOffset = 0;
+            EECodeInfo codeInfo(pResumeIp);
+            if (codeInfo.IsValid())
+            {
+                dwNativeOffset = codeInfo.GetRelOffset();
+            }
+            pData->pElements[pData->cElements].InitPass1(
+                dwNativeOffset,
+                pResumeMd,
+                pResumeIp,
+                STEF_CONTINUATION);
+
+            ++pData->cElements;
+        }
+        pData->continuationResumeList.Clear();
+
+        // physical stack is truncated after injecting continuations
+        return SWA_ABORT;
     }
-
-    // Pass on to InitPass2 that the IP has already been adjusted (decremented by 1)
-    INT flags = pCf->IsIPadjusted() ? STEF_IP_ADJUSTED : 0;
-
-    pData->pElements[pData->cElements].InitPass1(
-            dwNativeOffset,
-            pFunc,
-            ip,
-            flags);
-
-    // We'll init the IL offsets outside the TSL lock.
-
-    ++pData->cElements;
 
     // check if we already have the number of frames that the user had asked for
     if ((pData->NumFramesRequested != 0) && (pData->NumFramesRequested <= pData->cElements))
@@ -319,7 +754,8 @@ extern "C" void QCALLTYPE AsyncHelpers_AddContinuationToExInternal(
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     QCall::ObjectHandleOnStack stackFrameHelper,
     BOOL fNeedFileInfo,
-    QCall::ObjectHandleOnStack exception)
+    QCall::ObjectHandleOnStack exception,
+    BOOL fAsyncStitching)
 {
     QCALL_CONTRACT;
 
@@ -348,6 +784,7 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
 
     if (gc.pException == NULL)
     {
+        data.fAsyncStitching = fAsyncStitching;
         GetStackFrames(&data);
     }
     else

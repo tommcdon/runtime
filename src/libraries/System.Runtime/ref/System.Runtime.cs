@@ -2722,6 +2722,7 @@ namespace System
         public static int ProcessorCount { get { throw null; } }
         public static string? ProcessPath { get { throw null; } }
         public static string StackTrace { get { throw null; } }
+        public static string AsyncStackTrace { get { throw null; } }
         public static string SystemDirectory { get { throw null; } }
         public static int SystemPageSize { get { throw null; } }
         public static int TickCount { get { throw null; } }

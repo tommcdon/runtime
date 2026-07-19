@@ -40,6 +40,13 @@ namespace System.Diagnostics
 
         private bool _isStackTraceHidden;
 
+        /// <summary>
+        /// Will be true if this frame corresponds to a runtime-async method or the MoveNext method of a
+        /// compiler-generated async state machine. Used to suppress the "--- End of stack trace from
+        /// previous location ---" delimiter and to drive async stack trace stitching.
+        /// </summary>
+        private bool _isAsync;
+
         // If stack trace metadata is available, _methodOwningType is the namespace-qualified name of the owning type,
         // _methodName is the name of the method, _methodGenericArgs are generic arguments, and _methodSignature is the list of parameters
         // without braces. StackTrace will format this as `{_methodOwningType}.{_methodName}<{_genericArgs}>({_methodSignature}).
@@ -122,7 +129,7 @@ namespace System.Diagnostics
                 StackTraceMetadataCallbacks stackTraceCallbacks = RuntimeAugments.StackTraceCallbacksIfAvailable;
                 if (stackTraceCallbacks != null)
                 {
-                    _methodName = stackTraceCallbacks.TryGetMethodStackFrameInfo(methodStartAddress, _nativeOffset, needFileInfo, out _methodOwningType, out _methodGenericArgs, out _methodSignature, out _isStackTraceHidden, out _fileName, out _lineNumber);
+                    _methodName = stackTraceCallbacks.TryGetMethodStackFrameInfo(methodStartAddress, _nativeOffset, needFileInfo, out _methodOwningType, out _methodGenericArgs, out _methodSignature, out _isStackTraceHidden, out _isAsync, out _fileName, out _lineNumber);
                 }
 
                 if (_methodName == null)
@@ -203,6 +210,27 @@ namespace System.Diagnostics
         }
 
         /// <summary>
+        /// Returns true if this frame represents the async dispatch boundary
+        /// between user async frames and internal dispatch machinery.
+        /// Uses address comparison against the cached DispatchContinuations method address.
+        /// </summary>
+        internal bool IsAsyncDispatchBoundary()
+        {
+            if (!_isStackTraceHidden || _ipAddress == IntPtr.Zero)
+                return false;
+
+            IntPtr methodStartAddress = _ipAddress - _nativeOffset;
+            StackTraceMetadataCallbacks callbacks = RuntimeAugments.StackTraceCallbacksIfAvailable;
+            return callbacks is not null && callbacks.IsAsyncDispatchBoundaryMethod(methodStartAddress);
+        }
+
+        /// <summary>
+        /// Returns true if this frame represents a runtime async (v2) method or a
+        /// compiler-generated async state machine MoveNext method.
+        /// </summary>
+        internal bool IsAsync => _isAsync;
+
+        /// <summary>
         /// Builds a representation of the stack frame for use in the stack trace.
         /// </summary>
         internal void AppendToStackTrace(StringBuilder builder)
@@ -230,7 +258,7 @@ namespace System.Diagnostics
                     builder.AppendLine();
                 }
             }
-            if (_isLastFrameFromForeignExceptionStackTrace)
+            if (_isLastFrameFromForeignExceptionStackTrace && !_isAsync)
             {
                 // Passing default for Exception_EndStackTraceFromPreviousThrow in case SR.UsingResourceKeys is set.
                 builder.AppendLine(SR.UsingResourceKeys() ?

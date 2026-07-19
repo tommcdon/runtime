@@ -235,6 +235,18 @@ namespace System
             get => new StackTrace(true).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
         }
 
+        /// <summary>
+        /// Gets the current stack trace with runtime async (v2) continuation
+        /// stitching. The resulting trace shows the logical async call chain:
+        /// continuation frames from suspended callers are spliced in and
+        /// non-async infrastructure frames are hidden.
+        /// </summary>
+        public static string AsyncStackTrace
+        {
+            [MethodImpl(MethodImplOptions.NoInlining)] // Prevent inlining from affecting where the stacktrace starts
+            get => new StackTrace(skipFrames: 0, fNeedFileInfo: true, fIncludeAsyncContinuationFrames: true).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
+        }
+
         private static int s_systemPageSize;
 
         public static int SystemPageSize

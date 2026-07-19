@@ -52,6 +52,22 @@ namespace System.Diagnostics
         }
 
         /// <summary>
+        /// Constructs a stack trace from the current location, optionally with runtime async
+        /// (v2) continuation stitching. When <paramref name="fIncludeAsyncContinuationFrames"/>
+        /// is true, continuation frames from suspended async callers are spliced into the trace
+        /// and non-async infrastructure frames below the async boundary are hidden, producing a
+        /// logical async call chain. On runtimes that do not support runtime async, the flag has
+        /// no effect and a normal current-thread trace is produced.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public StackTrace(int skipFrames, bool fNeedFileInfo, bool fIncludeAsyncContinuationFrames)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(skipFrames);
+
+            InitializeForCurrentThread(skipFrames + METHODS_TO_SKIP, fNeedFileInfo, fIncludeAsyncContinuationFrames);
+        }
+
+        /// <summary>
         /// Constructs a stack trace from the current location, in a caller's
         /// frame
         /// </summary>

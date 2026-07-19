@@ -16,6 +16,13 @@ using Internal.Runtime;
 
 namespace System.Runtime.CompilerServices
 {
+    // Non-generic marker interface for RuntimeAsyncTask<T> to allow
+    // stack trace code to identify RAT instances without knowing T.
+    internal interface IRuntimeAsyncTask
+    {
+        Continuation? GetContinuationStateForStackTrace();
+    }
+
     [Flags]
     // Keep in sync with CORINFO_CONTINUATION_FLAGS
     internal enum ContinuationFlags
@@ -733,7 +740,7 @@ namespace System.Runtime.CompilerServices
 
         // Represents execution of a chain of suspended and resuming runtime
         // async functions.
-        private sealed class RuntimeAsyncTask<T> : Task<T>
+        private sealed class RuntimeAsyncTask<T> : Task<T>, IRuntimeAsyncTask
         {
             public RuntimeAsyncTask()
             {
@@ -769,6 +776,11 @@ namespace System.Runtime.CompilerServices
             {
                 Debug.Assert(m_stateObject == null);
                 m_stateObject = value;
+            }
+
+            Continuation? IRuntimeAsyncTask.GetContinuationStateForStackTrace()
+            {
+                return m_stateObject as Continuation;
             }
 
             internal unsafe bool HandleSuspended(ref RuntimeAsyncAwaitState state)
@@ -936,6 +948,7 @@ namespace System.Runtime.CompilerServices
                 AsyncDispatcherInfo asyncDispatcherInfo;
                 asyncDispatcherInfo.Next = refDispatcherInfo;
                 asyncDispatcherInfo.NextContinuation = MoveContinuationState();
+                asyncDispatcherInfo.CurrentTask = this;
                 refDispatcherInfo = &asyncDispatcherInfo;
 
                 while (true)
@@ -1247,6 +1260,182 @@ namespace System.Runtime.CompilerServices
                 Debug.Assert(state is RuntimeAsyncTask<T>);
                 ((RuntimeAsyncTask<T>)state).DispatchContinuations();
             };
+        }
+
+        /// <summary>
+        /// Walk the task waiter chain starting from the given task and collect
+        /// DiagnosticIP values from waiter RuntimeAsyncTask continuation chains.
+        /// This handles the case where a sync method sits between two v2 async
+        /// methods (e.g. OuterAsync → SyncBridge → InnerAsync), creating separate
+        /// RuntimeAsyncTasks linked via Task.m_continuationObject.
+        /// </summary>
+        internal static unsafe void CollectWaiterChainIPs(Task? currentTask, ref IntPtr[] buffer, ref int count)
+        {
+            const int MaxWaiterDepth = 20;
+            int depth = 0;
+
+            while (currentTask is not null && depth < MaxWaiterDepth)
+            {
+                object? contObj = currentTask.ContinuationObjectForStackTrace;
+                if (contObj is null || Task.IsContinuationCompletionSentinel(contObj))
+                    break;
+
+                IRuntimeAsyncTask? waiter = FindRATWaiter(contObj);
+                if (waiter is null)
+                    break;
+
+                Continuation? chain = waiter.GetContinuationStateForStackTrace();
+                if (chain is null)
+                    break;
+
+                // Collect DiagnosticIPs from the waiter's continuation chain.
+                Continuation? cont = chain;
+                while (cont is not null)
+                {
+                    if (cont.ResumeInfo is not null && cont.ResumeInfo->DiagnosticIP is not null)
+                    {
+                        if (count == buffer.Length)
+                            Array.Resize(ref buffer, buffer.Length * 2);
+
+                        buffer[count++] = (IntPtr)cont.ResumeInfo->DiagnosticIP;
+                    }
+                    cont = cont.Next;
+                }
+
+                // Advance to the waiter task and look for its waiter in turn.
+                currentTask = waiter as Task;
+                depth++;
+            }
+        }
+
+        /// <summary>
+        /// Given a m_continuationObject value, find a RuntimeAsyncTask waiter.
+        /// Handles direct RAT, Delegate wrapping RAT, TaskContinuation subclasses
+        /// (e.g. SynchronizationContextAwaitTaskContinuation) that wrap an Action
+        /// delegate whose _target is a RAT, and List&lt;object&gt; collections.
+        /// </summary>
+        private static IRuntimeAsyncTask? FindRATWaiter(object contObj)
+        {
+            // Try direct unwrap first.
+            IRuntimeAsyncTask? rat = UnwrapToRAT(contObj);
+            if (rat is not null)
+                return rat;
+
+            // Try List<object>: scan elements for exactly one RAT (unambiguous).
+            if (contObj is System.Collections.IList list)
+            {
+                IRuntimeAsyncTask? found = null;
+                int ratCount = 0;
+                for (int i = 0; i < list.Count && ratCount <= 1; i++)
+                {
+                    object? elem = list[i];
+                    if (elem is null)
+                        continue;
+
+                    IRuntimeAsyncTask? unwrapped = UnwrapToRAT(elem);
+                    if (unwrapped is not null)
+                    {
+                        found = unwrapped;
+                        ratCount++;
+                    }
+                }
+
+                if (ratCount == 1)
+                    return found;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Given a single object, try to resolve it to a RuntimeAsyncTask.
+        /// Handles direct RAT reference, RuntimeAsyncTaskContinuation (which
+        /// directly holds a RuntimeAsyncTask field), Delegate wrapping RAT (_target),
+        /// and TaskContinuation subclasses whose inherited m_action field
+        /// is a delegate wrapping RAT.
+        /// </summary>
+        private static IRuntimeAsyncTask? UnwrapToRAT(object obj)
+        {
+            // Direct RuntimeAsyncTask reference.
+            if (obj is IRuntimeAsyncTask rat)
+                return rat;
+
+            // RuntimeAsyncTaskContinuation: directly holds the waiter's RuntimeAsyncTask.
+            if (obj is RuntimeAsyncTaskContinuation rtc)
+                return rtc.RuntimeAsyncTask as IRuntimeAsyncTask;
+
+            // Delegate: check _target.
+            if (obj is Delegate del)
+                return UnwrapDelegateToRAT(del);
+
+            // TaskContinuation subclasses (e.g. SynchronizationContextAwaitTaskContinuation):
+            // check if any field is a delegate wrapping a RAT.
+            if (obj is TaskContinuation)
+            {
+                // AwaitTaskContinuation.m_action is protected, but we can
+                // check if it's an AwaitTaskContinuation and access m_action
+                // via the internal accessor pattern below.
+                if (obj is AwaitTaskContinuation awaitCont)
+                {
+                    Action? action = awaitCont.UnsafeGetAction();
+                    if (action is not null)
+                        return UnwrapDelegateToRAT(action);
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Given a delegate, try to resolve its _target to a RuntimeAsyncTask.
+        /// If _target is not a RAT, follows v1 state machine chain
+        /// (state machine → Task field → m_continuationObject) to find the next RAT.
+        /// </summary>
+        private static IRuntimeAsyncTask? UnwrapDelegateToRAT(Delegate del)
+        {
+            object? target = del.Target;
+            if (target is null)
+                return null;
+
+            if (target is IRuntimeAsyncTask rat)
+                return rat;
+
+            // Not a RAT — might be a v1 async state machine box (which IS a Task).
+            // Follow its m_continuationObject chain to find the next RAT.
+            object? current = target;
+            for (int v1Depth = 0; v1Depth < 5 && current is not null; v1Depth++)
+            {
+                // v1 state machine boxes extend Task<TResult>, so check if current is a Task.
+                if (current is Task task)
+                {
+                    object? nextContObj = task.ContinuationObjectForStackTrace;
+                    if (nextContObj is null || Task.IsContinuationCompletionSentinel(nextContObj))
+                        break;
+
+                    if (nextContObj is IRuntimeAsyncTask nextRat)
+                        return nextRat;
+
+                    if (nextContObj is Delegate nextDel)
+                    {
+                        object? nextTarget = nextDel.Target;
+                        if (nextTarget is IRuntimeAsyncTask targetRat)
+                            return targetRat;
+
+                        // Delegate wraps another v1 state machine — continue.
+                        if (nextTarget is not null)
+                        {
+                            current = nextTarget;
+                            continue;
+                        }
+                    }
+
+                    break;
+                }
+
+                break;
+            }
+
+            return null;
         }
 
         private static void InstrumentedFinalizeRuntimeAsyncTask<T>(RuntimeAsyncTask<T> task, ref RuntimeAsyncAwaitState state, AsyncInstrumentation.Flags flags)
