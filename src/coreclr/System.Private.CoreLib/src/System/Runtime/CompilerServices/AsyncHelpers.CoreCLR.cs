@@ -909,10 +909,9 @@ namespace System.Runtime.CompilerServices
             // emits each frame's edge when that frame suspends; on the cold first cross-process request
             // the outer (Main-side) frames suspend BEFORE the request activity exists, so their edges are
             // emitted with GUID_NULL and dropped by activity-bucketing consumers. Once a deeper frame
-            // later suspends WITH the activity established, walk UP the task-continuation graph
-            // (RuntimeAsyncTaskContinuation.RuntimeAsyncTask, and across the RA->traditional boundary to
-            // the awaiting state-machine box) and re-emit those real-id edges carrying the activity, so the
-            // consumer's ladder reaches Main.
+            // later suspends WITH the activity established, walk UP the RuntimeAsync portion of the
+            // task-continuation graph and re-emit those real-id edges carrying the activity. Emit the edge
+            // to the first traditional async task, then stop because TaskAwaiter already emits its outer edges.
             private unsafe void EmitActivityLadder(TplEventSource log)
             {
                 Guid act = System.Diagnostics.Tracing.EventSource.CurrentThreadActivityId;
@@ -923,10 +922,8 @@ namespace System.Runtime.CompilerServices
 
                 int schedId = m_taskScheduler != null ? m_taskScheduler.Id : TaskScheduler.Default.Id;
 
-                // Walk UP the task-continuation-object graph (as the debugger / traditional async does)
-                // from this RAT toward the initiating user method, re-emitting each outer->inner RAT await
-                // edge with the now-established activity. This back-fills the Main-ward connective edges
-                // that were originally emitted cold (GUID_NULL) and dropped by activity-bucketing consumers.
+                // Walk UP the RuntimeAsync task-continuation graph, re-emitting each outer->inner await edge
+                // with the now-established activity. Emit the traditional async boundary edge, then stop.
                 //
                 // This runs only while the async debugger is reconstructing stacks (gated by the caller on
                 // AsyncDebugger flags), so it carries no per-frame amortization state: re-emitting a frame's
@@ -934,42 +931,48 @@ namespace System.Runtime.CompilerServices
                 // to an activity-bucketing consumer, and the RAT stays free of any always-on back-fill field.
                 //
                 // Termination is guaranteed without allocation. In a valid state the chain is acyclic and
-                // ends at the root state-machine box (no continuation) or a fan-in node (which our unwrap
-                // does not follow). Floyd's tortoise-and-hare bounds any cycle a torn concurrent read of a
-                // continuation field could momentarily expose, so a corrupt graph cannot spin here forever.
+                // ends at the traditional async boundary or a fan-in node. Floyd's tortoise-and-hare bounds
+                // any cycle a torn concurrent read of a continuation field could momentarily expose, so a
+                // corrupt graph cannot spin here forever.
                 Task inner = this;
                 Task tortoise = this;
                 bool advanceTortoise = false;
                 while (true)
                 {
-                    Task? outer = NextOuter(inner);
+                    Task? outer = NextOuter(inner, out bool outerIsRuntimeAsync);
                     if (outer == null || ReferenceEquals(outer, inner))
                         break;
 
                     log.TaskWaitBegin(schedId, outer.Id, inner.Id, TplEventSource.TaskWaitBehavior.Asynchronous, outer.Id);
+                    if (!outerIsRuntimeAsync)
+                        break;
+
                     inner = outer;
 
                     if (advanceTortoise)
                     {
-                        tortoise = NextOuter(tortoise) ?? tortoise;
+                        Task? nextTortoise = NextOuter(tortoise, out bool nextTortoiseIsRuntimeAsync);
+                        if (nextTortoiseIsRuntimeAsync && nextTortoise != null)
+                            tortoise = nextTortoise;
                         if (ReferenceEquals(tortoise, inner))
                             break;                       // cycle detected (corrupt/torn continuation graph)
                     }
                     advanceTortoise = !advanceTortoise;
                 }
 
-                // Map a frame to its awaiting (Main-ward) outer task by unwrapping the continuation object,
-                // handling the same shapes the debugger / traditional async walk understands.
-                static Task? NextOuter(Task frame)
+                // Map a frame to its awaiting outer task and identify whether the walk should continue.
+                static Task? NextOuter(Task frame, out bool outerIsRuntimeAsync)
                 {
                     object? contObj = frame.DiagnosticsContinuationObject;
                     if (contObj is RuntimeAsyncTaskContinuation rtc && rtc.RuntimeAsyncTask is Task raOuter)
+                    {
+                        outerIsRuntimeAsync = true;
                         return raOuter;                  // RA frame: outer runtime-async task
+                    }
+                    outerIsRuntimeAsync = false;
                     if (contObj is Task tOuter)
                         return tOuter;                   // traditional async state-machine box (e.g. Main)
                     if (contObj is Action actOuter)
-                        // Unwrap ContinuationWrapper/Action to the awaiting state-machine box (the same path
-                        // the debugger uses). This bridges the RA->traditional boundary up to Main.
                         return AsyncMethodBuilderCore.TryGetStateMachineBox(actOuter) as Task;
                     return null;
                 }
