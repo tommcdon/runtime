@@ -27,6 +27,8 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
 
     private readonly Target _target;
     private readonly IDacDbiInterface? _legacy;
+    private ComObject? _dataTargetComObject;
+    private ComObject? _legacyComObject;
 
     // IStringHolder is a native C++ abstract class (not COM) with a single virtual method:
     //   virtual HRESULT AssignCopy(const WCHAR* psz) = 0;
@@ -59,16 +61,57 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
         return mainProfInterface != TargetPointer.Null || notificationCount > 0;
     }
 
-    public DacDbiImpl(Target target, object? legacyObj)
+    public DacDbiImpl(
+        Target target,
+        object? legacyObj,
+        ComObject? dataTargetComObject = null,
+        ComObject? legacyComObject = null)
     {
         _target = target;
         _legacy = legacyObj as IDacDbiInterface;
+        _dataTargetComObject = dataTargetComObject;
+        _legacyComObject = legacyComObject;
     }
 
     public int FlushCache()
     {
         _target.Flush(FlushScope.All);
         return _legacy is not null ? _legacy.FlushCache() : HResults.S_OK;
+    }
+
+    public int Destroy(nint* ppLegacyCleanup)
+    {
+        if (ppLegacyCleanup == null)
+            return HResults.E_POINTER;
+
+        *ppLegacyCleanup = 0;
+        nint legacyCleanup = 0;
+        try
+        {
+            if (_legacyComObject is not null &&
+                !System.Runtime.InteropServices.ComWrappers.TryGetComInstance(_legacyComObject, out legacyCleanup))
+            {
+                return HResults.E_FAIL;
+            }
+
+            _dataTargetComObject?.FinalRelease();
+            _dataTargetComObject = null;
+            _legacyComObject?.FinalRelease();
+            _legacyComObject = null;
+
+            *ppLegacyCleanup = legacyCleanup;
+            legacyCleanup = 0;
+            return HResults.S_OK;
+        }
+        catch (System.Exception ex)
+        {
+            return ex.HResult < 0 ? ex.HResult : HResults.E_FAIL;
+        }
+        finally
+        {
+            if (legacyCleanup != 0)
+                Marshal.Release(legacyCleanup);
+        }
     }
 
     public int DacSetTargetConsistencyChecks(Interop.BOOL fEnableAsserts)

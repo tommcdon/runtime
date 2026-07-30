@@ -85,6 +85,21 @@ public unsafe class DacDbiImplTests
         Assert.Equal(System.HResults.S_OK, dacDbi.DacSetTargetConsistencyChecks(Interop.BOOL.FALSE));
     }
 
+    [Fact]
+    public void Destroy_Standalone_IsIdempotent()
+    {
+        MockTarget.Architecture architecture = new() { IsLittleEndian = true, Is64Bit = true };
+        TestPlaceholderTarget target = new TestPlaceholderTarget.Builder(architecture).Build();
+        DacDbiImpl dacDbi = new(target, legacyObj: null);
+        nint legacyCleanup = -1;
+
+        Assert.Equal(System.HResults.S_OK, dacDbi.Destroy(&legacyCleanup));
+        Assert.Equal(0, legacyCleanup);
+        legacyCleanup = -1;
+        Assert.Equal(System.HResults.S_OK, dacDbi.Destroy(&legacyCleanup));
+        Assert.Equal(0, legacyCleanup);
+    }
+
     [Theory]
     [ClassData(typeof(MockTarget.StdArch))]
     public void SetCompilerFlags_BothFlagsSet_EncCapable(MockTarget.Architecture arch)
