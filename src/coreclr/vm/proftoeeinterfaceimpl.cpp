@@ -3772,6 +3772,17 @@ HRESULT ProfToEEInterfaceImpl::GetClassIDInfo2(ClassID classId,
     }
 
     //
+    // Runtime Async introduces dynamically-created Continuation MethodTables that have no
+    // backing metadata (no TypeDef token). Reject them up front, consistent with GetClassLayout,
+    // rather than returning a nil TypeDef token that a profiler cannot use.
+    // See https://github.com/dotnet/runtime/issues/120800.
+    //
+    if (typeHandle.IsContinuationWithoutMetadata())
+    {
+        return CORPROF_E_DATAINCOMPLETE;
+    }
+
+    //
     // Fill in the basic information
     //
     if (pParentClassId != NULL)
@@ -4735,6 +4746,14 @@ HRESULT ProfToEEInterfaceImpl::GetClassIDInfo(ClassID classId,
     else
     {
         TypeHandle th = TypeHandle::FromPtr((void *)classId);
+
+        // Runtime Async continuation MethodTables have no backing metadata (no TypeDef token).
+        // Reject them up front, consistent with GetClassLayout / GetClassIDInfo2, rather than
+        // handing back a nil TypeDef token. See https://github.com/dotnet/runtime/issues/120800.
+        if (th.IsContinuationWithoutMetadata())
+        {
+            return CORPROF_E_DATAINCOMPLETE;
+        }
 
         if (!th.IsTypeDesc() && !th.IsArray())
         {
