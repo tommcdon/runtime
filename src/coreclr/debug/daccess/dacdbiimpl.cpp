@@ -7223,33 +7223,6 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::ParseContinuation(
     return S_OK;
 }
 
-HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetContinuationExecutionContext(
-    CORDB_ADDRESS continuationAddress,
-    OUT CORDB_ADDRESS* pExecutionContextAddress)
-{
-    DD_ENTER_MAY_THROW
-
-    if (pExecutionContextAddress == NULL)
-        return E_INVALIDARG;
-
-    *pExecutionContextAddress = 0;
-
-    PTR_ContinuationObject continuation =
-        PTR_ContinuationObject(CORDB_ADDRESS_TO_TADDR(continuationAddress));
-    PTR_OBJECTREF executionContextStorage = continuation->GetExecutionContextObjectStorageOrNull();
-    if (executionContextStorage == NULL)
-        return S_OK;
-
-    OBJECTREF executionContext = *executionContextStorage;
-    if (executionContext != NULL)
-    {
-        *pExecutionContextAddress =
-            static_cast<CORDB_ADDRESS>(dac_cast<TADDR>(OBJECTREFToObject(executionContext)));
-    }
-
-    return S_OK;
-}
-
 // Allocator to pass to the debug-info-stores...
 static BYTE* DebugInfoStoreNew(void * pData, size_t cBytes)
 {

@@ -2954,7 +2954,6 @@ class CordbProcess :
     public ICorDebugProcess7,
     public ICorDebugProcess8,
     public ICorDebugProcess12,
-    public ICorDebugProcess13,
     public IDacDbiInterface::IAllocator,
     public IDacDbiInterface::IMetaDataLookup,
     public IProcessShimHooks
@@ -3170,13 +3169,6 @@ public:
     // ICorDebugProcess12
     //-----------------------------------------------------------
     COM_METHOD GetAsyncStack(CORDB_ADDRESS continuationAddress, ICorDebugStackWalk **ppStackWalk);
-
-    //-----------------------------------------------------------
-    // ICorDebugProcess13
-    //-----------------------------------------------------------
-    COM_METHOD GetContinuationExecutionContext(
-        CORDB_ADDRESS continuationAddress,
-        CORDB_ADDRESS *pExecutionContextAddress);
 
     //-----------------------------------------------------------
     // Methods not exposed via a COM interface.

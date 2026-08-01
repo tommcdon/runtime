@@ -3332,19 +3332,6 @@ interface ICorDebugProcess12 : IUnknown
     HRESULT GetAsyncStack([in] CORDB_ADDRESS continuationAddress, [out] ICorDebugStackWalk** ppStackWalk);
 }
 
-[
-    object,
-    local,
-    uuid(88ABEFDC-5968-4BC2-BFB3-86C17D831A64),
-    pointer_default(unique)
-]
-interface ICorDebugProcess13 : IUnknown
-{
-    HRESULT GetContinuationExecutionContext(
-        [in] CORDB_ADDRESS continuationAddress,
-        [out] CORDB_ADDRESS* pExecutionContextAddress);
-}
-
 // Event types MODULE_LOADED and MODULE_UNLOADED implement this interface
 [
     object,
