@@ -2179,6 +2179,10 @@ public:
         OUT CORDB_ADDRESS* pNextContinuation,
         OUT UINT32* pState) = 0;
 
+    virtual HRESULT STDMETHODCALLTYPE GetContinuationExecutionContext(
+        CORDB_ADDRESS continuationAddress,
+        OUT CORDB_ADDRESS* pExecutionContextAddress) = 0;
+
     // Callback invoked once per async local enumerated by EnumerateAsyncLocals.
     // The callback must not throw. Implementations typically push the value into an
     // accumulator stashed in pUserData (see CallbackAccumulator<AsyncLocalData>).

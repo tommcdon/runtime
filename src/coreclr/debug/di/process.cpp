@@ -2000,6 +2000,10 @@ HRESULT CordbProcess::QueryInterface(REFIID id, void **pInterface)
     {
         *pInterface = static_cast<ICorDebugProcess12*>(this);
     }
+    else if (id == IID_ICorDebugProcess13)
+    {
+        *pInterface = static_cast<ICorDebugProcess13*>(this);
+    }
     else if (id == IID_IDacDbiAllocator)
     {
         *pInterface = static_cast<IDacDbiInterface::IAllocator*>(this);
@@ -2422,6 +2426,56 @@ COM_METHOD CordbProcess::GetAsyncStack(CORDB_ADDRESS continuationAddress, ICorDe
 
         RSInitHolder<CordbAsyncStackWalk> pAsyncStackWalk(new CordbAsyncStackWalk(this, continuationAddress));
         pAsyncStackWalk.TransferOwnershipExternal(ppStackWalk);
+    }
+    EX_CATCH_HRESULT(hr);
+
+    return hr;
+}
+
+//-----------------------------------------------------------
+// ICorDebugProcess13
+//-----------------------------------------------------------
+COM_METHOD CordbProcess::GetContinuationExecutionContext(
+    CORDB_ADDRESS continuationAddress,
+    CORDB_ADDRESS *pExecutionContextAddress)
+{
+    VALIDATE_POINTER_TO_OBJECT(pExecutionContextAddress, CORDB_ADDRESS *);
+    FAIL_IF_NEUTERED(this);
+    HRESULT hr = S_OK;
+    *pExecutionContextAddress = 0;
+
+    PUBLIC_API_ENTRY(this);
+    RSLockHolder stopGoLock(GetProcess()->GetStopGoLock());
+    RSLockHolder procLock(GetProcess()->GetProcessLock());
+
+    EX_TRY
+    {
+        BOOL validObj;
+        IfFailThrow(m_pDacPrimitives->IsValidObject(continuationAddress, &validObj));
+        if (!validObj)
+        {
+            ThrowHR(E_INVALIDARG);
+        }
+
+        CORDB_ADDRESS diagnosticIP;
+        CORDB_ADDRESS nextContinuation;
+        UINT32 state;
+        if (FAILED(m_pDacPrimitives->ParseContinuation(
+            continuationAddress,
+            &diagnosticIP,
+            &nextContinuation,
+            &state)))
+        {
+            ThrowHR(E_INVALIDARG);
+        }
+
+        IfFailThrow(m_pDacPrimitives->GetContinuationExecutionContext(
+            continuationAddress,
+            pExecutionContextAddress));
+        if (*pExecutionContextAddress == 0)
+        {
+            hr = S_FALSE;
+        }
     }
     EX_CATCH_HRESULT(hr);
 

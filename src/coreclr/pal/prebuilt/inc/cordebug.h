@@ -380,6 +380,13 @@ typedef interface ICorDebugProcess12 ICorDebugProcess12;
 #endif  /* __ICorDebugProcess12_FWD_DEFINED__ */
 
 
+#ifndef __ICorDebugProcess13_FWD_DEFINED__
+#define __ICorDebugProcess13_FWD_DEFINED__
+typedef interface ICorDebugProcess13 ICorDebugProcess13;
+
+#endif  /* __ICorDebugProcess13_FWD_DEFINED__ */
+
+
 #ifndef __ICorDebugModuleDebugEvent_FWD_DEFINED__
 #define __ICorDebugModuleDebugEvent_FWD_DEFINED__
 typedef interface ICorDebugModuleDebugEvent ICorDebugModuleDebugEvent;
@@ -8419,6 +8426,92 @@ EXTERN_C const IID IID_ICorDebugProcess12;
 
 
 #endif  /* __ICorDebugProcess12_INTERFACE_DEFINED__ */
+
+
+#ifndef __ICorDebugProcess13_INTERFACE_DEFINED__
+#define __ICorDebugProcess13_INTERFACE_DEFINED__
+
+/* interface ICorDebugProcess13 */
+/* [unique][uuid][local][object] */
+
+
+EXTERN_C const IID IID_ICorDebugProcess13;
+#if defined(__cplusplus) && !defined(CINTERFACE)
+
+    MIDL_INTERFACE("88abefdc-5968-4bc2-bfb3-86c17d831a64")
+    ICorDebugProcess13 : public IUnknown
+    {
+    public:
+        virtual HRESULT STDMETHODCALLTYPE GetContinuationExecutionContext(
+            /* [in] */ CORDB_ADDRESS continuationAddress,
+            /* [out] */ CORDB_ADDRESS *pExecutionContextAddress) = 0;
+
+    };
+
+
+#else   /* C style interface */
+
+    typedef struct ICorDebugProcess13Vtbl
+    {
+        BEGIN_INTERFACE
+
+        DECLSPEC_XFGVIRT(IUnknown, QueryInterface)
+        HRESULT ( STDMETHODCALLTYPE *QueryInterface )(
+            ICorDebugProcess13 * This,
+            /* [in] */ REFIID riid,
+            /* [annotation][iid_is][out] */
+            _COM_Outptr_  void **ppvObject);
+
+        DECLSPEC_XFGVIRT(IUnknown, AddRef)
+        ULONG ( STDMETHODCALLTYPE *AddRef )(
+            ICorDebugProcess13 * This);
+
+        DECLSPEC_XFGVIRT(IUnknown, Release)
+        ULONG ( STDMETHODCALLTYPE *Release )(
+            ICorDebugProcess13 * This);
+
+        DECLSPEC_XFGVIRT(ICorDebugProcess13, GetContinuationExecutionContext)
+        HRESULT ( STDMETHODCALLTYPE *GetContinuationExecutionContext )(
+            ICorDebugProcess13 * This,
+            /* [in] */ CORDB_ADDRESS continuationAddress,
+            /* [out] */ CORDB_ADDRESS *pExecutionContextAddress);
+
+        END_INTERFACE
+    } ICorDebugProcess13Vtbl;
+
+    interface ICorDebugProcess13
+    {
+        CONST_VTBL struct ICorDebugProcess13Vtbl *lpVtbl;
+    };
+
+
+
+#ifdef COBJMACROS
+
+
+#define ICorDebugProcess13_QueryInterface(This,riid,ppvObject) \
+    ( (This)->lpVtbl -> QueryInterface(This,riid,ppvObject) )
+
+#define ICorDebugProcess13_AddRef(This) \
+    ( (This)->lpVtbl -> AddRef(This) )
+
+#define ICorDebugProcess13_Release(This) \
+    ( (This)->lpVtbl -> Release(This) )
+
+
+#define ICorDebugProcess13_GetContinuationExecutionContext(This,continuationAddress,pExecutionContextAddress) \
+    ( (This)->lpVtbl -> GetContinuationExecutionContext(This,continuationAddress,pExecutionContextAddress) )
+
+#endif /* COBJMACROS */
+
+
+#endif  /* C style interface */
+
+
+
+
+#endif  /* __ICorDebugProcess13_INTERFACE_DEFINED__ */
+
 
 
 
@@ -20280,5 +20373,4 @@ EmbeddedCLRCorDebug;
 #endif
 
 #endif
-
 
