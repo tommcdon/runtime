@@ -550,11 +550,13 @@ namespace System.Threading.Tasks.Tests
                 const int TraceOperationEndId = 15;
                 const int TraceSynchronousWorkBeginId = 17;
                 const int TraceSynchronousWorkEndId = 18;
+                const int TaskWaitBeginId = 10;
+                const int TaskWaitEndId = 11;
 
                 AttachDebugger();
 
-                var events = new ConcurrentQueue<EventWrittenEventArgs>();
-                using (var listener = new TestEventListener("System.Threading.Tasks.TplEventSource", EventLevel.Verbose))
+                ConcurrentQueue<EventWrittenEventArgs> events = new ConcurrentQueue<EventWrittenEventArgs>();
+                using (TestEventListener listener = new TestEventListener("System.Threading.Tasks.TplEventSource", EventLevel.Verbose))
                 {
                     listener.RunWithCallback(events.Enqueue, () =>
                     {
@@ -562,6 +564,56 @@ namespace System.Threading.Tasks.Tests
                         {
                             Func().GetAwaiter().GetResult();
                         }
+
+                        TaskCompletionSource tcs1 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                        TaskCompletionSource tcs2 = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                        int awaitedTaskId1 = tcs1.Task.Id;
+                        int awaitedTaskId2 = tcs2.Task.Id;
+                        Task runtimeAsyncTask = FuncThatWaitsTwice(tcs1, tcs2);
+
+                        Assert.True(SpinWait.SpinUntil(
+                            () => events.Any(e =>
+                                e.EventId == TaskWaitBeginId &&
+                                e.Payload![2] is int taskId &&
+                                taskId == awaitedTaskId1),
+                            TimeSpan.FromSeconds(5)));
+
+                        tcs1.SetResult();
+                        Assert.True(SpinWait.SpinUntil(
+                            () => events.Any(e =>
+                                e.EventId == TaskWaitEndId &&
+                                e.Payload![2] is int taskId &&
+                                taskId == awaitedTaskId1) &&
+                                events.Any(e =>
+                                    e.EventId == TaskWaitBeginId &&
+                                    e.Payload![2] is int taskId &&
+                                    taskId == awaitedTaskId2),
+                            TimeSpan.FromSeconds(5)));
+
+                        tcs2.SetResult();
+                        runtimeAsyncTask.GetAwaiter().GetResult();
+
+                        EventWrittenEventArgs begin1 = Assert.Single(events, e =>
+                            e.EventId == TaskWaitBeginId &&
+                            e.Payload![2] is int taskId &&
+                            taskId == awaitedTaskId1);
+                        EventWrittenEventArgs begin2 = Assert.Single(events, e =>
+                            e.EventId == TaskWaitBeginId &&
+                            e.Payload![2] is int taskId &&
+                            taskId == awaitedTaskId2);
+                        EventWrittenEventArgs end1 = Assert.Single(events, e =>
+                            e.EventId == TaskWaitEndId &&
+                            e.Payload![2] is int taskId &&
+                            taskId == awaitedTaskId1);
+                        EventWrittenEventArgs end2 = Assert.Single(events, e =>
+                            e.EventId == TaskWaitEndId &&
+                            e.Payload![2] is int taskId &&
+                            taskId == awaitedTaskId2);
+
+                        Assert.Equal(runtimeAsyncTask.Id, begin1.Payload![4]);
+                        Assert.Equal(runtimeAsyncTask.Id, begin2.Payload![4]);
+                        Assert.Equal(runtimeAsyncTask.Id, end1.Payload![1]);
+                        Assert.Equal(runtimeAsyncTask.Id, end2.Payload![1]);
                     });
                 }
 

@@ -13,6 +13,7 @@ namespace System.Runtime.CompilerServices
         internal Task? RuntimeAsyncTask;
         private delegate*<Task, ref byte, void> _getResult;
         internal object? ContinuationContext;
+        internal bool EmitTaskWaitEvents;
 
         public RuntimeAsyncTaskContinuation()
         {
@@ -118,12 +119,14 @@ namespace System.Runtime.CompilerServices
         {
             Task = task;
             _getResult = &GetResult;
+            EmitTaskWaitEvents = false;
         }
 
         public void Initialize<T>(Task<T> task)
         {
             Task = task;
             _getResult = &GetResult<T>;
+            EmitTaskWaitEvents = false;
         }
 
         private static void GetResult(Task task, ref byte result)
@@ -151,7 +154,21 @@ namespace System.Runtime.CompilerServices
 
             private static Continuation? ResumeTaskContinuation(Continuation cont, ref byte result)
             {
-                var taskCont = (RuntimeAsyncTaskContinuation)cont;
+                RuntimeAsyncTaskContinuation taskCont = (RuntimeAsyncTaskContinuation)cont;
+                Task? awaitedTask = taskCont.Task;
+                Task? runtimeAsyncTask = taskCont.RuntimeAsyncTask;
+                if (taskCont.EmitTaskWaitEvents)
+                {
+                    Debug.Assert(awaitedTask is not null);
+                    Debug.Assert(runtimeAsyncTask is not null);
+
+                    TplEventSource.Log.TaskWaitEnd(
+                        runtimeAsyncTask.m_taskScheduler is not null ? runtimeAsyncTask.m_taskScheduler.Id : TaskScheduler.Default.Id,
+                        runtimeAsyncTask.Id,
+                        awaitedTask.Id);
+                    taskCont.EmitTaskWaitEvents = false;
+                }
+
                 taskCont.Next = null;
                 taskCont.RuntimeAsyncTask = null;
                 taskCont.ContinuationContext = null;
