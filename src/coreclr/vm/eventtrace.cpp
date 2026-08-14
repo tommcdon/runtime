@@ -46,6 +46,47 @@
 #include "debugdebugger.h"
 
 #ifndef HOST_UNIX
+
+#include <stdio.h>
+
+namespace
+{
+    volatile LONG s_etwRundownDiagState = 0;
+    FILE* s_etwRundownDiagFile = nullptr;
+    LARGE_INTEGER s_etwRundownDiagFrequency = {};
+
+    FILE* GetEtwRundownDiagFile()
+    {
+        LONG state = VolatileLoad(&s_etwRundownDiagState);
+        if (state == 2)
+            return s_etwRundownDiagFile;
+
+        if (state == 0 && InterlockedCompareExchange(&s_etwRundownDiagState, 1, 0) == 0)
+        {
+            QueryPerformanceFrequency(&s_etwRundownDiagFrequency);
+
+            WCHAR path[MAX_PATH];
+            DWORD length = GetEnvironmentVariableW(W("DOTNET_EtwRundownDiagLog"), path, ARRAYSIZE(path));
+            if (length > 0 && length < ARRAYSIZE(path))
+                s_etwRundownDiagFile = _wfopen(path, W("a"));
+
+            InterlockedExchange(&s_etwRundownDiagState, 2);
+        }
+
+        return VolatileLoad(&s_etwRundownDiagState) == 2 ? s_etwRundownDiagFile : nullptr;
+    }
+
+    double EtwRundownDiagMilliseconds(const LARGE_INTEGER& start, const LARGE_INTEGER& end)
+    {
+        return static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0 /
+               static_cast<double>(s_etwRundownDiagFrequency.QuadPart);
+    }
+
+}
+
+#endif // HOST_UNIX
+
+#ifndef HOST_UNIX
 DOTNET_TRACE_CONTEXT MICROSOFT_WINDOWS_DOTNETRUNTIME_PROVIDER_DOTNET_Context = { &MICROSOFT_WINDOWS_DOTNETRUNTIME_PROVIDER_Context, MICROSOFT_WINDOWS_DOTNETRUNTIME_PROVIDER_EVENTPIPE_Context };
 DOTNET_TRACE_CONTEXT MICROSOFT_WINDOWS_DOTNETRUNTIME_PRIVATE_PROVIDER_DOTNET_Context = { &MICROSOFT_WINDOWS_DOTNETRUNTIME_PRIVATE_PROVIDER_Context, MICROSOFT_WINDOWS_DOTNETRUNTIME_PRIVATE_PROVIDER_EVENTPIPE_Context };
 DOTNET_TRACE_CONTEXT MICROSOFT_WINDOWS_DOTNETRUNTIME_RUNDOWN_PROVIDER_DOTNET_Context = { &MICROSOFT_WINDOWS_DOTNETRUNTIME_RUNDOWN_PROVIDER_Context, MICROSOFT_WINDOWS_DOTNETRUNTIME_RUNDOWN_PROVIDER_EVENTPIPE_Context };
@@ -4989,11 +5030,30 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
     MethodDescSet* pSentMethodDetailsSet = fSendRichDebugInfoEvent ? &sentMethodDetailsSet : NULL;
 
     CodeHeapIterator heapIterator = ExecutionManager::GetEEJitManager()->GetCodeHeapIterator(pLoaderAllocatorFilter);
+#ifndef HOST_UNIX
+    FILE* diagLog = GetEtwRundownDiagFile();
+    LARGE_INTEGER loopStart = {};
+    LARGE_INTEGER sampleStart = {};
+    LARGE_INTEGER now = {};
+    DWORD methodCount = 0;
+    DWORD sampledCount = 0;
+    double maxSampleMs = 0.0;
+    double totalSampleMs = 0.0;
+
+    if (diagLog != nullptr)
+        QueryPerformanceCounter(&loopStart);
+#endif
     while (heapIterator.Next())
     {
         MethodDesc * pMD = heapIterator.GetMethod();
         if (pMD == NULL)
             continue;
+
+#ifndef HOST_UNIX
+        bool sample = diagLog != nullptr && (methodCount % 1000) == 0;
+        if (sample)
+            QueryPerformanceCounter(&sampleStart);
+#endif
 
         PCODE codeStart = PINSTRToPCODE(heapIterator.GetMethodCode());
 
@@ -5086,7 +5146,39 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
                     &config);
             }
         }
+
+#ifndef HOST_UNIX
+        if (sample)
+        {
+            QueryPerformanceCounter(&now);
+            double sampleMs = EtwRundownDiagMilliseconds(sampleStart, now);
+            totalSampleMs += sampleMs;
+            sampledCount++;
+            if (sampleMs > maxSampleMs)
+                maxSampleMs = sampleMs;
+        }
+
+        methodCount++;
+#endif
     }
+
+#ifndef HOST_UNIX
+    if (diagLog != nullptr && methodCount > 0)
+    {
+        QueryPerformanceCounter(&now);
+        fprintf(
+            diagLog,
+            "RUNDOWN_STATS pid=%u tid=%u methods=%u totalMs=%.1f maxSampleMs=%.3f avgSampleMs=%.3f samples=%u\n",
+            GetCurrentProcessId(),
+            GetCurrentThreadId(),
+            methodCount,
+            EtwRundownDiagMilliseconds(loopStart, now),
+            maxSampleMs,
+            sampledCount > 0 ? totalSampleMs / sampledCount : 0.0,
+            sampledCount);
+        fflush(diagLog);
+    }
+#endif
 }
 
 /****************************************************************************/
@@ -5104,6 +5196,25 @@ VOID ETW::MethodLog::SendEventsForJitMethods(BOOL getCodeVersionIds, LoaderAlloc
 #if !defined(DACCESS_COMPILE)
     EX_TRY
     {
+#ifndef HOST_UNIX
+        FILE* diagLog = nullptr;
+        diagLog = GetEtwRundownDiagFile();
+        LARGE_INTEGER rundownStart = {};
+
+        if (diagLog != nullptr)
+        {
+            QueryPerformanceCounter(&rundownStart);
+            fprintf(
+                diagLog,
+                "RUNDOWN_BEGIN pid=%u tid=%u options=0x%x getCodeVersionIds=%u\n",
+                GetCurrentProcessId(),
+                GetCurrentThreadId(),
+                dwEventOptions,
+                getCodeVersionIds ? 1u : 0u);
+            fflush(diagLog);
+        }
+#endif
+
         // This is only called for JITted methods loading xor unloading
         BOOL fLoadOrDCStart = ((dwEventOptions & ETW::EnumerationLog::EnumerationStructs::JitMethodLoadOrDCStartAny) != 0);
         BOOL fUnloadOrDCEnd = ((dwEventOptions & ETW::EnumerationLog::EnumerationStructs::JitMethodUnloadOrDCEndAny) != 0);
@@ -5169,6 +5280,21 @@ VOID ETW::MethodLog::SendEventsForJitMethods(BOOL getCodeVersionIds, LoaderAlloc
                 fSendRichDebugInfoEvent,
                 FALSE);
         }
+
+#ifndef HOST_UNIX
+        if (diagLog != nullptr)
+        {
+            LARGE_INTEGER rundownEnd;
+            QueryPerformanceCounter(&rundownEnd);
+            fprintf(
+                diagLog,
+                "RUNDOWN_END pid=%u tid=%u totalMs=%.1f\n",
+                GetCurrentProcessId(),
+                GetCurrentThreadId(),
+                EtwRundownDiagMilliseconds(rundownStart, rundownEnd));
+            fflush(diagLog);
+        }
+#endif
     } EX_CATCH{} EX_END_CATCH
 #endif // !DACCESS_COMPILE
 }
