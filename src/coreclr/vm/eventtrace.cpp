@@ -5075,8 +5075,13 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
 #ifdef FEATURE_CODE_VERSIONING
         if (fGetCodeIds && pMD->IsVersionable())
         {
-            _ASSERTE(CodeVersionManager::IsLockOwnedByCurrentThread());
-            nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
+            // Prototype: keep the CVM lock scoped to the version lookup only.
+            // ETW event emission must not hold the lock that JIT helper resolution needs.
+            {
+                CodeVersionManager::LockHolder codeVersioningLockHolder;
+                nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
+            }
+
             if (nativeCodeVersion.IsNull())
             {
                 // The code version manager hasn't been updated with the jitted code
@@ -5256,7 +5261,6 @@ VOID ETW::MethodLog::SendEventsForJitMethods(BOOL getCodeVersionIds, LoaderAlloc
 #ifdef FEATURE_CODE_VERSIONING
         if (getCodeVersionIds)
         {
-            CodeVersionManager::LockHolder codeVersioningLockHolder;
             SendEventsForJitMethodsHelper(
                 pLoaderAllocatorFilter,
                 dwEventOptions,
