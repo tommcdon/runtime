@@ -82,6 +82,24 @@ namespace
                static_cast<double>(s_etwRundownDiagFrequency.QuadPart);
     }
 
+    void WriteEtwRundownDiagPrefix(FILE* file)
+    {
+        SYSTEMTIME localTime;
+        GetLocalTime(&localTime);
+        fprintf(
+            file,
+            "local=%04u-%02u-%02uT%02u:%02u:%02u.%03u pid=%u tid=%u ",
+            static_cast<unsigned>(localTime.wYear),
+            static_cast<unsigned>(localTime.wMonth),
+            static_cast<unsigned>(localTime.wDay),
+            static_cast<unsigned>(localTime.wHour),
+            static_cast<unsigned>(localTime.wMinute),
+            static_cast<unsigned>(localTime.wSecond),
+            static_cast<unsigned>(localTime.wMilliseconds),
+            GetCurrentProcessId(),
+            GetCurrentThreadId());
+    }
+
 }
 
 #endif // HOST_UNIX
@@ -2770,6 +2788,81 @@ extern "C"
         BOOL bEnabled =
             ((ControlCode == EVENT_CONTROL_CODE_ENABLE_PROVIDER) ||
              (ControlCode == EVENT_CONTROL_CODE_CAPTURE_STATE));
+
+#ifndef HOST_UNIX
+        if (FILE* diagLog = GetEtwRundownDiagFile())
+        {
+            const char* action = "ProviderStateChange";
+            if (ControlCode == EVENT_CONTROL_CODE_CAPTURE_STATE)
+            {
+                action = "CaptureState";
+            }
+            else if (bIsRundownTraceHandle && bEnabled)
+            {
+                bool startEnabled = ETW_TRACING_CATEGORY_ENABLED(
+                    MICROSOFT_WINDOWS_DOTNETRUNTIME_RUNDOWN_PROVIDER_DOTNET_Context,
+                    TRACE_LEVEL_INFORMATION,
+                    CLR_RUNDOWNSTART_KEYWORD);
+                bool endEnabled = ETW_TRACING_CATEGORY_ENABLED(
+                    MICROSOFT_WINDOWS_DOTNETRUNTIME_RUNDOWN_PROVIDER_DOTNET_Context,
+                    TRACE_LEVEL_INFORMATION,
+                    CLR_RUNDOWNEND_KEYWORD);
+
+                if (startEnabled && endEnabled)
+                    action = "StartAndEndRundown";
+                else if (startEnabled)
+                    action = "StartRundown";
+                else if (endEnabled)
+                    action = "EndRundown";
+            }
+
+            WriteEtwRundownDiagPrefix(diagLog);
+            if (SourceId != nullptr)
+            {
+                fprintf(
+                    diagLog,
+                    "ETW_CALLBACK provider=%u control=%u level=%u matchAny=0x%llx matchAll=0x%llx "
+                    "sourceId=%08lX-%04hX-%04hX-%02hX%02hX-%02hX%02hX%02hX%02hX%02hX%02hX "
+                    "filterType=%u filterSize=%lu action=%s\n",
+                    static_cast<unsigned>(providerIndex),
+                    static_cast<unsigned>(ControlCode),
+                    static_cast<unsigned>(Level),
+                    static_cast<unsigned long long>(MatchAnyKeyword),
+                    static_cast<unsigned long long>(MatchAllKeyword),
+                    SourceId->Data1,
+                    SourceId->Data2,
+                    SourceId->Data3,
+                    SourceId->Data4[0],
+                    SourceId->Data4[1],
+                    SourceId->Data4[2],
+                    SourceId->Data4[3],
+                    SourceId->Data4[4],
+                    SourceId->Data4[5],
+                    SourceId->Data4[6],
+                    SourceId->Data4[7],
+                    FilterData != nullptr ? FilterData->Type : 0,
+                    FilterData != nullptr ? FilterData->Size : 0,
+                    action);
+            }
+            else
+            {
+                fprintf(
+                    diagLog,
+                    "ETW_CALLBACK provider=%u control=%u level=%u matchAny=0x%llx matchAll=0x%llx "
+                    "sourceId=none filterType=%u filterSize=%lu action=%s\n",
+                    static_cast<unsigned>(providerIndex),
+                    static_cast<unsigned>(ControlCode),
+                    static_cast<unsigned>(Level),
+                    static_cast<unsigned long long>(MatchAnyKeyword),
+                    static_cast<unsigned long long>(MatchAllKeyword),
+                    FilterData != nullptr ? FilterData->Type : 0,
+                    FilterData != nullptr ? FilterData->Size : 0,
+                    action);
+            }
+            fflush(diagLog);
+        }
+#endif
+
         if(bEnabled)
         {
             if (bIsPrivateTraceHandle)
@@ -5166,11 +5259,10 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
     if (diagLog != nullptr && methodCount > 0)
     {
         QueryPerformanceCounter(&now);
+        WriteEtwRundownDiagPrefix(diagLog);
         fprintf(
             diagLog,
-            "RUNDOWN_STATS pid=%u tid=%u methods=%u totalMs=%.1f maxSampleMs=%.3f avgSampleMs=%.3f samples=%u\n",
-            GetCurrentProcessId(),
-            GetCurrentThreadId(),
+            "RUNDOWN_STATS methods=%u totalMs=%.1f maxSampleMs=%.3f avgSampleMs=%.3f samples=%u\n",
             methodCount,
             EtwRundownDiagMilliseconds(loopStart, now),
             maxSampleMs,
@@ -5204,11 +5296,10 @@ VOID ETW::MethodLog::SendEventsForJitMethods(BOOL getCodeVersionIds, LoaderAlloc
         if (diagLog != nullptr)
         {
             QueryPerformanceCounter(&rundownStart);
+            WriteEtwRundownDiagPrefix(diagLog);
             fprintf(
                 diagLog,
-                "RUNDOWN_BEGIN pid=%u tid=%u options=0x%x getCodeVersionIds=%u\n",
-                GetCurrentProcessId(),
-                GetCurrentThreadId(),
+                "RUNDOWN_BEGIN options=0x%x getCodeVersionIds=%u\n",
                 dwEventOptions,
                 getCodeVersionIds ? 1u : 0u);
             fflush(diagLog);
@@ -5286,11 +5377,10 @@ VOID ETW::MethodLog::SendEventsForJitMethods(BOOL getCodeVersionIds, LoaderAlloc
         {
             LARGE_INTEGER rundownEnd;
             QueryPerformanceCounter(&rundownEnd);
+            WriteEtwRundownDiagPrefix(diagLog);
             fprintf(
                 diagLog,
-                "RUNDOWN_END pid=%u tid=%u totalMs=%.1f\n",
-                GetCurrentProcessId(),
-                GetCurrentThreadId(),
+                "RUNDOWN_END totalMs=%.1f\n",
                 EtwRundownDiagMilliseconds(rundownStart, rundownEnd));
             fflush(diagLog);
         }
