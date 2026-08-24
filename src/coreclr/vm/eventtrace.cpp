@@ -5075,12 +5075,9 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
 #ifdef FEATURE_CODE_VERSIONING
         if (fGetCodeIds && pMD->IsVersionable())
         {
-            // Prototype: keep the CVM lock scoped to the version lookup only.
-            // ETW event emission must not hold the lock that JIT helper resolution needs.
-            {
-                CodeVersionManager::LockHolder codeVersioningLockHolder;
-                nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
-            }
+            // Rundown only reads published version-node data. Keep the CVM lock
+            // out of the ETW emission path so JIT helper resolution can proceed.
+            nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
 
             if (nativeCodeVersion.IsNull())
             {
