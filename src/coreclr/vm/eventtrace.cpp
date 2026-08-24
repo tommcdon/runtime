@@ -5015,7 +5015,6 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
 #ifdef FEATURE_CODE_VERSIONING
         if (fGetCodeIds && pMD->IsVersionable())
         {
-            _ASSERTE(CodeVersionManager::IsLockOwnedByCurrentThread());
             nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
             if (nativeCodeVersion.IsNull())
             {
@@ -5145,7 +5144,6 @@ VOID ETW::MethodLog::SendEventsForJitMethods(BOOL getCodeVersionIds, LoaderAlloc
 #ifdef FEATURE_CODE_VERSIONING
         if (getCodeVersionIds)
         {
-            CodeVersionManager::LockHolder codeVersioningLockHolder;
             SendEventsForJitMethodsHelper(
                 pLoaderAllocatorFilter,
                 dwEventOptions,
