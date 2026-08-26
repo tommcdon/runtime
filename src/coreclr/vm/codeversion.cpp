@@ -1470,7 +1470,14 @@ NativeCodeVersion CodeVersionManager::GetNativeCodeVersion(PTR_MethodDesc pMetho
     NativeCodeVersionCollection nativeCodeVersions = GetNativeCodeVersions(pMethod);
     for (NativeCodeVersionIterator cur = nativeCodeVersions.Begin(), end = nativeCodeVersions.End(); cur != end; cur++)
     {
+#ifndef DACCESS_COMPILE
+        PCODE nativeCode = cur->IsDefaultVersion()
+            ? pMethod->GetNativeCodeVolatile()
+            : cur->GetNativeCode();
+        if (nativeCode == codeStartAddress)
+#else
         if (cur->GetNativeCode() == codeStartAddress)
+#endif
         {
             return *cur;
         }

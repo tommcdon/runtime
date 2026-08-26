@@ -5018,8 +5018,8 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
             nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
             if (nativeCodeVersion.IsNull())
             {
-                // The code version manager hasn't been updated with the jitted code
-                if (codeStart != pMD->GetNativeCode())
+                // The code version state may be published concurrently with rundown.
+                if (codeStart != pMD->GetNativeCodeVolatile())
                 {
                     continue;
                 }
