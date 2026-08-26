@@ -4963,8 +4963,8 @@ VOID ETW::MethodLog::SendEventsForNgenMethods(Module *pModule, DWORD dwEventOpti
 #endif // FEATURE_READYTORUN
 }
 
-// Called be ETW::MethodLog::SendEventsForJitMethods
-// Sends the ETW events once our caller determines whether or not rejit locks can be acquired
+// Called by ETW::MethodLog::SendEventsForJitMethods
+// Sends the ETW events for methods in the selected code heaps.
 VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAllocatorFilter,
                                                    DWORD dwEventOptions,
                                                    BOOL fLoadOrDCStart,
@@ -5018,8 +5018,12 @@ VOID ETW::MethodLog::SendEventsForJitMethodsHelper(LoaderAllocator *pLoaderAlloc
             nativeCodeVersion = pMD->GetCodeVersionManager()->GetNativeCodeVersion(pMD, codeStart);
             if (nativeCodeVersion.IsNull())
             {
-                // The code version manager hasn't been updated with the jitted code
-                if (codeStart != pMD->GetNativeCode())
+                // The code version state may be published concurrently with rundown.
+                PCODE nativeCode = pMD->GetNativeCodeVolatile();
+                TADDR mappedNativeCode = nativeCode != (PCODE)NULL
+                    ? MethodAndStartAddressToEECodeInfoPointer(pMD, nativeCode)
+                    : (TADDR)NULL;
+                if (codeStart != mappedNativeCode)
                 {
                     continue;
                 }
