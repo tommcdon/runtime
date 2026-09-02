@@ -293,8 +293,7 @@ GenTree* Compiler::fgMorphExpandCast(GenTreeCast* tree)
         // Do we need to do it in two steps R -> I -> smallType?
         if (varTypeIsSmall(dstType))
         {
-            const bool useLegacySmallFpToIntConversion = JitConfig.JitUseLegacySmallFpToIntConversion().contains(
-                info.compMethodHnd, info.compClassHnd, &info.compMethodInfo->args);
+            const bool useLegacySmallFpToIntConversion = JitConfig.JitUseLegacySmallFpToIntConversion() != 0;
 
             // For non-overflow casts of float/double -> smallType, clamp the float
             // source to [smallMin, smallMax] before the R -> int conversion so that
