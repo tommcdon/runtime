@@ -1642,6 +1642,8 @@ private:
 //  should continue until a range of IL code is exited.
 class DebuggerStepper : public DebuggerController
 {
+    friend class InterpreterStepHelper;
+
 public:
     DebuggerStepper(Thread *thread,
                     CorDebugUnmappedStop rgfMappingStop,
@@ -1681,6 +1683,8 @@ protected:
     bool TrapStep(ControllerStackInfo *info, bool in);
 #ifdef FEATURE_INTERPRETER
     bool TrapInterpreterCodeStep(ControllerStackInfo *info, bool in, DebuggerJitInfo *ji);
+    void RequestDeoptimization(MethodDesc* pTargetMethod);
+    bool ProcessPendingDeoptimization();
 #endif
 
     // @todo - must remove that fForceTraditional flag. Need a way for a JMC stepper
@@ -1817,6 +1821,11 @@ protected:
     // Counter of FuncEvalEnter/Exits - used to determine if we're entering / exiting
     // a func-eval.
     int                     m_cFuncEvalNesting;
+
+#ifdef FEATURE_INTERPRETER
+    MethodDesc*             m_pendingDeoptimizationTarget;
+    bool                    m_interpreterStepInBackstop;
+#endif
 
     // To freeze a stepper, we disable all triggers. We have to remember that so that
     // we can reenable them on Thaw.

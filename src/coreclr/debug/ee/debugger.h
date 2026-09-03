@@ -2224,10 +2224,9 @@ public:
 
 #ifndef DACCESS_COMPILE
 #ifdef FEATURE_CODE_VERSIONING
-private:
+public:
     HRESULT DeoptimizeMethodHelper(Module* pModule, mdMethodDef methodDef);
 
-public:
 #endif // FEATURE_CODE_VERSIONING
     HRESULT DeoptimizeMethod(Module* pModule, mdMethodDef methodDef);
 #endif //DACCESS_COMPILE

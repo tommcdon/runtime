@@ -17,6 +17,7 @@
 
 // Forward declaration
 struct InterpMethod;
+class MethodDesc;
 
 // InterpreterWalker decodes interpreter bytecode to determine control flow
 // for stepping operations. Similar to NativeWalker but for interpreter opcodes.
@@ -46,6 +47,9 @@ public:
 
     // Get the next IP - branch/call target address (for step-into)
     const int32_t* GetNextIP() const { return m_nextIP; }
+
+    // Get the statically resolved target for call and call.nullcheck.
+    MethodDesc* GetDirectCallTarget() const;
 
     // Get switch case count (only valid for INTOP_SWITCH)
     int32_t GetSwitchCaseCount() const { return m_switchCaseCount; }

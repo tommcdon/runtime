@@ -81,6 +81,16 @@ const int32_t* InterpreterWalker::GetBranchTarget() const
     return m_ip + m_ip[instrLen - 1];
 }
 
+MethodDesc* InterpreterWalker::GetDirectCallTarget() const
+{
+    if ((m_opcode != INTOP_CALL && m_opcode != INTOP_CALL_NULLCHECK) || m_pInterpMethod == NULL)
+        return NULL;
+
+    _ASSERTE(m_pInterpMethod->CheckIntegrity());
+    int32_t methodSlot = m_ip[3];
+    return (MethodDesc*)m_pInterpMethod->pDataItems[methodSlot];
+}
+
 void InterpreterWalker::Decode()
 {
     LOG((LF_CORDB, LL_INFO10000, "InterpreterWalker::Decode: ip=%p\n", m_ip));

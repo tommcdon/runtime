@@ -5289,7 +5289,7 @@ void InterpreterStepHelper::AddInterpreterPatch(const int32_t* pIP)
 {
     CONTRACTL
     {
-        NOTHROW;
+        THROWS;
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
@@ -5316,7 +5316,7 @@ InterpreterStepHelper::StepSetupResult InterpreterStepHelper::SetupStep(
 {
     CONTRACTL
     {
-        NOTHROW;
+        THROWS;
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
@@ -5357,6 +5357,22 @@ InterpreterStepHelper::StepSetupResult InterpreterStepHelper::SetupStep(
 
             if (stepIn)
             {
+#if defined(FEATURE_CODE_VERSIONING) && defined(FEATURE_READYTORUN)
+                MethodDesc* targetMethod = interpWalker.GetDirectCallTarget();
+                PCODE targetCode = targetMethod != NULL ? targetMethod->GetNativeCode() : (PCODE)NULL;
+                bool targetIsReadyToRun =
+                    targetCode != (PCODE)NULL &&
+                    ExecutionManager::IsReadyToRunCode(targetCode);
+                LOG((LF_CORDB, LL_INFO10000,
+                    "ISH::SS: Direct call target %p isReadyToRun=%d\n",
+                    targetMethod,
+                    targetIsReadyToRun));
+                if (targetIsReadyToRun)
+                {
+                    m_pStepper->RequestDeoptimization(targetMethod);
+                }
+#endif // FEATURE_CODE_VERSIONING && FEATURE_READYTORUN
+
                 // For all call types (direct and indirect), use the JMC backstop.
                 // The interpreter's INTOP_DEBUG_METHOD_ENTER fires for all interpreted
                 // methods (not just JMC), so the backstop reliably catches entry into
@@ -5516,11 +5532,66 @@ DebuggerStepper::DebuggerStepper(Thread *thread,
     m_fpException(LEAF_MOST_FRAME),
     m_fdException(0),
     m_cFuncEvalNesting(0)
+#ifdef FEATURE_INTERPRETER
+    , m_pendingDeoptimizationTarget(NULL)
+    , m_interpreterStepInBackstop(false)
+#endif
 {
 #ifdef _DEBUG
     m_fReadyToSend = false;
 #endif
 }
+
+#ifdef FEATURE_INTERPRETER
+void DebuggerStepper::RequestDeoptimization(MethodDesc* pTargetMethod)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    _ASSERTE(pTargetMethod != NULL);
+    m_pendingDeoptimizationTarget = pTargetMethod;
+}
+
+bool DebuggerStepper::ProcessPendingDeoptimization()
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_TRIGGERS;
+    }
+    CONTRACTL_END;
+
+    MethodDesc* targetMethod = m_pendingDeoptimizationTarget;
+    if (targetMethod == NULL)
+        return false;
+
+    m_pendingDeoptimizationTarget = NULL;
+
+    HRESULT hr = S_OK;
+    BOOL isDeoptimized = FALSE;
+    EX_TRY
+    {
+        GCX_PREEMP();
+        hr = g_pDebugger->IsMethodDeoptimized(
+            targetMethod->GetModule(),
+            targetMethod->GetMemberDef(),
+            &isDeoptimized);
+
+        if (SUCCEEDED(hr) && !isDeoptimized)
+        {
+            hr = g_pDebugger->DeoptimizeMethodHelper(
+                targetMethod->GetModule(),
+                targetMethod->GetMemberDef());
+        }
+    }
+    EX_CATCH_HRESULT(hr);
+
+    LOG((LF_CORDB, LL_INFO10000,
+        "DS::PPD: Direct R2R call target %p deoptimization result=0x%x\n",
+        targetMethod,
+        hr));
+    return true;
+}
+#endif // FEATURE_INTERPRETER
 
 DebuggerStepper::~DebuggerStepper()
 {
@@ -6225,6 +6296,7 @@ bool DebuggerStepper::TrapInterpreterCodeStep(ControllerStackInfo *info, bool in
             // TODO: This will not work correctly if the call target is JIT/R2R compiled code.
             // https://github.com/dotnet/runtime/issues/124547
             LOG((LF_CORDB,LL_INFO10000,"DS::TICS: Step-in call, enabling MethodEnter backstop\n"));
+            m_interpreterStepInBackstop = true;
             EnableJMCBackStop(info->m_activeFrame.md);
             return true;
 
@@ -7554,6 +7626,14 @@ bool DebuggerStepper::Step(FramePointer fp, bool in,
 
     EnableUnwind(m_fp);
 
+#ifdef FEATURE_INTERPRETER
+    if (m_pendingDeoptimizationTarget != NULL)
+    {
+        CONTRACT_VIOLATION(GCViolation);
+        ProcessPendingDeoptimization();
+    }
+#endif
+
     return true;
 }
 
@@ -7876,6 +7956,10 @@ TP_RESULT DebuggerStepper::TriggerPatch(DebuggerControllerPatch *patch,
             TrapStepNext(&info);
 
         EnableUnwind(m_fp);
+#ifdef FEATURE_INTERPRETER
+        if (m_pendingDeoptimizationTarget != NULL)
+            return TPR_TRIGGER;
+#endif
         return TPR_IGNORE;
     }
     else
@@ -7973,7 +8057,13 @@ void DebuggerStepper::TriggerMethodEnter(Thread * thread,
 #if defined(TARGET_ARM64) && defined(__APPLE__)
     LOG((LF_CORDB, LL_INFO10000, "DebuggerStepper::TriggerMethodEnter: Consistency_check_MSGF not needed because we skip setting breakpoints in certain patches on arm64-macOS\n"));
 #else
+#ifdef FEATURE_INTERPRETER
+    bool stepStartedInInterpreter = m_interpreterStepInBackstop;
+#else
+    bool stepStartedInInterpreter = false;
+#endif
     if ((m_StepInStartMethod != pDesc) &&
+        !stepStartedInInterpreter &&
         (!m_StepInStartMethod->IsLCGMethod()))
     {
         // Since normal step-in should stop us at the prolog, and TME is after the prolog,
@@ -8352,6 +8442,15 @@ bool DebuggerStepper::SendEvent(Thread *thread, bool fIpChanged)
         SENDEVENT_CONTRACT_ITEMS;
     }
     CONTRACTL_END;
+
+#ifdef FEATURE_INTERPRETER
+    if (m_pendingDeoptimizationTarget != NULL)
+    {
+        CONTRACT_VIOLATION(GCViolation);
+        ProcessPendingDeoptimization();
+        return false;
+    }
+#endif
 
     // We practically should never have a step interrupted by SetIp.
     // We'll still go ahead and send the Step-complete event because we've already
