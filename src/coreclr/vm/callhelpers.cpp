@@ -201,6 +201,18 @@ void* DispatchCallSimple(
     return *(void **)(&callDescrData.returnValue);
 }
 
+#ifdef DEBUGGING_SUPPORTED
+void PrepareForUnmanagedCallersOnlyCall(MethodDesc* pMethodDesc)
+{
+    STANDARD_VM_CONTRACT;
+
+    if (!CORDebuggerAttached())
+        return;
+
+    g_pDebugInterface->PrepareForUnmanagedCallersOnlyCall(pMethodDesc);
+}
+#endif // DEBUGGING_SUPPORTED
+
 #ifdef CALLDESCR_REGTYPEMAP
 //*******************************************************************************
 void FillInRegTypeMap(int argOffset, CorElementType typ, BYTE * pMap)

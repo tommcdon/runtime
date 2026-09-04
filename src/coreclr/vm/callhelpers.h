@@ -363,6 +363,10 @@ enum EEToManagedCallFlags
 
 void CallDefaultConstructor(OBJECTREF ref);
 
+#ifdef DEBUGGING_SUPPORTED
+void PrepareForUnmanagedCallersOnlyCall(MethodDesc* pMethodDesc);
+#endif // DEBUGGING_SUPPORTED
+
 //
 // Helper types for calling managed methods marked with [UnmanagedCallersOnly]
 // from native code.
@@ -435,6 +439,10 @@ public:
 
         {
             GCX_PREEMP();
+
+#ifdef DEBUGGING_SUPPORTED
+            PrepareForUnmanagedCallersOnlyCall(_pMD);
+#endif // DEBUGGING_SUPPORTED
 
             PCODE methodEntry = _pMD->GetSingleCallableAddrOfCodeForUnmanagedCallersOnly();
             _ASSERTE(methodEntry != (PCODE)NULL);

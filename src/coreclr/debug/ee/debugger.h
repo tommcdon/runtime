@@ -1903,6 +1903,7 @@ public:
 
     void ThreadCreated(Thread* pRuntimeThread);
     void ThreadStarted(Thread* pRuntimeThread);
+    BOOL PrepareForUnmanagedCallersOnlyCall(MethodDesc* pMethodDesc);
     void SendCreateThreadAtInterpreterEntry(Thread* pRuntimeThread);
     void DetachThread(Thread *pRuntimeThread);
 

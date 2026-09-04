@@ -8913,6 +8913,48 @@ void Debugger::ThreadStarted(Thread* pRuntimeThread)
     }
 }
 
+BOOL Debugger::PrepareForUnmanagedCallersOnlyCall(MethodDesc* pMethodDesc)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_PREEMPTIVE;
+    }
+    CONTRACTL_END;
+
+#if defined(FEATURE_INTERPRETER) && defined(FEATURE_CODE_VERSIONING) && defined(FEATURE_READYTORUN)
+    Thread* pThread = GetThreadNULLOk();
+    if (pThread == NULL ||
+        pThread->HasThreadStateNC(Thread::TSNC_DebuggerThreadStartSent) ||
+        !CORDebuggerTraceCall() ||
+        !g_pConfig->EnableInterpreter() ||
+        !pMethodDesc->GetModule()->IsReadyToRun())
+    {
+        return FALSE;
+    }
+
+    HRESULT hr = S_OK;
+    BOOL isDeoptimized = FALSE;
+    EX_TRY
+    {
+        hr = IsMethodDeoptimized(pMethodDesc->GetModule(), pMethodDesc->GetMemberDef(), &isDeoptimized);
+        if (SUCCEEDED(hr) && !isDeoptimized)
+        {
+            hr = DeoptimizeMethodHelper(pMethodDesc->GetModule(), pMethodDesc->GetMemberDef());
+        }
+    }
+    EX_CATCH_HRESULT(hr);
+    LOG((LF_CORDB, LL_INFO10000,
+        "D::PFUCOC: Thread-start target %p in R2R module deoptimization result=0x%x\n",
+        pMethodDesc,
+        hr));
+    return SUCCEEDED(hr);
+#else
+    return FALSE;
+#endif
+}
+
 
 void Debugger::SendCreateThreadAtInterpreterEntry(Thread *pRuntimeThread)
 {

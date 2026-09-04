@@ -59,6 +59,8 @@ public:
 
     virtual void ThreadStarted(Thread* pRuntimeThread) = 0;
 
+    virtual BOOL PrepareForUnmanagedCallersOnlyCall(MethodDesc* pMethodDesc) = 0;
+
     virtual void DetachThread(Thread *pRuntimeThread) = 0;
 
     virtual void AppDomainCreated(AppDomain * pAppDomain) = 0;
