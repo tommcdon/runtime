@@ -4306,7 +4306,7 @@ void Thread::SetLastThrownObjectHandle(OBJECTHANDLE h)
     {
         NOTHROW;
         GC_NOTRIGGER;
-        MODE_ANY;
+        MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
