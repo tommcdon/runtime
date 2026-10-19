@@ -178,6 +178,7 @@ CONFIG_DWORD_INFO(INTERNAL_DbgOOBinFEEE, W("DbgOOBinFEEE"), 0, "Allows forcing o
 CONFIG_DWORD_INFO(INTERNAL_DbgPingInterop, W("DbgPingInterop"), 0, "Allows checking for deadlocks in interop debugging")
 CONFIG_DWORD_INFO(INTERNAL_DbgRace, W("DbgRace"), 0, "Allows pausing for native debug events to get hijicked")
 CONFIG_DWORD_INFO(INTERNAL_DbgShortcutCanary, W("DbgShortcutCanary"), 0, "Allows a way to force canary to fail to be able to test failure paths")
+CONFIG_DWORD_INFO(INTERNAL_DbgSimulateR2RBreakpointFailure, W("DbgSimulateR2RBreakpointFailure"), 0, "Silently skips native debugger patch writes into ReadyToRun code for testing")
 CONFIG_DWORD_INFO(INTERNAL_DbgSkipMEOnStep, W("DbgSkipMEOnStep"), 0, "Turns off MethodEnter checks")
 CONFIG_DWORD_INFO(INTERNAL_DbgTransportFaultInject, W("DbgTransportFaultInject"), 0, "Allows injecting a fault for testing the debug transport")
 CONFIG_DWORD_INFO(INTERNAL_DbgTransportLog, W("DbgTransportLog"), 0 /* LE_None */, "Turns on logging for the debug transport")

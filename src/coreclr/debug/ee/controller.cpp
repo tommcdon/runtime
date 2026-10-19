@@ -653,6 +653,9 @@ DebuggerControllerPatch *DebuggerPatchTable::AddPatchForMethodDef(DebuggerContro
 #ifdef FEATURE_INTERPRETER
     patch->m_interpActivated = false;
 #endif // FEATURE_INTERPRETER
+#ifdef _DEBUG
+    patch->m_simulatedR2RPatch = false;
+#endif // _DEBUG
     patch->controller = controller;
     patch->key.module = module;
     patch->key.md = md;
@@ -762,6 +765,9 @@ DebuggerControllerPatch *DebuggerPatchTable::AddPatchForAddress(DebuggerControll
 #ifdef FEATURE_INTERPRETER
     patch->m_interpActivated = false;
 #endif // FEATURE_INTERPRETER
+#ifdef _DEBUG
+    patch->m_simulatedR2RPatch = false;
+#endif // _DEBUG
     patch->controller = controller;
 
     if (fd == NULL)
@@ -1473,6 +1479,21 @@ bool DebuggerController::ApplyPatch(DebuggerControllerPatch *patch)
 
     if (patch->IsNativePatch())
     {
+#ifdef _DEBUG
+        if (patch->controller->GetDCType() == DEBUGGER_CONTROLLER_BREAKPOINT &&
+            g_pConfig->EnableInterpreter() &&
+            CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateR2RBreakpointFailure) != 0 &&
+            ExecutionManager::IsReadyToRunCode(dac_cast<PCODE>(patch->address)))
+        {
+            patch->m_simulatedR2RPatch = true;
+            LOG((LF_CORDB, LL_INFO10000,
+                "DC::ApplyPatch: Simulating silent R2R breakpoint failure at %p, patchId:0x%zx\n",
+                patch->address,
+                patch->patchId));
+            return true;
+        }
+#endif // _DEBUG
+
         if (patch->fSaveOpcode)
         {
             // We only used SaveOpcode for when we've moved code, so
@@ -1595,6 +1616,14 @@ bool DebuggerController::UnapplyPatch(DebuggerControllerPatch *patch)
 
     if (patch->IsNativePatch())
     {
+#ifdef _DEBUG
+        if (patch->m_simulatedR2RPatch)
+        {
+            patch->m_simulatedR2RPatch = false;
+            return true;
+        }
+#endif // _DEBUG
+
         if (patch->fSaveOpcode)
         {
             // We're doing this for MoveCode, and we don't want to
@@ -1922,6 +1951,9 @@ void DebuggerController::DeactivatePatch(DebuggerControllerPatch *patch)
 #ifdef FEATURE_INTERPRETER
             patch->m_interpActivated = false;
 #endif // FEATURE_INTERPRETER
+#ifdef _DEBUG
+            patch->m_simulatedR2RPatch = false;
+#endif // _DEBUG
             break;
         }
     }

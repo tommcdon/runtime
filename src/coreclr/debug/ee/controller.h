@@ -439,6 +439,9 @@ struct DebuggerControllerPatch
     // https://github.com/dotnet/runtime/issues/124499
     bool                    m_interpActivated;
 #endif // FEATURE_INTERPRETER
+#ifdef _DEBUG
+    bool                    m_simulatedR2RPatch;
+#endif // _DEBUG
 private:
     DebuggerPatchKind       kind;
     int                     refCount;
@@ -538,6 +541,14 @@ public:
 
     bool IsActivated()
     {
+#ifdef _DEBUG
+        if (m_simulatedR2RPatch)
+        {
+            _ASSERTE(address != NULL);
+            return TRUE;
+        }
+#endif // _DEBUG
+
 #ifdef FEATURE_INTERPRETER
         // m_interpActivated is set only by InterpreterExecutionControl::ApplyPatch
         if (m_interpActivated)
