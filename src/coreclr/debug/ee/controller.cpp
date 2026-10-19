@@ -1479,21 +1479,6 @@ bool DebuggerController::ApplyPatch(DebuggerControllerPatch *patch)
 
     if (patch->IsNativePatch())
     {
-#ifdef _DEBUG
-        if (patch->controller->GetDCType() == DEBUGGER_CONTROLLER_BREAKPOINT &&
-            g_pConfig->EnableInterpreter() &&
-            CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateR2RBreakpointFailure) != 0 &&
-            ExecutionManager::IsReadyToRunCode(dac_cast<PCODE>(patch->address)))
-        {
-            patch->m_simulatedR2RPatch = true;
-            LOG((LF_CORDB, LL_INFO10000,
-                "DC::ApplyPatch: Simulating silent R2R breakpoint failure at %p, patchId:0x%zx\n",
-                patch->address,
-                patch->patchId));
-            return true;
-        }
-#endif // _DEBUG
-
         if (patch->fSaveOpcode)
         {
             // We only used SaveOpcode for when we've moved code, so
@@ -1865,6 +1850,21 @@ BOOL DebuggerController::CheckGetPatchedOpcode(CORDB_ADDRESS_TYPE *address,
 
     LOG((LF_CORDB|LF_ENC,LL_INFO1000,"DC::ActivatePatch: patchId:0x%zx\n", patch->patchId));
     patch->LogInstance();
+
+#ifdef _DEBUG
+    if (patch->controller->GetDCType() == DEBUGGER_CONTROLLER_BREAKPOINT &&
+        g_pConfig->EnableInterpreter() &&
+        CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateR2RBreakpointFailure) != 0 &&
+        ExecutionManager::IsReadyToRunCode(dac_cast<PCODE>(patch->address)))
+    {
+        patch->m_simulatedR2RPatch = true;
+        LOG((LF_CORDB, LL_INFO10000,
+            "DC::ActivatePatch: Simulating silent R2R breakpoint failure at %p, patchId:0x%zx\n",
+            patch->address,
+            patch->patchId));
+        return true;
+    }
+#endif // _DEBUG
 
 #ifndef FEATURE_DYNAMIC_CODE_COMPILED
     if (ExecutionManager::IsReadyToRunCode(dac_cast<PCODE>(patch->address)))
@@ -5305,7 +5305,7 @@ void InterpreterStepHelper::AddInterpreterPatch(const int32_t* pIP)
 {
     CONTRACTL
     {
-        NOTHROW;
+        THROWS;
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
@@ -5332,7 +5332,7 @@ InterpreterStepHelper::StepSetupResult InterpreterStepHelper::SetupStep(
 {
     CONTRACTL
     {
-        NOTHROW;
+        THROWS;
         GC_NOTRIGGER;
     }
     CONTRACTL_END;
