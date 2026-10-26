@@ -1852,6 +1852,18 @@ BOOL DebuggerController::CheckGetPatchedOpcode(CORDB_ADDRESS_TYPE *address,
     patch->LogInstance();
 
 #ifdef _DEBUG
+    if (g_pConfig->EnableInterpreter() &&
+        CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateIOSR2RRestrictions) != 0 &&
+        ExecutionManager::IsReadyToRunCode(dac_cast<PCODE>(patch->address)))
+    {
+        LOG((LF_CORDB, LL_INFO10000,
+            "DC::ActivatePatch: Simulating iOS rejection of R2R debugger patch at %p, patchId:0x%zx, controllerType:%u\n",
+            patch->address,
+            patch->patchId,
+            static_cast<unsigned>(patch->controller->GetDCType())));
+        return false;
+    }
+
     if (patch->controller->GetDCType() == DEBUGGER_CONTROLLER_BREAKPOINT &&
         g_pConfig->EnableInterpreter() &&
         CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateR2RBreakpointFailure) != 0 &&
@@ -2211,6 +2223,23 @@ BOOL DebuggerController::AddILPatch(AppDomain * pAppDomain, Module *module,
                     // a shame to completely fail just because on instantiation is missing debug info: e.g. just because
                     // one component hasn't been prejitted with debugging information.</REVISIT_TODO>
                     fOk = (AddBindAndActivateILReplicaPatch(primary, dji) || fOk);
+
+#ifdef FEATURE_CODE_VERSIONING
+                    if (!fOk)
+                    {
+                        CodeVersionManager *pCodeVersionManager = pMD->GetCodeVersionManager();
+                        CodeVersionManager::LockHolder codeVersioningLockHolder;
+                        ILCodeVersion activeILVersion = pCodeVersionManager->GetActiveILCodeVersion(pMD);
+                        NativeCodeVersion activeNativeVersion = activeILVersion.GetActiveNativeCodeVersion(pMD);
+                        if (pMD->IsEligibleForInterpreterCodeVersioning() &&
+                            activeILVersion.IsDeoptimized() &&
+                            (activeNativeVersion.IsNull() || activeNativeVersion.GetNativeCode() == (PCODE)NULL))
+                        {
+                            // The primary patch will bind when interpreter code is generated for the active version.
+                            fOk = TRUE;
+                        }
+                    }
+#endif
                 }
                 it.Next();
             }
@@ -6860,24 +6889,31 @@ void DebuggerStepper::TrapStepOut(ControllerStackInfo *info, bool fForceTraditio
             {
                 SIZE_T reloffset = dji->m_codeRegionInfo.AddressToOffset((BYTE*)resumePC);
 
-                AddBindAndActivateNativeManagedPatch(info->GetReturnFrame().md,
-                    dji,
-                    reloffset,
-                    info->GetReturnFrame().fp,
-                    NULL);
+                if (AddBindAndActivateNativeManagedPatch(info->GetReturnFrame().md,
+                        dji,
+                        reloffset,
+                        info->GetReturnFrame().fp,
+                        NULL))
+                {
+                    LOG((LF_CORDB, LL_INFO10000,
+                         "DS::TSO:normally managed code AddPatch"
+                         " in %s::%s, offset 0x%zx, m_reason=%d\n",
+                         info->GetReturnFrame().md->m_pszDebugClassName,
+                         info->GetReturnFrame().md->m_pszDebugMethodName,
+                         reloffset, m_reason));
+
+                    // Do not set m_reason to STEP_RETURN here.  Logically, the funclet and the parent method are the
+                    // same method, so we should not "return" to the parent method.
+                    LOG((LF_CORDB, LL_INFO10000,"DS::TSO: done\n"));
+
+                    return;
+                }
 
                 LOG((LF_CORDB, LL_INFO10000,
-                     "DS::TSO:normally managed code AddPatch"
-                     " in %s::%s, offset 0x%zx, m_reason=%d\n",
+                     "DS::TSO: unable to activate return patch in %s::%s at offset 0x%zx; continuing stack walk\n",
                      info->GetReturnFrame().md->m_pszDebugClassName,
                      info->GetReturnFrame().md->m_pszDebugMethodName,
-                     reloffset, m_reason));
-
-                // Do not set m_reason to STEP_RETURN here.  Logically, the funclet and the parent method are the
-                // same method, so we should not "return" to the parent method.
-                LOG((LF_CORDB, LL_INFO10000,"DS::TSO: done\n"));
-
-                return;
+                     reloffset));
             }
             else
             {
@@ -6981,11 +7017,19 @@ void DebuggerStepper::TrapStepOut(ControllerStackInfo *info, bool fForceTraditio
                 // returned from the unmanaged function that had been called.
                 ULONG reloffset = info->m_activeFrame.relOffset;
 
-                AddBindAndActivateNativeManagedPatch(info->m_activeFrame.md,
-                    dji,
-                    reloffset,
-                    info->GetReturnFrame().fp,
-                    NULL);
+                if (!AddBindAndActivateNativeManagedPatch(info->m_activeFrame.md,
+                        dji,
+                        reloffset,
+                        info->GetReturnFrame().fp,
+                        NULL))
+                {
+                    LOG((LF_CORDB, LL_INFO10000,
+                         "DS::TSO: unable to activate return patch in %s::%s at offset 0x%x; continuing stack walk\n",
+                         info->m_activeFrame.md->m_pszDebugClassName,
+                         info->m_activeFrame.md->m_pszDebugMethodName,
+                         reloffset));
+                    continue;
+                }
 
                 LOG((LF_CORDB, LL_INFO10000,
                      "DS::TSO:normally managed code AddPatch"

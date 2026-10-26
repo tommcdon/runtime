@@ -312,7 +312,32 @@ PCODE MethodDesc::PrepareInitialCode(CallerGCMode callerGCMode)
     STANDARD_VM_CONTRACT;
     PrepareCodeConfig config(NativeCodeVersion(this), TRUE, TRUE);
     config.SetCallerGCMode(callerGCMode);
-    return PrepareCode(&config);
+    PCODE code = PrepareCode(&config);
+
+#ifdef _DEBUG
+    if (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateIOSR2RRestrictions) != 0 &&
+        strcmp(GetName(), "NotifyDebuggerOfWaitCompletion") == 0 &&
+        strcmp(GetMethodTable()->GetDebugClassName(), "System.Threading.Tasks.Task") == 0)
+    {
+        bool isReadyToRun = code != (PCODE)NULL && ExecutionManager::IsReadyToRunCode(code);
+
+        LOG((LF_CORDB | LF_TIEREDCOMPILATION, LL_INFO100,
+            "MethodDesc::PrepareInitialCode iOS simulation verified initial code for "
+            "System.Threading.Tasks.Task::NotifyDebuggerOfWaitCompletion: address=%p, isReadyToRun=%s\n",
+            code,
+            isReadyToRun ? "true" : "false"));
+
+        _ASSERTE(isReadyToRun);
+        if (!isReadyToRun)
+        {
+            return (PCODE)NULL;
+        }
+
+        return code;
+    }
+#endif // _DEBUG
+
+    return code;
 }
 
 static bool MayUsePrecompiledILStub()

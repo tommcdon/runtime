@@ -40,4 +40,12 @@
       <PublishReadyToRunCrossgen2ExtraArgs>$(PublishReadyToRunCrossgen2ExtraArgs);--embed-pgo-data</PublishReadyToRunCrossgen2ExtraArgs>
     </PropertyGroup>
   </Target>
+
+  <Target Name="AddInterpreterReadyToRunOptions"
+          BeforeTargets="ResolveReadyToRunCompilers"
+          Condition="'$(PublishReadyToRun)' == 'true' and '$(FeatureInterpreter)' == 'true' and '$(FeatureDynamicCodeCompiled)' == 'false' and ('$(TargetArchitecture)' == 'x64' or '$(TargetArchitecture)' == 'x86')">
+    <PropertyGroup>
+      <PublishReadyToRunCrossgen2ExtraArgs>$(PublishReadyToRunCrossgen2ExtraArgs);--target-allows-runtime-code-generation:false;--instruction-set:-avx2,-avx;--max-vectort-bitwidth:128</PublishReadyToRunCrossgen2ExtraArgs>
+    </PropertyGroup>
+  </Target>
 </Project>

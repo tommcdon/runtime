@@ -183,6 +183,10 @@
 
       <_CoreLibCrossgen2ExtraArgs Include="--target-allows-runtime-code-generation:$(FeatureDynamicCodeCompiled)"
         Condition="'$(FeatureDynamicCodeCompiled)' != ''" />
+      <_CoreLibCrossgen2ExtraArgs Include="--instruction-set:-avx2,-avx"
+        Condition="'$(FeatureInterpreter)' == 'true' and '$(FeatureDynamicCodeCompiled)' == 'false' and ('$(TargetArchitecture)' == 'x64' or '$(TargetArchitecture)' == 'x86')" />
+      <_CoreLibCrossgen2ExtraArgs Include="--max-vectort-bitwidth:128"
+        Condition="'$(FeatureInterpreter)' == 'true' and '$(FeatureDynamicCodeCompiled)' == 'false' and ('$(TargetArchitecture)' == 'x64' or '$(TargetArchitecture)' == 'x86')" />
       <!-- crossgen2 assumes WebAssembly runtimes are single-threaded. Multithreaded WebAssembly runtimes lay out [ThreadStatic] fields as thread statics. -->
       <_CoreLibCrossgen2ExtraArgs Include="--target-single-threaded:false"
         Condition="'$(WasmEnableThreads)' == 'true'" />

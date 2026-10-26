@@ -11958,6 +11958,32 @@ HRESULT Debugger::DeoptimizeMethodHelper(Module* pModule, mdMethodDef methodDef)
     LOG((LF_TIEREDCOMPILATION, LL_INFO100, "Debugger::DeoptimizeMethodHelper Module=%p Method=0x%08x\n",
         pModule, methodDef));
 
+#ifdef _DEBUG
+    if (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSimulateIOSR2RRestrictions) != 0)
+    {
+        MethodDesc* pMethod = pModule->LookupMethodDef(methodDef);
+        if (pMethod != nullptr &&
+            strcmp(pMethod->GetName(), "NotifyDebuggerOfWaitCompletion") == 0 &&
+            strcmp(pMethod->GetMethodTable()->GetDebugClassName(), "System.Threading.Tasks.Task") == 0)
+        {
+            PCODE activeCode = pMethod->GetNativeCodeVolatile();
+            bool isReadyToRun = activeCode != (PCODE)NULL && ExecutionManager::IsReadyToRunCode(activeCode);
+
+            LOG((LF_CORDB | LF_TIEREDCOMPILATION, LL_INFO100,
+                "Debugger::DeoptimizeMethodHelper iOS simulation verified active code for "
+                "System.Threading.Tasks.Task::NotifyDebuggerOfWaitCompletion: address=%p, isReadyToRun=%s\n",
+                activeCode,
+                isReadyToRun ? "true" : "false"));
+
+            _ASSERTE(isReadyToRun);
+            if (!isReadyToRun)
+            {
+                return E_FAIL;
+            }
+        }
+    }
+#endif // _DEBUG
+
     {
         CodeVersionManager::LockHolder codeVersioningLockHolder;
         if (FAILED(hr = pCodeVersionManager->AddILCodeVersion(pModule, methodDef, &ilCodeVersion, TRUE, CodeVersionSource::kReJIT)))

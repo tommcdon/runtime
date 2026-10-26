@@ -3539,6 +3539,15 @@ void Module::RunEagerFixupsUnlocked()
             SIZE_T fixupIndex = fixupCell - (SIZE_T *)tableBase;
             if (!LoadDynamicInfoEntry(this, pSignatures[fixupIndex], fixupCell))
             {
+                BYTE fixupKind = *(PBYTE)pNativeImage->GetRvaData(pSignatures[fixupIndex]);
+                LOG((LF_ZAP | LF_CLASSLOADER, LL_WARNING,
+                    "ReadyToRun eager fixup failed for module %s: section=%u, index=%u, signatureRva=0x%x, kind=0x%x\n",
+                    GetDebugName(),
+                    static_cast<unsigned>(iSection),
+                    static_cast<unsigned>(fixupIndex),
+                    pSignatures[fixupIndex],
+                    fixupKind));
+
                 _ASSERTE(IsReadyToRun());
                 GetReadyToRunInfo()->DisableAllR2RCode();
 

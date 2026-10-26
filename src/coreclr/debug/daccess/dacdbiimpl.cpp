@@ -7575,7 +7575,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::AreOptimizationsDisabled(VMPTR_Mo
     {
         return E_INVALIDARG;
     }
-#ifdef FEATURE_REJIT
+#ifdef FEATURE_CODE_VERSIONING
     {
         CodeVersionManager * pCodeVersionManager = pModule->GetCodeVersionManager();
         ILCodeVersion activeILVersion = pCodeVersionManager->GetActiveILCodeVersion(pModule, methodTk);

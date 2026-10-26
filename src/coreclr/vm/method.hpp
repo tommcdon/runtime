@@ -1215,7 +1215,26 @@ public:
     bool IsVersionable()
     {
         WRAPPER_NO_CONTRACT;
-        return IsEligibleForTieredCompilation() || IsEligibleForReJIT() || IsEligibleForEnC();
+        return IsEligibleForTieredCompilation() ||
+            IsEligibleForReJIT() ||
+            IsEligibleForEnC() ||
+            IsEligibleForInterpreterCodeVersioning();
+    }
+
+    bool IsEligibleForInterpreterCodeVersioning()
+    {
+        WRAPPER_NO_CONTRACT;
+
+#ifdef FEATURE_INTERPRETER
+        return
+            g_pConfig->EnableInterpreter() &&
+            IsIL() &&
+            !IsWrapperStub() &&
+            GetModule()->IsReadyToRun() &&
+            CodeVersionManager::IsMethodSupported(PTR_MethodDesc(this));
+#else
+        return false;
+#endif
     }
 
     // True iff all calls to the method should funnel through a Precode which can be updated to point to the current method
