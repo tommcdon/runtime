@@ -7425,7 +7425,7 @@ HRESULT STDMETHODCALLTYPE DacDbiInterfaceImpl::GetActiveRejitILCodeVersionNode(V
     DD_ENTER_MAY_THROW;
     if (pVmILCodeVersionNode == NULL)
         return E_INVALIDARG;
-#ifdef FEATURE_REJIT
+#ifdef FEATURE_CODE_VERSIONING
     PTR_Module pModule = vmModule.GetDacPtr();
     CodeVersionManager * pCodeVersionManager = pModule->GetCodeVersionManager();
     // Be careful, there are two different definitions of 'active' being used here
