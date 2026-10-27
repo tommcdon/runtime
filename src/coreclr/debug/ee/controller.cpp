@@ -2179,6 +2179,23 @@ BOOL DebuggerController::AddILPatch(AppDomain * pAppDomain, Module *module,
                     // a shame to completely fail just because on instantiation is missing debug info: e.g. just because
                     // one component hasn't been prejitted with debugging information.</REVISIT_TODO>
                     fOk = (AddBindAndActivateILReplicaPatch(primary, dji) || fOk);
+
+#ifdef FEATURE_CODE_VERSIONING
+                    if (!fOk)
+                    {
+                        CodeVersionManager *pCodeVersionManager = pMD->GetCodeVersionManager();
+                        CodeVersionManager::LockHolder codeVersioningLockHolder;
+                        ILCodeVersion activeILVersion = pCodeVersionManager->GetActiveILCodeVersion(pMD);
+                        NativeCodeVersion activeNativeVersion = activeILVersion.GetActiveNativeCodeVersion(pMD);
+                        if (pMD->IsEligibleForInterpreterCodeVersioning() &&
+                            activeILVersion.IsDeoptimized() &&
+                            (activeNativeVersion.IsNull() || activeNativeVersion.GetNativeCode() == (PCODE)NULL))
+                        {
+                            // The primary patch will bind when interpreter code is generated for the active version.
+                            fOk = TRUE;
+                        }
+                    }
+#endif
                 }
                 it.Next();
             }
