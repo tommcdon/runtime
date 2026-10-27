@@ -34,12 +34,13 @@ public sealed unsafe partial class SOSDacImpl
     : ICustomQueryInterface, ISOSDacInterface, ISOSDacInterface2, ISOSDacInterface3, ISOSDacInterface4, ISOSDacInterface5,
       ISOSDacInterface6, ISOSDacInterface7, ISOSDacInterface8, ISOSDacInterface9, ISOSDacInterface10,
       ISOSDacInterface11, ISOSDacInterface12, ISOSDacInterface13, ISOSDacInterface14, ISOSDacInterface15,
-      ISOSDacInterface16, ISOSDacInterface17
+      ISOSDacInterface16, ISOSDacInterface17, IComFinalRelease
 {
     private const uint DefaultAppDomainId = 1;
 
     private readonly Lock _apiLock;
     private readonly Target _target;
+    private readonly NativeInterfaceOwner? _nativeInterfaces;
 
     private readonly ulong _rcwMask = 1UL;
 
@@ -72,9 +73,19 @@ public sealed unsafe partial class SOSDacImpl
 #endif
 
     public SOSDacImpl(Target target, object? legacyObj, Lock apiLock)
+        : this(target, legacyObj, apiLock, nativeInterfaces: null)
+    {
+    }
+
+    public SOSDacImpl(
+        Target target,
+        object? legacyObj,
+        Lock apiLock,
+        NativeInterfaceOwner? nativeInterfaces)
     {
         _apiLock = apiLock;
         _target = target;
+        _nativeInterfaces = nativeInterfaces;
         _legacyLifetime = legacyObj;
 
 #if DEBUG
@@ -104,6 +115,8 @@ public sealed unsafe partial class SOSDacImpl
         _legacyProcess = null;
 #endif
     }
+
+    void IComFinalRelease.OnFinalRelease() => _nativeInterfaces?.Release();
 
     CustomQueryInterfaceResult ICustomQueryInterface.GetInterface(ref Guid iid, out nint ppv)
     {

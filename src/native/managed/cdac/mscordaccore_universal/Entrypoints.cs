@@ -181,6 +181,7 @@ internal static class Entrypoints
     [UnmanagedCallersOnly(EntryPoint = $"{CDAC}create_sos_interface")]
     private static unsafe int CreateSosInterface(IntPtr handle, IntPtr legacyImplPtr, nint* obj)
     {
+        Legacy.NativeInterfaceOwner? nativeInterfaces = null;
         try
         {
             if (obj == null)
@@ -193,13 +194,21 @@ internal static class Entrypoints
 
             Contracts.CoreCLRContracts.ValidateForDataAccess(cdacHandle.Target, cdacHandle.ApiLock);
 
-            object? legacyImpl = legacyImplPtr != IntPtr.Zero
-                ? ComInterfaceMarshaller<ISOSDacInterface>.ConvertToManaged((void*)legacyImplPtr)
-                : null;
+            object? legacyImpl = null;
+            if (legacyImplPtr != IntPtr.Zero)
+            {
+                ISOSDacInterface uniqueLegacyImpl =
+                    UniqueComInterfaceMarshaller<ISOSDacInterface>.ConvertToManaged((void*)legacyImplPtr)
+                    ?? throw new InvalidOperationException("Failed to create a unique legacy DAC wrapper.");
+                legacyImpl = uniqueLegacyImpl;
+                nativeInterfaces = new Legacy.NativeInterfaceOwner(
+                    legacyDac: (ComObject)(object)uniqueLegacyImpl);
+            }
 
-            Legacy.SOSDacImpl impl = new(cdacHandle.Target, legacyImpl, cdacHandle.ApiLock);
-            nint ptr = (nint)ComInterfaceMarshaller<ISOSDacInterface>.ConvertToUnmanaged(impl);
+            Legacy.SOSDacImpl impl = new(cdacHandle.Target, legacyImpl, cdacHandle.ApiLock, nativeInterfaces);
+            nint ptr = Legacy.SOSDacComWrappers.Instance.GetOrCreateUnknown(impl);
             *obj = ptr;
+            nativeInterfaces = null;
             return 0;
         }
         catch (Exception ex)
@@ -208,6 +217,10 @@ internal static class Entrypoints
                 *obj = IntPtr.Zero;
             int hr = ex.HResult;
             return hr < 0 ? hr : HResults.E_FAIL;
+        }
+        finally
+        {
+            nativeInterfaces?.Release();
         }
     }
 
@@ -336,8 +349,25 @@ internal static class Entrypoints
 
         try
         {
-            object legacyTarget = ComInterfaceMarshaller<ICLRDataTarget>.ConvertToManaged((void*)pLegacyTarget)!;
-            return CreateInstanceFromContractDescriptorCore(pIID, legacyTarget, contractDescriptorAddr, legacyImplPtr: IntPtr.Zero, new Lock(), iface);
+            object legacyTarget = UniqueComInterfaceMarshaller<ICLRDataTarget>.ConvertToManaged((void*)pLegacyTarget)!;
+            Legacy.NativeInterfaceOwner? nativeInterfaces = new(dataTarget: (ComObject)legacyTarget);
+            try
+            {
+                int result = CreateInstanceFromContractDescriptorCore(
+                    pIID,
+                    legacyTarget,
+                    contractDescriptorAddr,
+                    legacyImplPtr: IntPtr.Zero,
+                    new Lock(),
+                    nativeInterfaces,
+                    iface);
+                nativeInterfaces = null;
+                return result;
+            }
+            finally
+            {
+                nativeInterfaces?.Release();
+            }
         }
         catch (Exception ex)
         {
@@ -365,26 +395,50 @@ internal static class Entrypoints
 
     private static unsafe int CLRDataCreateInstanceCore(Guid* pIID, IntPtr /*ICLRDataTarget*/ pLegacyTarget, IntPtr pLegacyImpl, Lock apiLock, void** iface)
     {
-        object legacyTarget = ComInterfaceMarshaller<ICLRDataTarget>.ConvertToManaged((void*)pLegacyTarget)!;
+        object legacyTarget = UniqueComInterfaceMarshaller<ICLRDataTarget>.ConvertToManaged((void*)pLegacyTarget)!;
+        Legacy.NativeInterfaceOwner? nativeInterfaces = new(dataTarget: (ComObject)legacyTarget);
 
-        ICLRContractLocator contractLocator = legacyTarget as ICLRContractLocator ?? throw new ArgumentException(
-            $"{nameof(pLegacyTarget)} does not implement {nameof(ICLRContractLocator)}", nameof(pLegacyTarget));
-
-        ulong contractAddress;
-        int hr = contractLocator.GetContractDescriptor(&contractAddress);
-        if (hr != 0)
+        try
         {
-            throw new InvalidOperationException(
-                $"{nameof(ICLRContractLocator)} failed to fetch the contract descriptor with HRESULT: 0x{hr:x}.")
-            {
-                HResult = CdacHResults.CDAC_E_DESCRIPTOR_NOT_FOUND
-            };
-        }
+            ICLRContractLocator contractLocator = legacyTarget as ICLRContractLocator ?? throw new ArgumentException(
+                $"{nameof(pLegacyTarget)} does not implement {nameof(ICLRContractLocator)}", nameof(pLegacyTarget));
 
-        return CreateInstanceFromContractDescriptorCore(pIID, legacyTarget, contractAddress, pLegacyImpl, apiLock, iface);
+            ulong contractAddress;
+            int hr = contractLocator.GetContractDescriptor(&contractAddress);
+            if (hr != 0)
+            {
+                throw new InvalidOperationException(
+                    $"{nameof(ICLRContractLocator)} failed to fetch the contract descriptor with HRESULT: 0x{hr:x}.")
+                {
+                    HResult = CdacHResults.CDAC_E_DESCRIPTOR_NOT_FOUND
+                };
+            }
+
+            int result = CreateInstanceFromContractDescriptorCore(
+                pIID,
+                legacyTarget,
+                contractAddress,
+                pLegacyImpl,
+                apiLock,
+                nativeInterfaces,
+                iface);
+            nativeInterfaces = null;
+            return result;
+        }
+        finally
+        {
+            nativeInterfaces?.Release();
+        }
     }
 
-    private static unsafe int CreateInstanceFromContractDescriptorCore(Guid* pIID, object legacyTarget, ulong contractAddress, IntPtr legacyImplPtr, Lock apiLock, void** iface)
+    private static unsafe int CreateInstanceFromContractDescriptorCore(
+        Guid* pIID,
+        object legacyTarget,
+        ulong contractAddress,
+        IntPtr legacyImplPtr,
+        Lock apiLock,
+        Legacy.NativeInterfaceOwner nativeInterfaces,
+        void** iface)
     {
         ICLRDataTarget dataTarget = legacyTarget as ICLRDataTarget ?? throw new ArgumentException(
             $"Data target does not implement {nameof(ICLRDataTarget)}", nameof(legacyTarget));
@@ -465,21 +519,18 @@ internal static class Entrypoints
 
         Contracts.CoreCLRContracts.ValidateForDataAccess(target, apiLock);
 
-        object? legacyImpl = legacyImplPtr != IntPtr.Zero
-            ? ComInterfaceMarshaller<ISOSDacInterface>.ConvertToManaged((void*)legacyImplPtr)
-            : null;
+        object? legacyImpl = null;
+        if (legacyImplPtr != IntPtr.Zero)
+        {
+            ISOSDacInterface uniqueLegacyImpl =
+                UniqueComInterfaceMarshaller<ISOSDacInterface>.ConvertToManaged((void*)legacyImplPtr)
+                ?? throw new InvalidOperationException("Failed to create a unique legacy DAC wrapper.");
+            legacyImpl = uniqueLegacyImpl;
+            nativeInterfaces.SetLegacyDac((ComObject)(object)uniqueLegacyImpl);
+        }
 
-        Legacy.SOSDacImpl impl = new(target, legacyImpl, apiLock);
-        void* ccw = ComInterfaceMarshaller<IXCLRDataProcess>.ConvertToUnmanaged(impl);
-        int hrQI = Marshal.QueryInterface((nint)ccw, *pIID, out nint ptrToIface);
-
-        // Decrement reference count on ccw because QI incremented it
-        ComInterfaceMarshaller<IXCLRDataProcess>.Free(ccw);
-
-        if (hrQI < 0)
-            return hrQI;
-
-        *iface = (void*)ptrToIface;
+        Legacy.SOSDacImpl impl = new(target, legacyImpl, apiLock, nativeInterfaces);
+        *iface = (void*)Legacy.SOSDacComWrappers.Instance.GetOrCreateInterface(impl, *pIID);
         return 0;
     }
 
