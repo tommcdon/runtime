@@ -133,6 +133,60 @@ public unsafe class DacDbiImplTests
         Assert.Equal(pointerSize, targetInfo.PointerSize);
     }
 
+    [Theory]
+    [ClassData(typeof(MockTarget.StdArch))]
+    public void GetBasicObjectInfo_StringDoesNotRequireModuleLookup(MockTarget.Architecture arch)
+    {
+        const ulong ObjectAddress = 0x1000;
+        const ulong MethodTableAddress = 0x2000;
+        const ulong ObjectSize = 32;
+
+        var typeHandle = new Mock<ITypeHandle>();
+        var objectContract = new Mock<IObject>();
+        objectContract
+            .Setup(o => o.GetMethodTableAddress(new TargetPointer(ObjectAddress)))
+            .Returns(new TargetPointer(MethodTableAddress));
+        objectContract
+            .Setup(o => o.GetSize(new TargetPointer(ObjectAddress)))
+            .Returns(ObjectSize);
+
+        var runtimeTypeSystem = new Mock<IRuntimeTypeSystem>();
+        runtimeTypeSystem
+            .Setup(r => r.GetTypeHandle(new TargetPointer(MethodTableAddress)))
+            .Returns(typeHandle.Object);
+        runtimeTypeSystem
+            .Setup(r => r.IsString(typeHandle.Object))
+            .Returns(true);
+
+        TestPlaceholderTarget target = new TestPlaceholderTarget.Builder(arch)
+            .AddTypes(new Dictionary<DataType, Target.TypeInfo>
+            {
+                [DataType.Object] = new Target.TypeInfo { Size = arch.Is64Bit ? 8u : 4u },
+            })
+            .AddMockContract(objectContract)
+            .AddMockContract(runtimeTypeSystem)
+            .Build();
+        DacDbiImpl dacDbi = new(target, legacyObj: null, new());
+        Interop.BOOL isValidRef = Interop.BOOL.FALSE;
+        uint objectSize = 0;
+        uint objectOffsetToVars = 0;
+        DebuggerIPCE_ExpandedTypeData typeData = default;
+
+        int hr = dacDbi.GetBasicObjectInfo(
+            ObjectAddress,
+            &isValidRef,
+            &objectSize,
+            &objectOffsetToVars,
+            &typeData);
+
+        Assert.Equal(System.HResults.S_OK, hr);
+        Assert.Equal(Interop.BOOL.TRUE, isValidRef);
+        Assert.Equal((uint)ObjectSize, objectSize);
+        Assert.Equal(arch.Is64Bit ? 8u : 4u, objectOffsetToVars);
+        Assert.Equal((int)CorElementType.String, typeData.elementType);
+        runtimeTypeSystem.Verify(r => r.GetModule(It.IsAny<ITypeHandle>()), Times.Never);
+    }
+
     private static (DacDbiImpl DacDbi, TestPlaceholderTarget Target) CreateDacDbiWithLoader(
         MockTarget.Architecture arch,
         Action<MockLoaderBuilder, TestPlaceholderTarget.Builder> configure)

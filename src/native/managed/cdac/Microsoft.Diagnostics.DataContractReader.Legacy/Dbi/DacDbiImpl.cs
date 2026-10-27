@@ -4580,12 +4580,15 @@ public sealed unsafe partial class DacDbiImpl : IDacDbiInterface
                 // objOffsetToVars = offset from the object base to the first field = sizeof(Object) = pointer size
                 *pObjOffsetToVars = (uint)_target.GetTypeInfo(DataType.Object).Size!.Value;
                 *pObjSize = (uint)_target.Contracts.Object.GetSize(objectAddress);
-                TypeHandleToExpandedTypeInfoImpl(rts, AreValueTypesBoxed.AllBoxed, th, pObjTypeData);
 
-                // If this is a string, force elementType to ELEMENT_TYPE_STRING
                 if (rts.IsString(th))
                 {
+                    *pObjTypeData = default;
                     WriteLittleEndian(ref pObjTypeData->elementType, (int)CorElementType.String);
+                }
+                else
+                {
+                    TypeHandleToExpandedTypeInfoImpl(rts, AreValueTypesBoxed.AllBoxed, th, pObjTypeData);
                 }
             }
         }
