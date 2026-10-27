@@ -7205,6 +7205,16 @@ MethodTableBuilder::NeedsNativeCodeSlot(bmtMDMethod * pMDMethod)
 {
     LIMITED_METHOD_CONTRACT;
 
+#ifdef FEATURE_INTERPRETER
+    // Debugger deoptimization may redirect R2R methods to interpreter code.
+    if (g_pConfig->EnableInterpreter() &&
+        GetModule()->IsReadyToRun() &&
+        (pMDMethod->GetMethodType() == mcIL || pMDMethod->GetMethodType() == mcInstantiated))
+    {
+        return TRUE;
+    }
+#endif
+
 #ifdef FEATURE_TIERED_COMPILATION
     // Keep in-sync with MethodDesc::DetermineAndSetIsEligibleForTieredCompilation()
     if ((g_pConfig->TieredCompilation() &&
