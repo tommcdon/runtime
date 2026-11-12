@@ -1534,8 +1534,8 @@ bool DebuggerController::ApplyPatch(DebuggerControllerPatch *patch)
         CORDbgInsertBreakpoint((CORDB_ADDRESS_TYPE *)patch->address);
         LOG((LF_CORDB, LL_EVERYTHING, "DC::ApplyPatch Breakpoint was inserted at %p for opcode %x\n",
             patch->address, patch->opcode));
-        LOG((LF_CORDB, LL_INFO1000, "DC::ApplyPatch brk at %p, saved opcode %08x, DCType=%d, patchId=0x%zx\n",
-            patch->address, patch->opcode, patch->controller->GetDCType(), patch->patchId));
+        LOG((LF_CORDB, LL_INFO1000, "DC::ApplyPatch brk at %p, saved opcode %08x, DCType=%d, controller=%p, kind=%d, patchId=0x%zx\n",
+            patch->address, (unsigned)patch->opcode, patch->controller->GetDCType(), patch->controller, (int)patch->kind, patch->patchId));
 
 #if !defined(HOST_OSX) || !defined(HOST_ARM64)
         if (!VirtualProtect(baseAddress,
@@ -1644,8 +1644,8 @@ bool DebuggerController::UnapplyPatch(DebuggerControllerPatch *patch)
 #endif // !defined(HOST_OSX) || !defined(HOST_ARM64)
 
         CORDbgSetInstruction((CORDB_ADDRESS_TYPE *)patch->address, patch->opcode);
-        LOG((LF_CORDB, LL_INFO1000, "DC::UnapplyPatch brk removed at %p, opcode restored %08x, DCType=%d, patchId=0x%zx\n",
-            patch->address, (unsigned)patch->opcode, patch->controller->GetDCType(), patch->patchId));
+        LOG((LF_CORDB, LL_INFO1000, "DC::UnapplyPatch brk removed at %p, opcode restored %08x, controller=%p, kind=%d, patchId=0x%zx\n",
+            patch->address, (unsigned)patch->opcode, patch->controller, (int)patch->kind, patch->patchId));
 
         // VERY IMPORTANT to zero out opcode, else we might mistake
         // this patch for an active one on ReadMem/WriteMem (see
@@ -3067,6 +3067,21 @@ DPOSS_ACTION DebuggerController::DispatchPatchOrSingleStep(Thread *thread, CONTE
     _ASSERTE(g_patches != NULL);
 
     CrstHolderWithState lockController(&g_criticalSection);
+
+    if (which & ST_PATCH)
+    {
+        // Diagnostics for unhandled int3: lookup is done under the controller lock so the patch table is stable.
+        DebuggerControllerPatch *patchLookup = g_patches->GetPatch(address);
+        if (patchLookup != NULL)
+        {
+            LOG((LF_CORDB, LL_INFO1000, "DC::DPOSS patch FOUND at %p patch=%p controller=%p DCType=%d\n",
+                address, patchLookup, patchLookup->controller, patchLookup->controller->GetDCType()));
+        }
+        else
+        {
+            LOG((LF_CORDB, LL_INFO1000, "DC::DPOSS patch NOT FOUND at %p\n", address));
+        }
+    }
 
     TADDR originalAddress = 0;
 
@@ -4571,17 +4586,8 @@ bool DebuggerController::DispatchNativeException(EXCEPTION_RECORD *pException,
         switch (dwCode)
         {
         case EXCEPTION_BREAKPOINT:
-            {
-                // Log patch lookup result for breakpoint exceptions to diagnose unhandled brk crashes
-                DebuggerControllerPatch *patchLookup = (g_patches != NULL) ? g_patches->GetPatch(ip) : NULL;
-                LOG((LF_CORDB, LL_INFO1000, "DC::DNE EXCEPTION_BREAKPOINT at %p, patch %s\n",
-                    ip, patchLookup ? "FOUND" : "NOT FOUND"));
-                if (patchLookup != NULL)
-                {
-                    LOG((LF_CORDB, LL_INFO1000, "DC::DNE patch owner DCType=%d\n",
-                        patchLookup->controller->GetDCType()));
-                }
-            }
+            // Patch lookup/owner details are logged in DispatchPatchOrSingleStep under the controller lock.
+            LOG((LF_CORDB, LL_INFO1000, "DC::DNE EXCEPTION_BREAKPOINT at %p thread=%p\n", ip, pCurThread));
 
             // EIP should be properly set up at this point.
             result = DebuggerController::DispatchPatchOrSingleStep(pCurThread,

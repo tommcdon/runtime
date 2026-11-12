@@ -762,6 +762,8 @@ HRESULT ShimProcess::HandleWin32DebugEvent(const DEBUG_EVENT * pEvent)
             dwThreadId,
             m_pShimCallback,
             &dwContinueStatus);
+        LOG((LF_CORDB, LL_INFO1000, "SP::HW32DE EXCEPTION tid=0x%x code=0x%08x addr=%p firstChance=%d Filter hr=0x%08x continueStatus=0x%x\n",
+            dwThreadId, pRecord->ExceptionCode, pRecord->ExceptionAddress, (int)dwFirstChance, hrFilter, dwContinueStatus));
         if (FAILED(hrFilter))
         {
             // Filter failed (eg. DAC couldn't be loaded), return the
@@ -843,6 +845,13 @@ HRESULT ShimProcess::HandleWin32DebugEvent(const DEBUG_EVENT * pEvent)
     //
     if (fContinueNow)
     {
+        if (pRecord != NULL)
+        {
+            LOG((LF_CORDB, LL_INFO1000, "SP::HW32DE ContinueDebugEvent tid=0x%x code=0x%08x addr=%p firstChance=%d continueStatus=%s(0x%x) goingUnhandled=%d\n",
+                dwThreadId, pRecord->ExceptionCode, pRecord->ExceptionAddress, (int)dwFirstChance,
+                (dwContinueStatus == DBG_CONTINUE) ? "DBG_CONTINUE" : ((dwContinueStatus == DBG_EXCEPTION_NOT_HANDLED) ? "DBG_EXCEPTION_NOT_HANDLED" : "OTHER"),
+                dwContinueStatus, (int)fExceptionGoingUnhandled));
+        }
         BOOL fContinueOk = GetNativePipeline()->ContinueDebugEvent(
             GetProcessId(pEvent),
             dwThreadId,

@@ -5490,6 +5490,7 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
         // The out-of-proc debugger is ignoring the SetThreadContextNeeded flare
         // SSP will be pointing to the instruction after the breakpoint, so advance the IP to that instruction and continue
         PCODE ip = ::GetIP(context);
+        LOG((LF_CORDB, LL_INFO10, "D::FCNE SetThreadContextNeededFlare not handled by debugger, skipping flare int3 at %p tid=0x%x\n", (void*)ip, ::GetCurrentThreadId()));
         ::SetIP(context, ip + CORDbg_BREAK_INSTRUCTION_SIZE);
         return true;
     }
@@ -5512,6 +5513,13 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
         {
             retVal = false;
         }
+    }
+
+    if (code == EXCEPTION_BREAKPOINT)
+    {
+        LOG((LF_CORDB, retVal ? LL_INFO1000 : LL_INFO10, "D::FCNE EXCEPTION_BREAKPOINT %s exAddr=%p ctxIP=%p tid=0x%x fIsVEH=%d unrecoverable=%d\n",
+            retVal ? "claimed" : "NOT claimed", exception->ExceptionAddress, (void*)::GetIP(context), ::GetCurrentThreadId(),
+            (int)fIsVEH, (int)CORDBUnrecoverableError(this)));
     }
 
 #if defined(OUT_OF_PROCESS_SETTHREADCONTEXT) && !defined(DACCESS_COMPILE)
@@ -16272,7 +16280,7 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo
     PRD_TYPE opcode = pDebuggerSteppingInfo != NULL ? pDebuggerSteppingInfo->GetOpcode() : CORDbg_BREAK_INSTRUCTION;
 
     // send the context to the right side
-    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x fHasDebuggerPatchSkip=%d\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode, fHasDebuggerPatchSkip));
+    LOG((LF_CORDB, LL_INFO10000, "D::SSTCN ContextFlags=0x%X contextSize=%d fIsInPlaceSingleStep=%d opcode=%x fHasDebuggerPatchSkip=%d fClearSetIP=%d\n", contextFlags, contextSize, fIsInPlaceSingleStep, opcode, fHasDebuggerPatchSkip, fClearSetIP));
     EX_TRY
     {
         DWORD flag = fIsInPlaceSingleStep ? 0x1 : 0;
@@ -16289,6 +16297,7 @@ void Debugger::SendSetThreadContextNeeded(CONTEXT *context, DebuggerSteppingInfo
     }
     EX_CATCH
     {
+        LOG((LF_CORDB, LL_INFO10, "D::SSTCN SetThreadContextNeededFlare threw an exception (OSID %x)\n", ::GetCurrentThreadId()));
     }
     EX_END_CATCH
 #else

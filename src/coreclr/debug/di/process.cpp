@@ -11437,7 +11437,7 @@ bool CordbProcess::HandleSetThreadContextNeeded(DWORD dwThreadId)
         dwThreadId, threadHolder.Info()->HasDebuggerPatchSkip(), (ULONGLONG)threadHolder.Info()->ContextAddr(), threadHolder.Info()->ContextSize()));
 
     PCONTEXT pLocalContext = (PCONTEXT)_alloca(threadHolder.Info()->ContextSize());
-    ULONG32 cbRead;
+    ULONG32 cbRead = 0;
     HRESULT hr = GetDataTarget()->ReadVirtual(threadHolder.Info()->ContextAddr(), reinterpret_cast<BYTE*>(pLocalContext), threadHolder.Info()->ContextSize(), &cbRead);
     if (FAILED(hr) || cbRead != threadHolder.Info()->ContextSize())
     {
@@ -11896,7 +11896,10 @@ HRESULT CordbProcess::Filter(
             }
             else
             {
-                if (!SetPendingSetIP(dwThreadId))
+                bool fPendingSetIP = SetPendingSetIP(dwThreadId);
+                LOG((LF_CORDB, LL_INFO1000, "RS Filter - STATUS_BREAKPOINT not at SetThreadContextNeeded flare tid=0x%x addr=%p SetPendingSetIP=%d continueStatus=0x%x\n",
+                    dwThreadId, pRecord->ExceptionAddress, (int)fPendingSetIP, *pContinueStatus));
+                if (!fPendingSetIP)
                 {
                     _ASSERTE(!"SetPendingSetIP failed");
                 }

@@ -169,6 +169,7 @@ CONFIG_DWORD_INFO(INTERNAL_DbgExtraThreadsIB, W("DbgExtraThreadsIB"), 0, "Allows
 CONFIG_DWORD_INFO(INTERNAL_DbgExtraThreadsOOB, W("DbgExtraThreadsOOB"), 0, "Allows extra out of band unmanaged threads to run and throw debug events for stress testing")
 CONFIG_DWORD_INFO(INTERNAL_DbgFaultInHandleIPCEvent, W("DbgFaultInHandleIPCEvent"), 0, "Allows testing the unhandled event filter")
 CONFIG_DWORD_INFO(INTERNAL_DbgInjectFEE, W("DbgInjectFEE"), 0, "Allows injecting a fatal execution error for testing Watson")
+CONFIG_DWORD_INFO(INTERNAL_DbgSyncDeadThreadWorkaround, W("DbgSyncDeadThreadWorkaround"), 0, "Diagnostic: when sweeping threads for debugger suspension, treat TS_ReportDead threads with an invalid handle as synced")
 CONFIG_DWORD_INFO(INTERNAL_DbgLeakCheck, W("DbgLeakCheck"), 0, "Allows checking for leaked Cordb objects")
 CONFIG_DWORD_INFO(INTERNAL_DbgNo2ndChance, W("DbgNo2ndChance"), 0, "Allows breaking on (and catching bogus) 2nd chance exceptions")
 CONFIG_DWORD_INFO(INTERNAL_DbgNoDebugger, W("DbgNoDebugger"), 0, "Allows breaking if we don't want to lazily initialize the debugger")
@@ -356,13 +357,13 @@ RETAIL_CONFIG_DWORD_INFO(INTERNAL_BreakOnOutOfMemoryWithinRange, W("BreakOnOutOf
 /// Log
 ///
 RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogEnable, W("LogEnable"), 1, "Turns on the traditional CLR log.")
-RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogFacility,  W("LogFacility"), 0x240, "Specifies a facility mask for CLR log. (See 'loglf.h'; VM interprets string value as hex number.) Also used by stresslog.")
+RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogFacility,  W("LogFacility"), 0x18240, "Specifies a facility mask for CLR log. (See 'loglf.h'; VM interprets string value as hex number.) Also used by stresslog.")
 RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogFacility2, W("LogFacility2"), 0, "Specifies a facility mask for CLR log. (See 'loglf.h'; VM interprets string value as hex number.) Also used by stresslog.")
 RETAIL_CONFIG_DWORD_INFO(EXTERNAL_logFatalError, W("logFatalError"), 1, "Specifies whether EventReporter logs fatal errors in the Windows event log.")
 CONFIG_STRING_INFO(INTERNAL_LogFile, W("LogFile"), "Specifies a file name for the CLR log.")
 CONFIG_DWORD_INFO(INTERNAL_LogFileAppend, W("LogFileAppend"), 0 , "Specifies whether to append to or replace the CLR log file.")
 CONFIG_DWORD_INFO(INTERNAL_LogFlushFile, W("LogFlushFile"), 0 , "Specifies whether to flush the CLR log file on each write.")
-RETAIL_CONFIG_DWORD_INFO(EXTERNAL_LogLevel, W("LogLevel"), 10, "4=10 msgs, 9=1000000, 10=everything")
+RETAIL_CONFIG_DWORD_INFO(EXTERNAL_LogLevel, W("LogLevel"), 7, "4=10 msgs, 9=1000000, 10=everything")
 RETAIL_CONFIG_DWORD_INFO(INTERNAL_LogToConsole, W("LogToConsole"), 0 , "Writes the CLR log to console.")
 CONFIG_DWORD_INFO(INTERNAL_LogToDebugger, W("LogToDebugger"), 0 , "Writes the CLR log to debugger (OutputDebugStringA).")
 CONFIG_DWORD_INFO(INTERNAL_LogToFile, W("LogToFile"), 1 , "Writes the CLR log to a file.")

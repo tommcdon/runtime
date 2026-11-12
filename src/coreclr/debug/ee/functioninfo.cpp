@@ -1277,7 +1277,7 @@ void DebuggerJitInfo::Init(TADDR newAddress)
 #if defined(LOGGING)
     for (unsigned int i = 0; i < this->GetSequenceMapCount(); i++)
     {
-        LOG((LF_CORDB, LL_INFO10000, "De::JITCo: seq map 0x%x - "
+        LOG((LF_CORDB, LL_INFO100000, "De::JITCo: seq map 0x%x - "
              "IL offset 0x%x native start offset 0x%x native end offset 0x%x source 0x%x\n",
              i, this->GetSequenceMap()[i].ilOffset,
              this->GetSequenceMap()[i].nativeStartOffset,

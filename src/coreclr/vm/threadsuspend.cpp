@@ -4222,14 +4222,22 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
 
         // A thread that has been reported dead and whose handle has been invalidated
         // (e.g., a thread that exited while in cooperative mode and went through
-        // DetachThread) will never be able to sync on its own — InjectActivation
+        // DetachThread) will never be able to sync on its own - InjectActivation
         // will always fail because the handle is INVALID_HANDLE_VALUE and the OS
-        // thread is gone.  Treat it as synced to avoid a permanent deadlock.
+        // thread is gone. Always log this; only treat it as synced when the
+        // DbgSyncDeadThreadWorkaround diagnostic config is enabled.
         if (thread->HasThreadState(TS_ReportDead) && !thread->HasValidThreadHandle())
         {
-            LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x is TS_ReportDead with invalid handle — treating as synced\n",
-                thread->GetThreadId()));
-            goto Label_MarkThreadAsSynced;
+            static DWORD s_dwDeadThreadWorkaround = (DWORD)-1;
+            if (s_dwDeadThreadWorkaround == (DWORD)-1)
+                s_dwDeadThreadWorkaround = CLRConfig::GetConfigValue(CLRConfig::INTERNAL_DbgSyncDeadThreadWorkaround);
+
+            LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x is TS_ReportDead with invalid handle - workaround=%u\n",
+                thread->GetThreadId(), s_dwDeadThreadWorkaround));
+            if (s_dwDeadThreadWorkaround != 0)
+            {
+                goto Label_MarkThreadAsSynced;
+            }
         }
 
         if (!UseContextBasedThreadRedirection())
@@ -4247,7 +4255,7 @@ bool Thread::SysSweepThreadsForDebug(bool forceSync)
             {
                 if (thread->IsInForbidSuspendForDebuggerRegion())
                 {
-                    LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x preemptive but in ForbidSuspendForDebugger region — skipping\n",
+                    LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x preemptive but in ForbidSuspendForDebugger region - skipping\n",
                         thread->GetThreadId()));
                     continue;
                 }
@@ -4381,10 +4389,9 @@ Label_MarkThreadAsSynced:
         {
             if (dbgThread->m_State & TS_DebugWillSync)
             {
-                InterlockedOr((LONG*)&dbgThread->m_fPreemptiveGCDisabled, 0);
-                LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x STILL not synced — coop=%d forbidDbg=%d hasPending=%d\n",
+                LOG((LF_CORDB, LL_INFO1000, "SweepDbg: thread 0x%x STILL not synced - coop=%d forbidDbg=%d hasPending=%d\n",
                     dbgThread->GetThreadId(),
-                    (int)dbgThread->m_fPreemptiveGCDisabled,
+                    (int)dbgThread->PreemptiveGCDisabledOther(),
                     (int)dbgThread->IsInForbidSuspendForDebuggerRegion(),
                     (int)dbgThread->m_hasPendingActivation));
             }
@@ -5795,13 +5802,8 @@ BOOL CheckActivationSafePoint(SIZE_T ip)
     if (!isActivationSafePoint && pThread != NULL)
     {
         pThread->m_hasPendingActivation = false;
-        LOG((LF_CORDB, LL_INFO1000, "CheckActivationSafePoint: REJECTED ip=%p thread=0x%x coop=%d stepping=%d scanLock=%d managed=%d\n",
-            (void*)ip,
-            pThread->GetThreadId(),
-            (int)pThread->PreemptiveGCDisabled(),
-            (int)((pThread->m_StateNC & Thread::TSNC_DebuggerIsStepping) != 0),
-            (int)(ExecutionManager::GetScanFlags(pThread) == ExecutionManager::ScanReaderLock),
-            (int)ExecutionManager::IsManagedCodeNoLock(ip)));
+        // NOTE: Do not LOG here. This runs in an activation (APC) context interrupting arbitrary code;
+        // LOG takes a lock and performs file I/O which could deadlock.
     }
 
     return isActivationSafePoint;
@@ -5984,7 +5986,7 @@ bool Thread::InjectActivation(ActivationReason reason)
     // wrong resume because it's running a native code.
     if ((m_StateNC & Thread::TSNC_DebuggerIsStepping) != 0)
     {
-        LOG((LF_CORDB, LL_INFO1000, "InjectActivation: thread 0x%x skipped — debugger is stepping\n", GetThreadId()));
+        LOG((LF_CORDB, LL_INFO1000, "InjectActivation: thread 0x%x skipped - debugger is stepping\n", GetThreadId()));
         return false;
     }
 #ifdef FEATURE_SPECIAL_USER_MODE_APC
@@ -6026,11 +6028,11 @@ bool Thread::InjectActivation(ActivationReason reason)
 
             return success;
         }
-        LOG((LF_CORDB, LL_INFO100, "InjectActivation: thread 0x%x failed — handle is INVALID_HANDLE_VALUE\n", GetThreadId()));
+        LOG((LF_CORDB, LL_INFO100, "InjectActivation: thread 0x%x failed - handle is INVALID_HANDLE_VALUE\n", GetThreadId()));
     }
     else
     {
-        LOG((LF_CORDB, LL_INFO100, "InjectActivation: thread 0x%x failed — ThreadSuspendInjection disabled\n", GetThreadId()));
+        LOG((LF_CORDB, LL_INFO100, "InjectActivation: thread 0x%x failed - ThreadSuspendInjection disabled\n", GetThreadId()));
     }
 
     return false;
