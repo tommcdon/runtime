@@ -3798,6 +3798,51 @@ Exit:
 }
 
 //-----------------------------------------------------------------------------
+// Write patch bytes into target code. Code pages are normally not writable
+// (for example, W^X executable views are mapped PAGE_EXECUTE_READ), so if the
+// direct write fails, temporarily make the bytes writable and restore the
+// original protection afterward. This mirrors EnableInPlaceSingleStepping.
+//-----------------------------------------------------------------------------
+template<typename T>
+static HRESULT WriteRemotePatchBytes(CordbProcess * pProcess, const void * pRemoteAddress, const T * pValue)
+{
+    CORDB_ADDRESS address = PTR_TO_CORDB_ADDRESS(pRemoteAddress);
+    HRESULT hr = pProcess->SafeWriteStruct(address, pValue);
+    if (SUCCEEDED(hr))
+    {
+        return hr;
+    }
+
+    HANDLE hProcess = pProcess->UnsafeGetProcessHandle();
+    LPVOID baseAddress = const_cast<void *>(pRemoteAddress);
+    DWORD oldProt;
+
+    if (!VirtualProtectEx(hProcess, baseAddress, sizeof(T), PAGE_EXECUTE_READWRITE, &oldProt))
+    {
+        // Directly mapped executable views may not permit write access; use copy-on-write.
+        if (!VirtualProtectEx(hProcess, baseAddress, sizeof(T), PAGE_EXECUTE_WRITECOPY, &oldProt))
+        {
+            LOG((LF_CORDB, LL_INFO1000, "RS WriteRemotePatchBytes - VirtualProtectEx failed address=0x%p gle=%d writeHr=0x%x\n",
+                pRemoteAddress, GetLastError(), hr));
+            return hr;
+        }
+    }
+
+    hr = pProcess->SafeWriteStruct(address, pValue);
+
+    DWORD unusedProt;
+    if (!VirtualProtectEx(hProcess, baseAddress, sizeof(T), oldProt, &unusedProt))
+    {
+        // The write state is authoritative: failing here after a successful write
+        // would leave a patch in the target that our bookkeeping doesn't know about.
+        LOG((LF_CORDB, LL_INFO1000, "RS WriteRemotePatchBytes - restoring protection failed address=0x%p gle=%d\n",
+            pRemoteAddress, GetLastError()));
+    }
+
+    return hr;
+}
+
+//-----------------------------------------------------------------------------
 // Inject an int3 at the given remote address
 //-----------------------------------------------------------------------------
 
@@ -3812,9 +3857,7 @@ HRESULT ApplyRemotePatch(CordbProcess * pProcess, const void * pRemoteAddress)
     const BYTE patch = 0;
     PORTABILITY_ASSERT("NYI: ApplyRemotePatch for this platform");
 #endif
-    HRESULT hr = pProcess->SafeWriteStruct(PTR_TO_CORDB_ADDRESS(pRemoteAddress), &patch);
-    SIMPLIFYING_ASSUMPTION_SUCCEEDED(hr);
-    return S_OK;
+    return WriteRemotePatchBytes(pProcess, pRemoteAddress, &patch);
 }
 
 
@@ -3838,8 +3881,13 @@ HRESULT ApplyRemotePatch(CordbProcess * pProcess, const void * pRemoteAddress, P
         return hr;
     }
 
+    hr = ApplyRemotePatch(pProcess, pRemoteAddress);
+    if (FAILED(hr))
+    {
+        return hr;
+    }
+
     *pOpcode = (PRD_TYPE) opcode;
-    ApplyRemotePatch(pProcess, pRemoteAddress);
     return S_OK;
 }
 
@@ -3859,11 +3907,20 @@ HRESULT RemoveRemotePatch(CordbProcess * pProcess, const void * pRemoteAddress, 
     PORTABILITY_ASSERT("NYI: RemoveRemotePatch for this platform");
 #endif
 
-    pProcess->SafeWriteStruct(PTR_TO_CORDB_ADDRESS(pRemoteAddress), &opcode2);
+    HRESULT hr = WriteRemotePatchBytes(pProcess, pRemoteAddress, &opcode2);
+    if (FAILED(hr))
+    {
+        // This may fail because the module has been unloaded.  In which case, the patch is also
+        // gone so it makes sense to return success.
+        MEMORY_BASIC_INFORMATION mbi;
+        if ((VirtualQueryEx(pProcess->UnsafeGetProcessHandle(), pRemoteAddress, &mbi, sizeof(mbi)) == 0) ||
+            (mbi.State != MEM_COMMIT))
+        {
+            return S_OK;
+        }
+    }
 
-    // This may fail because the module has been unloaded.  In which case, the patch is also
-    // gone so it makes sense to return success.
-    return S_OK;
+    return hr;
 }
 #endif // FEATURE_INTEROP_DEBUGGING
 
