@@ -1604,6 +1604,10 @@ public:
     // Get and Set the exposed System.Thread object which corresponds to
     // this thread.  Also the thread handle and Id.
     OBJECTREF   GetExposedObject();
+    // Returns the exposed object without registering memory pressure for a newly
+    // created wrapper. *pfCreated is set when this call created the wrapper, and
+    // the managed caller is then responsible for registering the memory pressure.
+    OBJECTREF   GetExposedObject(bool* pfCreated);
     OBJECTREF   GetExposedObjectRaw();
     void        SetExposedObject(OBJECTREF exposed);
     OBJECTHANDLE GetExposedObjectHandleForDebugger()

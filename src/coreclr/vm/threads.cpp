@@ -3162,6 +3162,40 @@ OBJECTREF Thread::GetExposedObject()
     }
     CONTRACTL_END;
 
+    bool fCreated = false;
+    OBJECTREF exposedObject = GetExposedObject(&fCreated);
+
+#ifdef FEATURE_MULTITHREADING
+    if (fCreated)
+    {
+        GCPROTECT_BEGIN(exposedObject);
+
+        // Registering memory pressure can trigger a GC, so do it after
+        // releasing our ThreadStore lock.
+        _ASSERTE(!ThreadStore::HoldingThreadStore(GetThread()));
+        UnmanagedCallersOnlyCaller registerMemoryPressure(METHOD__THREAD__REGISTER_MEMORY_PRESSURE);
+        registerMemoryPressure.InvokeThrowing();
+
+        GCPROTECT_END();
+    }
+#endif // FEATURE_MULTITHREADING
+
+    return exposedObject;
+}
+
+OBJECTREF Thread::GetExposedObject(bool* pfCreated)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+        PRECONDITION(pfCreated != nullptr);
+    }
+    CONTRACTL_END;
+
+    *pfCreated = false;
+
     TRIGGERSGC();
 
     Thread *pCurThread = GetThreadNULLOk();
@@ -3214,16 +3248,7 @@ OBJECTREF Thread::GetExposedObject()
             }
         }
 
-#ifdef FEATURE_MULTITHREADING
-        if (attempt->GetInternal() != nullptr)
-        {
-            // Registering memory pressure can trigger a GC, so do it after
-            // releasing our ThreadStore lock.
-            _ASSERTE(!ThreadStore::HoldingThreadStore(pCurThread));
-            UnmanagedCallersOnlyCaller registerMemoryPressure(METHOD__THREAD__REGISTER_MEMORY_PRESSURE);
-            registerMemoryPressure.InvokeThrowing();
-        }
-#endif // FEATURE_MULTITHREADING
+        *pfCreated = (attempt->GetInternal() != nullptr);
 
         GCPROTECT_END();
     }

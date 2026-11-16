@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Tracing;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 namespace System
@@ -38,10 +39,24 @@ namespace System
             private const uint PressureCount = 4;
             private const uint MaxGCMemoryPressureRatio = 10;
 
-            private static readonly int[] s_gcCounts = new int[3];
-            private static readonly long[] s_addPressure = new long[PressureCount];
-            private static readonly long[] s_removePressure = new long[PressureCount];
+            // Inline storage avoids a static constructor. Running managed class initialization
+            // from the first Thread.CurrentThread access is observable to debuggers stepping in.
+            private static GCCounts s_gcCounts;
+            private static PressureHistory s_addPressure;
+            private static PressureHistory s_removePressure;
             private static uint s_iteration;
+
+            [InlineArray(3)]
+            private struct GCCounts
+            {
+                private int _element0;
+            }
+
+            [InlineArray((int)PressureCount)]
+            private struct PressureHistory
+            {
+                private long _element0;
+            }
 
             private static void CheckCollectionCount()
             {
@@ -54,8 +69,8 @@ namespace System
 
                     s_iteration++;
                     uint p = s_iteration % PressureCount;
-                    s_addPressure[p] = 0;
-                    s_removePressure[p] = 0;
+                    s_addPressure[(int)p] = 0;
+                    s_removePressure[(int)p] = 0;
                 }
             }
 
@@ -91,7 +106,7 @@ namespace System
             {
                 CheckCollectionCount();
                 uint p = s_iteration % PressureCount;
-                long newMemValue = InterlockedAddMemoryPressure(ref s_addPressure[p], bytesAllocated);
+                long newMemValue = InterlockedAddMemoryPressure(ref s_addPressure[(int)p], bytesAllocated);
                 if (NativeRuntimeEventSource.Log.IsEnabled() &&
                     NativeRuntimeEventSource.Log.IsEnabled(EventLevel.Verbose, NativeRuntimeEventSource.Keywords.GCKeyword))
                 {
@@ -104,8 +119,8 @@ namespace System
                 if (newMemValue >= minBudget)
                 {
                     // Exclude the current interval from the historical totals.
-                    long add = s_addPressure[0] + s_addPressure[1] + s_addPressure[2] + s_addPressure[3] - s_addPressure[p];
-                    long rem = s_removePressure[0] + s_removePressure[1] + s_removePressure[2] + s_removePressure[3] - s_removePressure[p];
+                    long add = s_addPressure[0] + s_addPressure[1] + s_addPressure[2] + s_addPressure[3] - s_addPressure[(int)p];
+                    long rem = s_removePressure[0] + s_removePressure[1] + s_removePressure[2] + s_removePressure[3] - s_removePressure[(int)p];
                     long budget = minBudget;
 
                     // Wait until enough history is available before adjusting the budget.
@@ -159,7 +174,7 @@ namespace System
                 {
                     NativeRuntimeEventSource.Log.DecreaseMemoryPressure((ulong)bytesAllocated);
                 }
-                InterlockedAddMemoryPressure(ref s_removePressure[p], bytesAllocated);
+                InterlockedAddMemoryPressure(ref s_removePressure[(int)p], bytesAllocated);
             }
         }
 #endif

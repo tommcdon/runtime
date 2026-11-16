@@ -331,14 +331,22 @@ extern "C" void QCALLTYPE ThreadNative_SetPriority(QCall::ObjectHandleOnStack th
     END_QCALL;
 }
 
-extern "C" void QCALLTYPE ThreadNative_GetCurrentThread(QCall::ObjectHandleOnStack thread, QCallExceptionStatus* qcallError)
+extern "C" void QCALLTYPE ThreadNative_GetCurrentThread(QCall::ObjectHandleOnStack thread, BOOL* pfCreated, QCallExceptionStatus* qcallError)
 {
     QCALL_CONTRACT;
 
     BEGIN_QCALL;
 
+    _ASSERTE(pfCreated != nullptr);
+    *pfCreated = FALSE;
+
     GCX_COOP();
-    thread.Set(GetThread()->GetExposedObject());
+
+    // The managed caller registers memory pressure for a newly created wrapper so that
+    // this path does not call back into managed code from native code.
+    bool fCreated = false;
+    thread.Set(GetThread()->GetExposedObject(&fCreated));
+    *pfCreated = fCreated ? TRUE : FALSE;
 
     END_QCALL;
 }

@@ -53,7 +53,7 @@ extern "C" void QCALLTYPE ThreadNative_GetQCallSpecialException(INT_PTR status, 
 #ifdef FEATURE_MULTITHREADING
 extern "C" BOOL QCALLTYPE ThreadNative_Start(QCall::ThreadHandle thread, int threadStackSize, int priority, BOOL isThreadPool, PCWSTR pThreadName, QCall::ObjectHandleOnStack exception, QCallExceptionStatus* qcallError);
 extern "C" void QCALLTYPE ThreadNative_SetPriority(QCall::ObjectHandleOnStack thread, INT32 iPriority, QCallExceptionStatus* qcallError);
-extern "C" void QCALLTYPE ThreadNative_GetCurrentThread(QCall::ObjectHandleOnStack thread, QCallExceptionStatus* qcallError);
+extern "C" void QCALLTYPE ThreadNative_GetCurrentThread(QCall::ObjectHandleOnStack thread, BOOL* pfCreated, QCallExceptionStatus* qcallError);
 extern "C" BOOL QCALLTYPE ThreadNative_GetIsBackground(QCall::ThreadHandle thread);
 extern "C" void QCALLTYPE ThreadNative_SetIsBackground(QCall::ThreadHandle thread, BOOL value, QCallExceptionStatus* qcallError);
 extern "C" void QCALLTYPE ThreadNative_InformThreadNameChange(QCall::ThreadHandle thread, LPCWSTR name, INT32 len, QCallExceptionStatus* qcallError);

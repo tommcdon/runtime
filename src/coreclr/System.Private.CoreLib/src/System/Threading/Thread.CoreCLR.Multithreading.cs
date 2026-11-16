@@ -110,13 +110,22 @@ namespace System.Threading
         private static Thread InitializeCurrentThread()
         {
             Thread? thread = null;
-            GetCurrentThread(ObjectHandleOnStack.Create(ref thread));
-            return t_currentThread = thread!;
+            GetCurrentThread(ObjectHandleOnStack.Create(ref thread), out bool created);
+            Debug.Assert(thread is not null);
+
+            // Register pressure here instead of through a native-to-managed callback so that
+            // debuggers do not observe a reverse P/Invoke while resolving Thread.CurrentThread.
+            if (created)
+            {
+                GC.AddMemoryPressure(EstimatedMemoryPressure);
+            }
+
+            return t_currentThread = thread;
         }
 
         [ErrorHandler(typeof(QCallExceptionStatusMarshaller), ErrorLocation.HiddenLastParameter)]
         [LibraryImport(RuntimeHelpers.QCall, EntryPoint = "ThreadNative_GetCurrentThread")]
-        private static partial void GetCurrentThread(ObjectHandleOnStack thread);
+        private static partial void GetCurrentThread(ObjectHandleOnStack thread, [MarshalAs(UnmanagedType.Bool)] out bool created);
 
         partial void StartCore()
         {
