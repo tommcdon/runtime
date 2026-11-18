@@ -3697,6 +3697,7 @@ LONG WatsonLastChance(                  // EXCEPTION_CONTINUE_SEARCH, _CONTINUE_
                 // If the registed debugger is not a managed debugger, we need to stop the debugger here.
                 if (!CORDebuggerAttached() && minipal_is_native_debugger_present())
                 {
+                    LOG((LF_CORDB, LL_INFO10, "WatsonLastChance: FatalError, managed debugger not attached but native debugger present, calling DebugBreak tid=0x%x\n", ::GetCurrentThreadId()));
                     DebugBreak();
                 }
             }

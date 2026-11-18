@@ -5520,6 +5520,25 @@ bool Debugger::FirstChanceNativeException(EXCEPTION_RECORD *exception,
         LOG((LF_CORDB, retVal ? LL_INFO1000 : LL_INFO10, "D::FCNE EXCEPTION_BREAKPOINT %s exAddr=%p ctxIP=%p tid=0x%x fIsVEH=%d unrecoverable=%d\n",
             retVal ? "claimed" : "NOT claimed", exception->ExceptionAddress, (void*)::GetIP(context), ::GetCurrentThreadId(),
             (int)fIsVEH, (int)CORDBUnrecoverableError(this)));
+#if defined(LOGGING) && defined(TARGET_WINDOWS)
+        if (!retVal && LoggingOn(LF_CORDB, LL_INFO10))
+        {
+            // int3 diagnostics: attribute the unclaimed breakpoint to a module.
+            // RtlPcToFileHeader does not take the loader lock.
+            PVOID pModuleBase = NULL;
+            char szModule[MAX_PATH] = "<unknown>";
+            if ((RtlPcToFileHeader(exception->ExceptionAddress, &pModuleBase) != NULL) && (pModuleBase != NULL))
+            {
+                if (GetModuleFileNameA((HMODULE)pModuleBase, szModule, ARRAY_SIZE(szModule)) == 0)
+                {
+                    strcpy_s(szModule, ARRAY_SIZE(szModule), "<GetModuleFileName failed>");
+                }
+            }
+            LOG((LF_CORDB, LL_INFO10, "D::FCNE EXCEPTION_BREAKPOINT NOT claimed exAddr=%p module=%s base=%p offset=0x%zx\n",
+                exception->ExceptionAddress, szModule, pModuleBase,
+                (pModuleBase != NULL) ? (size_t)((BYTE*)exception->ExceptionAddress - (BYTE*)pModuleBase) : (size_t)0));
+        }
+#endif // LOGGING && TARGET_WINDOWS
     }
 
 #if defined(OUT_OF_PROCESS_SETTHREADCONTEXT) && !defined(DACCESS_COMPILE)
@@ -6500,6 +6519,7 @@ HRESULT Debugger::LaunchDebuggerForUser(Thread * pThread, EXCEPTION_POINTERS * p
             //
             // If the registered debugger is not a managed debugger, send a native breakpoint
             //
+            LOG((LF_CORDB, LL_INFO10, "D::LDFU: managed debugger not attached but native debugger present, calling DebugBreak tid=0x%x\n", ::GetCurrentThreadId()));
             DebugBreak();
         }
     }
@@ -6508,6 +6528,7 @@ HRESULT Debugger::LaunchDebuggerForUser(Thread * pThread, EXCEPTION_POINTERS * p
         //
         // Send a native breakpoint
         //
+        LOG((LF_CORDB, LL_INFO10, "D::LDFU: useManagedBPForManagedAttach=0, calling DebugBreak tid=0x%x\n", ::GetCurrentThreadId()));
         DebugBreak();
     }
 
@@ -8946,6 +8967,7 @@ void Debugger::SendUserBreakpoint(Thread * thread)
     }
     else if (minipal_is_native_debugger_present())
     {
+        LOG((LF_CORDB, LL_INFO10, "D::SUB: managed debugger not attached but native debugger present, calling DebugBreak tid=0x%x\n", ::GetCurrentThreadId()));
         DebugBreak();
     }
 }

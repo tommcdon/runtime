@@ -76,9 +76,8 @@ extern "C" void QCALLTYPE DebugDebugger_Break()
         _ASSERTE(!GetThread()->PreemptiveGCDisabled());
 
         // This becomes an unmanaged breakpoint, such as int 3.
-        // int3 diagnostics: DebugBreak is suppressed in this diagnostic build; log so we know it would have fired.
-        LOG((LF_CORDB, LL_INFO10, "DebugDebugger_Break: native debugger present, DebugBreak SUPPRESSED (OSID %x)\n", ::GetCurrentThreadId()));
-        //DebugBreak();
+        LOG((LF_CORDB, LL_INFO10, "DebugDebugger_Break: managed debugger not attached but native debugger present, calling DebugBreak (OSID %x)\n", ::GetCurrentThreadId()));
+        DebugBreak();
     }
 
     END_QCALL;

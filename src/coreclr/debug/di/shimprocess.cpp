@@ -417,6 +417,8 @@ void ShimProcess::DefaultEventHandler(
                 if (!m_loaderBPReceived)
                 {
                     m_loaderBPReceived = true;
+                    LOG((LF_CORDB, LL_INFO10, "SP::DEH STATUS_BREAKPOINT treated as loader breakpoint, DBG_CONTINUE tid=0x%x addr=%p firstChance=%d\n",
+                        dwThreadId, pRecord->ExceptionAddress, (int)fFirstChance));
 
                     // Clear the loader breakpoint
                     *pdwContinueStatus = DBG_CONTINUE;
@@ -428,6 +430,11 @@ void ShimProcess::DefaultEventHandler(
                     // @dbgtodo sync: not needed once shim can
                     // work on sync APIs.
                     m_pProcess->QueueManagedAttachIfNeeded(); // throws
+                }
+                else
+                {
+                    LOG((LF_CORDB, LL_INFO10, "SP::DEH STATUS_BREAKPOINT is not the loader breakpoint and was not claimed by the CLR; passing to the debuggee as continueStatus=0x%x tid=0x%x addr=%p firstChance=%d\n",
+                        *pdwContinueStatus, dwThreadId, pRecord->ExceptionAddress, (int)fFirstChance));
                 }
             }
             break;
@@ -696,9 +703,63 @@ CorDebugRecordFormat GetHostExceptionRecordFormat()
 //   If we're managed-only debugging, then the shim provides a default handler for the native debug.
 //   This includes some basic work (skipping the loader breakpoint, close certain handles, etc).
 //---------------------------------------------------------------------------------------
+#if defined(LOGGING) && defined(HOST_WINDOWS)
+// int3 diagnostics: log module load addresses and process/thread exit codes so int3 addresses
+// in the logs can be attributed to a module. Must run before the file handles are closed.
+static void LogModuleFromFileHandle(const char * szKind, DWORD dwThreadId, HANDLE hFile, LPVOID pBase)
+{
+    char szPath[MAX_PATH * 2] = "<unknown>";
+    WCHAR wszPath[MAX_PATH * 2];
+    if ((hFile != NULL) && (hFile != INVALID_HANDLE_VALUE))
+    {
+        DWORD cch = GetFinalPathNameByHandleW(hFile, wszPath, ARRAY_SIZE(wszPath), FILE_NAME_NORMALIZED);
+        if ((cch > 0) && (cch < ARRAY_SIZE(wszPath)))
+        {
+            if (WideCharToMultiByte(CP_UTF8, 0, wszPath, -1, szPath, sizeof(szPath), NULL, NULL) == 0)
+            {
+                strcpy_s(szPath, sizeof(szPath), "<conversion failed>");
+            }
+        }
+    }
+    LOG((LF_CORDB, LL_INFO1000, "SP::HW32DE %s tid=0x%x base=%p path=%s\n", szKind, dwThreadId, pBase, szPath));
+}
+
+static void LogNativeDebugEventForDiagnostics(const DEBUG_EVENT * pEvent)
+{
+    if (!LoggingOn(LF_CORDB, LL_INFO1000))
+    {
+        return;
+    }
+
+    switch (pEvent->dwDebugEventCode)
+    {
+        case CREATE_PROCESS_DEBUG_EVENT:
+            LogModuleFromFileHandle("CREATE_PROCESS", pEvent->dwThreadId, pEvent->u.CreateProcessInfo.hFile, pEvent->u.CreateProcessInfo.lpBaseOfImage);
+            break;
+        case LOAD_DLL_DEBUG_EVENT:
+            LogModuleFromFileHandle("LOAD_DLL", pEvent->dwThreadId, pEvent->u.LoadDll.hFile, pEvent->u.LoadDll.lpBaseOfDll);
+            break;
+        case UNLOAD_DLL_DEBUG_EVENT:
+            LOG((LF_CORDB, LL_INFO1000, "SP::HW32DE UNLOAD_DLL tid=0x%x base=%p\n", pEvent->dwThreadId, pEvent->u.UnloadDll.lpBaseOfDll));
+            break;
+        case EXIT_PROCESS_DEBUG_EVENT:
+            LOG((LF_CORDB, LL_INFO10, "SP::HW32DE EXIT_PROCESS pid=0x%x tid=0x%x exitCode=0x%08x\n",
+                pEvent->dwProcessId, pEvent->dwThreadId, pEvent->u.ExitProcess.dwExitCode));
+            break;
+        case EXIT_THREAD_DEBUG_EVENT:
+            LOG((LF_CORDB, LL_INFO1000, "SP::HW32DE EXIT_THREAD tid=0x%x exitCode=0x%08x\n", pEvent->dwThreadId, pEvent->u.ExitThread.dwExitCode));
+            break;
+    }
+}
+#endif // LOGGING && HOST_WINDOWS
+
 HRESULT ShimProcess::HandleWin32DebugEvent(const DEBUG_EVENT * pEvent)
 {
     _ASSERTE(IsWin32EventThread());
+
+#if defined(LOGGING) && defined(HOST_WINDOWS)
+    LogNativeDebugEventForDiagnostics(pEvent);
+#endif
 
     //
     // If this is an exception event, then we need to feed it into the CLR.
