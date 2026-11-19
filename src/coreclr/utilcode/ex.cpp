@@ -65,17 +65,22 @@ Exception * Exception::GetOOMException()
 
 #ifdef DACCESS_COMPILE
 
-extern void* AllocDbiMemory(size_t size);
-extern void DeleteDbiMemory(void* p);
-
+// DAC exceptions are often caught and deleted by DBI after the DacDbi call (and its
+// allocator scope) has returned, but deletion always comes back here through the virtual
+// deleting destructor. Always use the DAC's own heap so alloc and free match.
 void * Exception::operator new(size_t size)
 {
-    return AllocDbiMemory(size);
+    void* result = new (nothrow) BYTE[size];
+    if (result == NULL)
+    {
+        ThrowOutOfMemory();
+    }
+    return result;
 }
 
 void Exception::operator delete(void* ptr)
 {
-    DeleteDbiMemory(ptr);
+    delete [] (BYTE*)ptr;
 }
 
 #endif
