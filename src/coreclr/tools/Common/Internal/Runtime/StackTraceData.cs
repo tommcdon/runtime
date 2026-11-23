@@ -12,5 +12,6 @@ namespace Internal.Runtime
 
         public const byte IsStackTraceHidden = 0x10;
         public const byte HasFunctionPointer = 0x20;
+        public const byte IsAsyncMethod = 0x40;
     }
 }

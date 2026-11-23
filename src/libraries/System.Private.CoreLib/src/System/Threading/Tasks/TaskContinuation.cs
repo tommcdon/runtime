@@ -539,6 +539,9 @@ namespace System.Threading.Tasks
 
         protected int m_continuationId;
 
+        /// <summary>Internal accessor for async stack trace waiter chain walking.</summary>
+        internal Action? UnsafeGetAction() => m_action;
+
         /// <summary>Initializes the continuation.</summary>
         /// <param name="action">The action to invoke. Must not be null.</param>
         /// <param name="flowExecutionContext">Whether to capture and restore ExecutionContext.</param>

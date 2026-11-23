@@ -2115,6 +2115,12 @@ class ContinuationObject : public Object
         return ResumeInfo;
     }
 
+    CONTINUATIONREF GetNext() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return Next;
+    }
+
     void SetState(int32_t state)
     {
         LIMITED_METHOD_CONTRACT;
@@ -2207,6 +2213,16 @@ struct cdac_data<ContinuationObject>
     static constexpr size_t Next = offsetof(ContinuationObject, Next);
     static constexpr size_t ResumeInfo = offsetof(ContinuationObject, ResumeInfo);
     static constexpr size_t State = offsetof(ContinuationObject, State);
+};
+
+// Mirrors the leading fields of the managed AsyncDispatcherInfo ref struct
+// (Next, NextContinuation, CurrentTask). The managed struct has additional
+// trailing fields (AsyncProfilerInfo) that native code does not read.
+struct AsyncDispatcherInfoLayout
+{
+    void*     Next;
+    OBJECTREF NextContinuation;
+    OBJECTREF CurrentTask;
 };
 
 // This class corresponds to Exception on the managed side.

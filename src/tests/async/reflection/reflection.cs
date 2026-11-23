@@ -327,10 +327,8 @@ public class Async2Reflection
         }
         else
         {
-            // Note: we go through suspend/resume, that is why we see dispatcher as the caller.
-            //       we do not see the resume stub though.
-            Assert.Equal("Void DispatchContinuations()", await FromStackAsync(1));
-            Assert.Equal("Void DispatchContinuations()", await FromStackAwait(1));
+            Assert.Equal("System.Threading.Tasks.Task FromStack(Int32)", await FromStackAsync(1));
+            Assert.Equal("System.Threading.Tasks.Task`1[System.String] FromStackAwait(Int32)", await FromStackAwait(1));
 
             Assert.Equal("System.Threading.Tasks.Task FromStack(Int32)", await FromStackTask(1));
             // Note: we do not go through suspend/resume, that is why we see the actual caller.
@@ -387,10 +385,8 @@ public class Async2Reflection
         }
         else
         {
-            // Note: we go through suspend/resume, that is why we see dispatcher as the caller.
-            //       we do not see the resume stub though.
-            Assert.Equal("DispatchContinuations", await FromStackDMIAsync(1));
-            Assert.Equal("DispatchContinuations", await FromStackDMIAwait(1));
+            Assert.Equal("FromStackDMI", await FromStackDMIAsync(1));
+            Assert.Equal("FromStackDMIAwait", await FromStackDMIAwait(1));
 
             Assert.Equal("FromStackDMI", await FromStackDMITask(1));
             // Note: we do not go through suspend/resume, that is why we see the actual caller.

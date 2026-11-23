@@ -12,6 +12,7 @@
 #ifndef __DEBUG_DEBUGGER_h__
 #define __DEBUG_DEBUGGER_h__
 #include <object.h>
+#include <sarray.h>
 
 extern "C" void QCALLTYPE DebugDebugger_Break(QCallExceptionStatus* qcallError);
 extern "C" BOOL QCALLTYPE DebugDebugger_Launch();
@@ -202,6 +203,11 @@ public:
 
 public:
 
+    struct ResumeData
+    {
+        MethodDesc *pResumeMd; // method desc of the resume method
+        PCODE pResumeIp; // IP at which we will resume
+    };
     struct GetStackFramesData
     {
         INT32   NumFramesRequested;
@@ -211,6 +217,9 @@ public:
         THREADBASEREF   TargetThread;
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
+        BOOL fAsyncFramesPresent; // True if async frames were present in the stack
+        DWORD hideAsyncDispatchMode; // 0 = show all with stitching, 1 = hide non-async, 2 = physical only
+        SArray<ResumeData> continuationResumeList; // Used to capture runtime async continuations
 
         GetStackFramesData()
             : NumFramesRequested (0)
@@ -219,6 +228,8 @@ public:
             , pElements(NULL)
             , TargetThread((THREADBASEREF)(TADDR)NULL)
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
+            , fAsyncFramesPresent(FALSE)
+            , hideAsyncDispatchMode(0)
         {
             LIMITED_METHOD_CONTRACT;
         }
@@ -230,6 +241,7 @@ public:
     };
 
     static void GetStackFramesFromException(OBJECTREF * e, GetStackFramesData *pData, PTRARRAYREF * pDynamicMethodArray = NULL);
+    static bool ExtractContinuationData(SArray<ResumeData>* pContinuationResumeList);
 };
 
 extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(

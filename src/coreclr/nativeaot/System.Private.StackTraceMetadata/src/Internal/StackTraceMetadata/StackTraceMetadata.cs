@@ -33,6 +33,17 @@ namespace Internal.StackTraceMetadata
         private static PerModuleMethodNameResolverHashtable _perModuleMethodNameResolverHashtable;
 
         /// <summary>
+        /// Cached start address of the async dispatch boundary method (DispatchContinuations).
+        /// Set on first resolution; IntPtr.Zero means not yet identified.
+        /// </summary>
+        private static IntPtr _asyncDispatchBoundaryMethodAddress;
+
+        // Well-known names for the async dispatch boundary method used to identify
+        // and cache the method address on first stack trace resolution.
+        private const string AsyncDispatchBoundaryMethodName = "DispatchContinuations";
+        private const string AsyncDispatchBoundaryOwningType = "System.Runtime.CompilerServices.AsyncHelpers.RuntimeAsyncTask`1";
+
+        /// <summary>
         /// Eager startup initialization of stack trace metadata support creates
         /// the per-module method name resolver hashtable and registers the runtime augment
         /// for metadata-based stack trace resolution.
@@ -48,12 +59,21 @@ namespace Internal.StackTraceMetadata
         internal static extern bool StackTraceHiddenMetadataPresent();
 
         /// <summary>
+        /// Compute the aligned method RVA by masking off the low two bits.
+        /// On ARM32, RhFindMethodStartAddress sets bit 0 (THUMB bit) in returned addresses.
+        /// MinimumFunctionAlignment = 4 for all architectures guarantees bits 0-1 are always
+        /// zero for actual method RVAs, so we can safely use them for flag packing.
+        /// </summary>
+        private static unsafe int GetAlignedMethodRva(nint methodStart, nint moduleBase)
+            => (int)((methodStart - moduleBase) & ~0x3);
+
+        /// <summary>
         /// Locate the containing module for a method and try to resolve its name based on start address.
         /// </summary>
-        public static unsafe string GetMethodNameFromStartAddressIfAvailable(IntPtr methodStartAddress, out string owningTypeName, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out int hashCodeForLineInfo)
+        public static unsafe string GetMethodNameFromStartAddressIfAvailable(IntPtr methodStartAddress, out string owningTypeName, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out int hashCodeForLineInfo)
         {
             IntPtr moduleStartAddress = RuntimeAugments.GetOSModuleFromPointer(methodStartAddress);
-            int rva = (int)((byte*)methodStartAddress - (byte*)moduleStartAddress);
+            int rva = GetAlignedMethodRva((nint)methodStartAddress, (nint)moduleStartAddress);
             foreach (NativeFormatModuleInfo moduleInfo in ModuleList.EnumerateModules())
             {
                 if (moduleInfo.Handle.OsModuleBase == moduleStartAddress)
@@ -62,6 +82,7 @@ namespace Internal.StackTraceMetadata
                     if (resolver.TryGetStackTraceData(rva, out var data))
                     {
                         isStackTraceHidden = data.IsHidden;
+                        isAsyncMethod = data.IsAsyncMethod;
                         if (data.OwningType.IsNil)
                         {
                             Debug.Assert(data.Name.IsNil && data.Signature.IsNil);
@@ -74,12 +95,23 @@ namespace Internal.StackTraceMetadata
                         }
                         (owningTypeName, genericArgs, string methodName, methodSignature) = MethodNameFormatter.FormatMethodName(resolver.Reader, data.OwningType, data.Name, data.Signature, data.GenericArguments);
                         hashCodeForLineInfo = (int)VersionResilientHashCode.CombineThreeValuesIntoHash((uint)data.OwningType.ToIntToken(), (uint)((Handle)data.Name).ToIntToken(), (uint)((Handle)data.Signature).ToIntToken());
+
+                        // Identify and cache the async dispatch boundary method on first encounter.
+                        if (_asyncDispatchBoundaryMethodAddress == IntPtr.Zero &&
+                            isStackTraceHidden &&
+                            methodName is AsyncDispatchBoundaryMethodName &&
+                            owningTypeName is AsyncDispatchBoundaryOwningType)
+                        {
+                            _asyncDispatchBoundaryMethodAddress = methodStartAddress;
+                        }
+
                         return methodName;
                     }
                 }
             }
 
             isStackTraceHidden = false;
+            isAsyncMethod = false;
 
             // We haven't found information in the stack trace metadata tables, but maybe reflection will have this
             if (methodStartAddress != IntPtr.Zero && ReflectionExecution.TryGetMethodMetadataFromAddress(methodStartAddress, isFunctionPointer: false,
@@ -119,6 +151,13 @@ namespace Internal.StackTraceMetadata
             hashCodeForLineInfo = 0;
             return null;
         }
+
+        /// <summary>
+        /// Returns true if the given method start address is the async dispatch boundary
+        /// (DispatchContinuations). The address is cached on first resolution.
+        /// </summary>
+        public static bool IsAsyncDispatchBoundaryMethod(IntPtr methodStartAddress)
+            => _asyncDispatchBoundaryMethodAddress != IntPtr.Zero && _asyncDispatchBoundaryMethodAddress == methodStartAddress;
 
         private static unsafe (string, int) GetLineNumberInfo(IntPtr methodStartAddress, int offset, int hashCode)
         {
@@ -186,7 +225,7 @@ namespace Internal.StackTraceMetadata
         public static unsafe DiagnosticMethodInfo? GetDiagnosticMethodInfoFromStartAddressIfAvailable(IntPtr methodStartAddress)
         {
             IntPtr moduleStartAddress = RuntimeAugments.GetOSModuleFromPointer(methodStartAddress);
-            int rva = (int)((byte*)methodStartAddress - (byte*)moduleStartAddress);
+            int rva = GetAlignedMethodRva((nint)methodStartAddress, (nint)moduleStartAddress);
             foreach (NativeFormatModuleInfo moduleInfo in ModuleList.EnumerateModules())
             {
                 if (moduleInfo.Handle.OsModuleBase == moduleStartAddress)
@@ -355,9 +394,14 @@ namespace Internal.StackTraceMetadata
                 return GetDiagnosticMethodInfoFromFunctionPointerIfAvailable(functionPointer);
             }
 
-            public override string TryGetMethodStackFrameInfo(IntPtr methodStartAddress, int offset, bool needsFileInfo, out string owningType, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out string fileName, out int lineNumber)
+            public override bool IsAsyncDispatchBoundaryMethod(IntPtr methodStartAddress)
             {
-                string methodName = GetMethodNameFromStartAddressIfAvailable(methodStartAddress, out owningType, out genericArgs, out methodSignature, out isStackTraceHidden, out int hashCode);
+                return StackTraceMetadata.IsAsyncDispatchBoundaryMethod(methodStartAddress);
+            }
+
+            public override string TryGetMethodStackFrameInfo(IntPtr methodStartAddress, int offset, bool needsFileInfo, out string owningType, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out string fileName, out int lineNumber)
+            {
+                string methodName = GetMethodNameFromStartAddressIfAvailable(methodStartAddress, out owningType, out genericArgs, out methodSignature, out isStackTraceHidden, out isAsyncMethod, out int hashCode);
 
                 if (needsFileInfo)
                 {
@@ -500,7 +544,7 @@ namespace Internal.StackTraceMetadata
 #endif
 
                     Debug.Assert((nint)pMethod > handle.OsModuleBase);
-                    int methodRva = (int)((nint)pMethod - handle.OsModuleBase);
+                    int methodRva = GetAlignedMethodRva((nint)pMethod, handle.OsModuleBase);
 
 #if TARGET_WASM
                     if ((command & StackTraceDataCommand.HasFunctionPointer) != 0)
@@ -514,6 +558,7 @@ namespace Internal.StackTraceMetadata
                     {
                         Rva = methodRva,
                         IsHidden = (command & StackTraceDataCommand.IsStackTraceHidden) != 0,
+                        IsAsyncMethod = (command & StackTraceDataCommand.IsAsyncMethod) != 0,
                         OwningType = currentOwningType,
                         Name = currentName,
                         Signature = currentSignature,
@@ -569,29 +614,44 @@ namespace Internal.StackTraceMetadata
             public struct StackTraceData : IComparable<StackTraceData>
             {
 #if TARGET_WASM
+                // On WASM the "RVA" is not an aligned code address, so flags use the high bits.
+                private const int IsAsyncMethodFlag = 0x40000000;
                 private const int IsHiddenFlag = unchecked((int)0x80000000);
 #else
+                // Flags are packed into the low bits of the RVA. MinimumFunctionAlignment = 4
+                // guarantees bits 0-1 are zero for aligned method RVAs.
+                private const int IsAsyncMethodFlag = 0x1;
                 private const int IsHiddenFlag = 0x2;
 #endif
+                private const int FlagsMask = IsAsyncMethodFlag | IsHiddenFlag;
 
-                private readonly int _rvaAndIsHiddenBit;
+                private readonly int _rvaAndFlags;
 
                 public int Rva
                 {
-                    get => _rvaAndIsHiddenBit & ~IsHiddenFlag;
+                    get => _rvaAndFlags & ~FlagsMask;
                     init
                     {
-                        Debug.Assert((value & IsHiddenFlag) == 0);
-                        _rvaAndIsHiddenBit = value | (_rvaAndIsHiddenBit & IsHiddenFlag);
+                        Debug.Assert((value & FlagsMask) == 0);
+                        _rvaAndFlags = value | (_rvaAndFlags & FlagsMask);
                     }
                 }
                 public bool IsHidden
                 {
-                    get => (_rvaAndIsHiddenBit & IsHiddenFlag) != 0;
+                    get => (_rvaAndFlags & IsHiddenFlag) != 0;
                     init
                     {
                         if (value)
-                            _rvaAndIsHiddenBit |= IsHiddenFlag;
+                            _rvaAndFlags |= IsHiddenFlag;
+                    }
+                }
+                public bool IsAsyncMethod
+                {
+                    get => (_rvaAndFlags & IsAsyncMethodFlag) != 0;
+                    init
+                    {
+                        if (value)
+                            _rvaAndFlags |= IsAsyncMethodFlag;
                     }
                 }
                 public Handle OwningType { get; init; }
