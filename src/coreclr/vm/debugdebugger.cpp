@@ -322,10 +322,7 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
             gc.currentTaskRef = pDispatcherInfo->CurrentTask;
         }
 
-        // Helper: walk a linked list of Continuation objects and append resolved resume
-        // data. Each Continuation has a ResumeInfo pointer to an IL_STUB_AsyncResume
-        // dynamic method; we resolve through to the actual target MethodDesc.
-        // Uses gc.continuation and gc.pNext for GC protection.
+        // DiagnosticIP identifies the awaiting method, including interpreter continuations.
         auto fnAppendResumesFromChain = [&](CONTINUATIONREF head)
         {
             gc.continuation = head;
@@ -334,36 +331,13 @@ bool DebugStackTrace::ExtractContinuationData(SArray<ResumeData>* pContinuationR
                 gc.pNext = gc.continuation->GetNext();
                 ResumeInfoLayout* pResumeInfo = (ResumeInfoLayout*)gc.continuation->GetResumeInfo();
 
-                if (pResumeInfo != NULL && pResumeInfo->Resume != NULL)
+                if (pResumeInfo != nullptr && pResumeInfo->DiagnosticIP != 0)
                 {
-                    MethodDesc* pMD = NonVirtualEntry2MethodDesc((PCODE)pResumeInfo->Resume);
-                    if (pMD != NULL && pMD->IsDynamicMethod())
+                    EECodeInfo codeInfo(pResumeInfo->DiagnosticIP);
+                    if (codeInfo.IsValid() && !codeInfo.GetMethodDesc()->IsAsyncThunkMethod())
                     {
-                        MethodDesc* pTargetMD = nullptr;
-
-                        // Try resolving through the ILStubResolver first (JIT'd stubs).
-                        PTR_ILStubResolver pILResolver = pMD->AsDynamicMethodDesc()->GetILStubResolver();
-                        if (pILResolver != nullptr)
-                        {
-                            pTargetMD = pILResolver->GetStubTargetMethodDesc();
-                        }
-
-                        // Fallback: resolve target MethodDesc from DiagnosticIP via EECodeInfo.
-                        // This handles R2R precompiled async resume stubs where the ILStubResolver
-                        // is not available.
-                        if (pTargetMD == nullptr && pResumeInfo->DiagnosticIP != NULL)
-                        {
-                            EECodeInfo diagCodeInfo((PCODE)pResumeInfo->DiagnosticIP);
-                            if (diagCodeInfo.IsValid())
-                            {
-                                pTargetMD = diagCodeInfo.GetMethodDesc();
-                            }
-                        }
-
-                        if (pTargetMD != nullptr && pResumeInfo->DiagnosticIP != NULL)
-                        {
-                            pContinuationResumeList->Append({ pTargetMD, pResumeInfo->DiagnosticIP });
-                        }
+                        // Task/async adapters can have the same name as a synchronous user method.
+                        pContinuationResumeList->Append({ codeInfo.GetMethodDesc(), pResumeInfo->DiagnosticIP });
                     }
                 }
 
@@ -687,23 +661,10 @@ static StackWalkAction GetStackFramesCallback(CrawlFrame* pCf, VOID* data)
         return SWA_CONTINUE;
     }
 
-    if (pFunc != NULL && pData->hideAsyncDispatchMode != 2)
+    if (pData->includeAsyncFrames && pFunc != nullptr &&
+        pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
     {
-        if (pFunc->IsAsyncMethod())
-        {
-            pData->fAsyncFramesPresent = TRUE;
-        }
-        else
-        {
-            if (pFunc->HasSameMethodDefAs(CoreLibBinder::GetMethod(METHOD__RUNTIME_ASYNC_TASK__DISPATCH_CONTINUATIONS)))
-            {
-                DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
-            }
-            else if (pData->fAsyncFramesPresent && pData->hideAsyncDispatchMode == 1)
-            {
-                return SWA_CONTINUE;
-            }
-        }
+        DebugStackTrace::ExtractContinuationData(&pData->continuationResumeList);
     }
 
     int cNumAlloc = pData->cElements + pData->continuationResumeList.GetCount();
@@ -821,7 +782,6 @@ static void GetStackFrames(DebugStackTrace::GetStackFramesData *pData)
 
     // Allocate memory for the initial 'n' frames
     pData->pElements = new DebugStackTrace::Element[pData->cElementsAllocated];
-    pData->hideAsyncDispatchMode = CLRConfig::GetConfigValue(CLRConfig::EXTERNAL_StackTraceAsyncBehavior);
     GetThread()->StackWalkFrames(GetStackFramesCallback, pData, FUNCTIONSONLY | QUICKUNWIND, NULL);
 
     // Do a 2nd pass outside of any locks.
@@ -890,6 +850,7 @@ extern "C" void QCALLTYPE StackTrace_GetStackFramesInternal(
     data.pDomain = GetAppDomain();
 
     data.NumFramesRequested = gc.pStackFrameHelper->iFrameCount;
+    data.includeAsyncFrames = gc.pStackFrameHelper->fIncludeAsyncFrames;
 
     if (gc.pException == NULL)
     {

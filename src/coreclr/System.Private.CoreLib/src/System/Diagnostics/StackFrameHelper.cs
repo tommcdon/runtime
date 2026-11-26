@@ -37,6 +37,7 @@ namespace System.Diagnostics
         private int[]? rgiColumnNumber;
         private bool[]? rgiLastFrameFromForeignExceptionStackTrace;
         private int iFrameCount;
+        private bool fIncludeAsyncFrames;
 #pragma warning restore 414
 
         [UnsafeAccessor(UnsafeAccessorKind.Constructor)]
@@ -90,8 +91,9 @@ namespace System.Diagnostics
         // rgiLineNumber and rgiColumnNumber fields using the portable PDB reader if not already
         // done by GetStackFramesInternal (on Windows for old PDB format).
         //
-        internal void InitializeSourceInfo(bool fNeedFileInfo, Exception? exception)
+        internal void InitializeSourceInfo(bool fNeedFileInfo, Exception? exception, bool includeAsyncFrames = false)
         {
+            fIncludeAsyncFrames = includeAsyncFrames;
             StackTrace.GetStackFramesInternal(this, fNeedFileInfo, exception);
 
 

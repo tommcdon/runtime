@@ -2,14 +2,13 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Xunit;
 
 /// <summary>
-/// Tests Environment.StackTrace with DOTNET_StackTraceAsyncBehavior=2 (physical only).
-/// When set to 2, async continuation stitching is completely disabled.
-/// The stack trace shows only the physical call stack — no continuation frames are spliced in.
+/// Tests the Environment.StackTrace compatibility switch, independently of explicit capture options.
 /// </summary>
 public class Async2EnvStackTracePhysical
 {
@@ -29,7 +28,10 @@ public class Async2EnvStackTracePhysical
     [System.Runtime.CompilerServices.RuntimeAsyncMethodGeneration(false)]
     private static async Task AsyncEntry()
     {
-        (string preAwait, string postAwait) = await OuterMethod();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<(string, string, string, string)> task = OuterMethod(gate.Task);
+        gate.SetResult();
+        (string preAwait, string postAwait, string explicitAsync, string explicitPhysical) = await task;
 
         // Pre-await: physical stack is intact, so all methods appear.
         Assert.True(
@@ -56,26 +58,27 @@ public class Async2EnvStackTracePhysical
         Assert.False(
             postAwait.Contains(nameof(SyncCaller), StringComparison.Ordinal),
             "Post-await should NOT contain " + nameof(SyncCaller) + " with physical-only mode." + Environment.NewLine + postAwait);
+
+        Assert.Contains(nameof(OuterMethod), explicitAsync);
+        Assert.DoesNotContain(nameof(OuterMethod), explicitPhysical);
+        Console.WriteLine("=== FEATURE DISABLED: ENVIRONMENT ===" + Environment.NewLine + postAwait);
+        Console.WriteLine("=== FEATURE DISABLED: EXPLICIT ASYNC ===" + Environment.NewLine + explicitAsync);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task<(string, string)> OuterMethod()
+    private static async Task<(string, string, string, string)> OuterMethod(Task gate)
     {
-        return await MiddleMethod();
+        return await MiddleMethod(gate);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task<(string, string)> MiddleMethod()
+    private static async Task<(string, string, string, string)> MiddleMethod(Task gate)
     {
         string preAwait = Environment.StackTrace;
-        await InnerMethod();
+        await gate;
         string postAwait = Environment.StackTrace;
-        return (preAwait, postAwait);
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static async Task InnerMethod()
-    {
-        await Task.Delay(1);
+        string explicitAsync = new StackTrace(StackTraceOptions.IncludeAsyncFrames).ToString();
+        string explicitPhysical = new StackTrace(StackTraceOptions.None).ToString();
+        return (preAwait, postAwait, explicitAsync, explicitPhysical);
     }
 }

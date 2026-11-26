@@ -70,7 +70,7 @@ namespace Internal.StackTraceMetadata
         /// <summary>
         /// Locate the containing module for a method and try to resolve its name based on start address.
         /// </summary>
-        public static unsafe string GetMethodNameFromStartAddressIfAvailable(IntPtr methodStartAddress, out string owningTypeName, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out int hashCodeForLineInfo)
+        public static unsafe string GetMethodNameFromStartAddressIfAvailable(IntPtr methodStartAddress, out string owningTypeName, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out int hashCodeForLineInfo)
         {
             IntPtr moduleStartAddress = RuntimeAugments.GetOSModuleFromPointer(methodStartAddress);
             int rva = GetAlignedMethodRva((nint)methodStartAddress, (nint)moduleStartAddress);
@@ -82,7 +82,6 @@ namespace Internal.StackTraceMetadata
                     if (resolver.TryGetStackTraceData(rva, out var data))
                     {
                         isStackTraceHidden = data.IsHidden;
-                        isAsyncMethod = data.IsAsyncMethod;
                         if (data.OwningType.IsNil)
                         {
                             Debug.Assert(data.Name.IsNil && data.Signature.IsNil);
@@ -111,7 +110,6 @@ namespace Internal.StackTraceMetadata
             }
 
             isStackTraceHidden = false;
-            isAsyncMethod = false;
 
             // We haven't found information in the stack trace metadata tables, but maybe reflection will have this
             if (methodStartAddress != IntPtr.Zero && ReflectionExecution.TryGetMethodMetadataFromAddress(methodStartAddress, isFunctionPointer: false,
@@ -399,9 +397,9 @@ namespace Internal.StackTraceMetadata
                 return StackTraceMetadata.IsAsyncDispatchBoundaryMethod(methodStartAddress);
             }
 
-            public override string TryGetMethodStackFrameInfo(IntPtr methodStartAddress, int offset, bool needsFileInfo, out string owningType, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out bool isAsyncMethod, out string fileName, out int lineNumber)
+            public override string TryGetMethodStackFrameInfo(IntPtr methodStartAddress, int offset, bool needsFileInfo, out string owningType, out string genericArgs, out string methodSignature, out bool isStackTraceHidden, out string fileName, out int lineNumber)
             {
-                string methodName = GetMethodNameFromStartAddressIfAvailable(methodStartAddress, out owningType, out genericArgs, out methodSignature, out isStackTraceHidden, out isAsyncMethod, out int hashCode);
+                string methodName = GetMethodNameFromStartAddressIfAvailable(methodStartAddress, out owningType, out genericArgs, out methodSignature, out isStackTraceHidden, out int hashCode);
 
                 if (needsFileInfo)
                 {
@@ -558,7 +556,6 @@ namespace Internal.StackTraceMetadata
                     {
                         Rva = methodRva,
                         IsHidden = (command & StackTraceDataCommand.IsStackTraceHidden) != 0,
-                        IsAsyncMethod = (command & StackTraceDataCommand.IsAsyncMethod) != 0,
                         OwningType = currentOwningType,
                         Name = currentName,
                         Signature = currentSignature,
@@ -615,15 +612,12 @@ namespace Internal.StackTraceMetadata
             {
 #if TARGET_WASM
                 // On WASM the "RVA" is not an aligned code address, so flags use the high bits.
-                private const int IsAsyncMethodFlag = 0x40000000;
                 private const int IsHiddenFlag = unchecked((int)0x80000000);
 #else
-                // Flags are packed into the low bits of the RVA. MinimumFunctionAlignment = 4
-                // guarantees bits 0-1 are zero for aligned method RVAs.
-                private const int IsAsyncMethodFlag = 0x1;
+                // MinimumFunctionAlignment = 4 reserves low bits of aligned method RVAs.
                 private const int IsHiddenFlag = 0x2;
 #endif
-                private const int FlagsMask = IsAsyncMethodFlag | IsHiddenFlag;
+                private const int FlagsMask = IsHiddenFlag;
 
                 private readonly int _rvaAndFlags;
 
@@ -643,15 +637,6 @@ namespace Internal.StackTraceMetadata
                     {
                         if (value)
                             _rvaAndFlags |= IsHiddenFlag;
-                    }
-                }
-                public bool IsAsyncMethod
-                {
-                    get => (_rvaAndFlags & IsAsyncMethodFlag) != 0;
-                    init
-                    {
-                        if (value)
-                            _rvaAndFlags |= IsAsyncMethodFlag;
                     }
                 }
                 public Handle OwningType { get; init; }

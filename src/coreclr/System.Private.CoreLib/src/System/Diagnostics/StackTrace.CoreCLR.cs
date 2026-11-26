@@ -49,22 +49,22 @@ namespace System.Diagnostics
             CaptureStackTrace(skipFrames, fNeedFileInfo, exception);
         }
 
-        private void InitializeForCurrentThread(int skipFrames, bool fNeedFileInfo)
+        private void InitializeForCurrentThread(int skipFrames, bool fNeedFileInfo, StackTraceOptions options = StackTraceOptions.None)
         {
-            CaptureStackTrace(skipFrames, fNeedFileInfo, null);
+            CaptureStackTrace(skipFrames, fNeedFileInfo, null, options);
         }
 
         /// <summary>
         /// Retrieves an object with stack trace information encoded.
         /// It leaves out the first "iSkip" lines of the stacktrace.
         /// </summary>
-        private void CaptureStackTrace(int skipFrames, bool fNeedFileInfo, Exception? e)
+        private void CaptureStackTrace(int skipFrames, bool fNeedFileInfo, Exception? e, StackTraceOptions options = StackTraceOptions.None)
         {
             _methodsToSkip = skipFrames;
 
             StackFrameHelper StackF = new StackFrameHelper();
 
-            StackF.InitializeSourceInfo(fNeedFileInfo, e);
+            StackF.InitializeSourceInfo(fNeedFileInfo, e, (options & StackTraceOptions.IncludeAsyncFrames) != 0);
 
             _numOfFrames = StackF.GetNumberOfFrames();
 

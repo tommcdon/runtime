@@ -19,8 +19,6 @@ public class Async2EnvStackTrace
     {
         (string preAwait, string postAwait) = await OuterMethod();
 
-        // With hiding ON (mode 1), pre-await and post-await traces should
-        // both contain only the runtime async method chain.
         Assert.True(
             preAwait.Contains(nameof(MiddleMethod), StringComparison.Ordinal),
             "Expected pre-await trace to contain " + nameof(MiddleMethod) + "." + Environment.NewLine + preAwait);
@@ -46,11 +44,9 @@ public class Async2EnvStackTrace
             postAwait.Contains("DispatchContinuations", StringComparison.Ordinal),
             "Expected Environment.StackTrace not to contain DispatchContinuations." + Environment.NewLine + postAwait);
 
-        // Non-async callers (e.g. AsyncEntry, TestEntryPoint) should be hidden
-        // from the pre-await trace, making it consistent with the post-await trace.
-        Assert.False(
+        Assert.True(
             preAwait.Contains(nameof(AsyncEntry), StringComparison.Ordinal),
-            "Expected pre-await trace not to contain " + nameof(AsyncEntry) + " when hiding is enabled." + Environment.NewLine + preAwait);
+            "Expected pre-await trace to preserve the synchronous caller " + nameof(AsyncEntry) + "." + Environment.NewLine + preAwait);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -191,6 +187,7 @@ public class Async2EnvStackTrace
     /// possibly via intermediate wrapper types (e.g. TaskContinuation).
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
     private static Task<string> SyncBridge()
     {
         return PipelineInnerAsync();
@@ -257,6 +254,7 @@ public class Async2EnvStackTrace
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
     private static Task<string> SyncLayer1()
     {
         return DeepMiddleAsync();
@@ -269,6 +267,7 @@ public class Async2EnvStackTrace
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
+    [RuntimeAsyncMethodGeneration(false)]
     private static Task<string> SyncLayer2()
     {
         return DeepHandlerAsync();

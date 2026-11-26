@@ -11,6 +11,17 @@ using System.Text;
 
 namespace System.Diagnostics
 {
+    /// <summary>Specifies how a stack trace is captured from the current thread.</summary>
+    [Flags]
+    public enum StackTraceOptions
+    {
+        /// <summary>Captures the physical call stack.</summary>
+        None = 0,
+
+        /// <summary>Includes available async continuation callers without hiding synchronous user frames.</summary>
+        IncludeAsyncFrames = 1,
+    }
+
     /// <summary>
     /// Class which represents a description of a stack trace
     /// There is no good reason for the methods of this class to be virtual.
@@ -73,6 +84,43 @@ namespace System.Diagnostics
             ArgumentOutOfRangeException.ThrowIfNegative(skipFrames);
 
             InitializeForCurrentThread(skipFrames + METHODS_TO_SKIP, fNeedFileInfo);
+        }
+
+        /// <summary>Constructs a stack trace from the current location using the specified capture options.</summary>
+        /// <param name="options">The options controlling capture of async continuation frames.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public StackTrace(StackTraceOptions options)
+        {
+            ValidateOptions(options);
+            InitializeForCurrentThread(METHODS_TO_SKIP, false, options);
+        }
+
+        /// <summary>Constructs a stack trace using the specified file information and capture options.</summary>
+        /// <param name="fNeedFileInfo">Whether to capture source file, line, and column information.</param>
+        /// <param name="options">The options controlling capture of async continuation frames.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public StackTrace(bool fNeedFileInfo, StackTraceOptions options)
+        {
+            ValidateOptions(options);
+            InitializeForCurrentThread(METHODS_TO_SKIP, fNeedFileInfo, options);
+        }
+
+        /// <summary>Constructs a stack trace using the specified frame skip, file information, and capture options.</summary>
+        /// <param name="skipFrames">The number of captured frames to omit.</param>
+        /// <param name="fNeedFileInfo">Whether to capture source file, line, and column information.</param>
+        /// <param name="options">The options controlling capture of async continuation frames.</param>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public StackTrace(int skipFrames, bool fNeedFileInfo, StackTraceOptions options)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(skipFrames);
+            ValidateOptions(options);
+            InitializeForCurrentThread(skipFrames + METHODS_TO_SKIP, fNeedFileInfo, options);
+        }
+
+        private static void ValidateOptions(StackTraceOptions options)
+        {
+            if ((options & ~StackTraceOptions.IncludeAsyncFrames) != 0)
+                throw new ArgumentOutOfRangeException(nameof(options));
         }
 
         /// <summary>

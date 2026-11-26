@@ -229,10 +229,15 @@ namespace System
             }
         }
 
+        private static bool EnableAsyncStackTraces { get; } =
+            AppContextConfigHelper.GetBooleanConfig("System.Diagnostics.StackTrace.EnableAsyncStackTraces", "DOTNET_EnableAsyncStackTraces", defaultValue: true);
+
         public static string StackTrace
         {
             [MethodImpl(MethodImplOptions.NoInlining)] // Prevent inlining from affecting where the stacktrace starts
-            get => new StackTrace(true).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
+            get => (EnableAsyncStackTraces
+                ? new StackTrace(true, Diagnostics.StackTraceOptions.IncludeAsyncFrames)
+                : new StackTrace(true)).ToString(Diagnostics.StackTrace.TraceFormat.Normal);
         }
 
         private static int s_systemPageSize;

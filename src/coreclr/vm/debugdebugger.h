@@ -149,6 +149,7 @@ public:
     BOOLARRAYREF rgiLastFrameFromForeignExceptionStackTrace;
 
     int iFrameCount;
+    bool fIncludeAsyncFrames;
 
 protected:
     StackFrameHelper() {}
@@ -217,8 +218,7 @@ public:
         THREADBASEREF   TargetThread;
         AppDomain *pDomain;
         BOOL fDoWeHaveAnyFramesFromForeignStackTrace;
-        BOOL fAsyncFramesPresent; // True if async frames were present in the stack
-        DWORD hideAsyncDispatchMode; // 0 = show all with stitching, 1 = hide non-async, 2 = physical only
+        bool includeAsyncFrames;
         SArray<ResumeData> continuationResumeList; // Used to capture runtime async continuations
 
         GetStackFramesData()
@@ -228,8 +228,7 @@ public:
             , pElements(NULL)
             , TargetThread((THREADBASEREF)(TADDR)NULL)
             , fDoWeHaveAnyFramesFromForeignStackTrace(FALSE)
-            , fAsyncFramesPresent(FALSE)
-            , hideAsyncDispatchMode(0)
+            , includeAsyncFrames(false)
         {
             LIMITED_METHOD_CONTRACT;
         }

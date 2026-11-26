@@ -144,11 +144,6 @@ namespace ILCompiler.DependencyAnalysis
                     command |= StackTraceDataCommand.HasFunctionPointer;
                 }
 
-                if ((entry.Flags & StackTraceRecordFlags.IsAsyncMethod) != 0)
-                {
-                    command |= StackTraceDataCommand.IsAsyncMethod;
-                }
-
                 objData.EmitByte(commandReservation, command);
                 objData.EmitReloc(factory.MethodEntrypoint(entry.Method),
                     factory.Target.IsWasm ? RelocType.WASM_METHOD_RELATIVE_VIRTUAL_IP_I32 : RelocType.IMAGE_REL_BASED_RELPTR32);

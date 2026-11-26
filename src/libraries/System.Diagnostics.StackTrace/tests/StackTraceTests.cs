@@ -298,6 +298,8 @@ namespace System.Diagnostics.Tests
 {
     public class StackTraceTests
     {
+        private static int s_optionsBridgeExits;
+
         [Fact]
         public void MethodsToSkip_Get_ReturnsZero()
         {
@@ -870,7 +872,7 @@ namespace System.Diagnostics.Tests
         public void EnvironmentStackTrace_AsyncContinuationStitching()
         {
             var options = new RemoteInvokeOptions();
-            options.StartInfo.EnvironmentVariables["DOTNET_StackTraceAsyncBehavior"] = "1";
+            options.StartInfo.EnvironmentVariables["DOTNET_EnableAsyncStackTraces"] = "1";
             RemoteExecutor.Invoke(static () =>
             {
                 if (!PlatformDetection.IsRuntimeAsyncSupported)
@@ -882,6 +884,75 @@ namespace System.Diagnostics.Tests
                 Assert.Contains(nameof(AsyncStitchingOuter), stackTrace);
                 Assert.DoesNotContain("DispatchContinuations", stackTrace);
             }, options).Dispose();
+        }
+
+        [Theory]
+        [InlineData(-1)]
+        [InlineData(2)]
+        public void Constructor_InvalidOptions(int value)
+        {
+            StackTraceOptions options = (StackTraceOptions)value;
+            Assert.Throws<ArgumentOutOfRangeException>("options", () => new StackTrace(options));
+            Assert.Throws<ArgumentOutOfRangeException>("options", () => new StackTrace(false, options));
+            Assert.Throws<ArgumentOutOfRangeException>("options", () => new StackTrace(0, false, options));
+        }
+
+        [ConditionalTheory(typeof(RemoteExecutor), nameof(RemoteExecutor.IsSupported))]
+        [InlineData(false)]
+        [InlineData(true)]
+        public void CaptureOptions_IndependentOfEnvironmentSelection(bool enableEnvironmentAsync)
+        {
+            var remoteOptions = new RemoteInvokeOptions();
+            remoteOptions.StartInfo.EnvironmentVariables["DOTNET_EnableAsyncStackTraces"] = enableEnvironmentAsync ? "1" : "0";
+            RemoteExecutor.Invoke(static enabled =>
+            {
+                if (!PlatformDetection.IsRuntimeAsyncSupported)
+                    return;
+
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Task<(string environment, string async, string physical)> task = OptionsOuter(gate.Task);
+                gate.SetResult();
+                (string environment, string stitched, string physical) = task.GetAwaiter().GetResult();
+                Assert.Contains(nameof(OptionsOuter), stitched);
+                Assert.DoesNotContain(nameof(OptionsOuter), physical);
+                Assert.Equal(bool.Parse(enabled), environment.Contains(nameof(OptionsOuter), StringComparison.Ordinal));
+            }, enableEnvironmentAsync.ToString(), remoteOptions).Dispose();
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<(string, string, string)> OptionsOuter(Task gate)
+        {
+            return await (Task<(string, string, string)>)OptionsSyncBridge(gate);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static object OptionsSyncBridge(Task gate)
+        {
+            try
+            {
+                return OptionsInner(gate);
+            }
+            finally
+            {
+                System.Threading.Interlocked.Increment(ref s_optionsBridgeExits);
+            }
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<(string, string, string)> OptionsInner(Task gate)
+        {
+            Assert.Contains(nameof(OptionsSyncBridge), new StackTrace(StackTraceOptions.IncludeAsyncFrames).ToString());
+            await gate;
+            string stitched = new StackTrace(StackTraceOptions.IncludeAsyncFrames).ToString();
+            string physical = new StackTrace().ToString();
+            Assert.DoesNotContain(nameof(OptionsSyncBridge), stitched);
+            Assert.Contains(nameof(OptionsOuter), new StackTrace(true, StackTraceOptions.IncludeAsyncFrames).ToString());
+            Assert.Contains(nameof(OptionsOuter), new StackTrace(0, false, StackTraceOptions.IncludeAsyncFrames).ToString());
+            Assert.DoesNotContain(nameof(OptionsOuter), new StackTrace(StackTraceOptions.None).ToString());
+            Assert.Contains(nameof(OptionsOuter), new StackTrace(StackTraceOptions.IncludeAsyncFrames).ToString());
+            return (Environment.StackTrace, stitched, physical);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
@@ -909,10 +980,10 @@ namespace System.Diagnostics.Tests
         }
 
         [ConditionalFact(typeof(RemoteExecutor), nameof(RemoteExecutor.IsSupported))]
-        public void EnvironmentStackTrace_AsyncFrameHiding_DefaultOn()
+        public void EnvironmentStackTrace_PreservesPhysicalCallers()
         {
             var options = new RemoteInvokeOptions();
-            options.StartInfo.EnvironmentVariables["DOTNET_StackTraceAsyncBehavior"] = "1";
+            options.StartInfo.EnvironmentVariables["DOTNET_EnableAsyncStackTraces"] = "1";
             RemoteExecutor.Invoke(static () =>
             {
                 if (!PlatformDetection.IsRuntimeAsyncSupported)
@@ -926,9 +997,8 @@ namespace System.Diagnostics.Tests
                 Assert.Contains(nameof(FrameHidingMiddle), postAwait);
                 Assert.Contains(nameof(FrameHidingOuter), postAwait);
 
-                // With hiding ON (default), the sync caller should NOT appear in pre-await
-                // This makes pre-await and post-await traces consistent.
-                Assert.DoesNotContain(nameof(FrameHidingSyncCaller), preAwait);
+                Assert.Contains(nameof(FrameHidingSyncCaller), preAwait);
+                Assert.DoesNotContain(nameof(FrameHidingSyncCaller), postAwait);
             }, options).Dispose();
         }
 
@@ -966,13 +1036,16 @@ namespace System.Diagnostics.Tests
         public void EnvironmentStackTrace_SyncBridgeWaiterChain()
         {
             var options = new RemoteInvokeOptions();
-            options.StartInfo.EnvironmentVariables["DOTNET_StackTraceAsyncBehavior"] = "1";
+            options.StartInfo.EnvironmentVariables["DOTNET_EnableAsyncStackTraces"] = "1";
             RemoteExecutor.Invoke(static () =>
             {
                 if (!PlatformDetection.IsRuntimeAsyncSupported)
                     return;
 
-                string stackTrace = WaiterChainOuterAsync().GetAwaiter().GetResult();
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Task<string> task = WaiterChainOuterAsync(gate.Task);
+                gate.SetResult();
+                string stackTrace = task.GetAwaiter().GetResult();
 
                 Assert.Contains(nameof(WaiterChainInnerAsync), stackTrace);
                 Assert.Contains(nameof(WaiterChainOuterAsync), stackTrace);
@@ -983,22 +1056,23 @@ namespace System.Diagnostics.Tests
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [RuntimeAsyncMethodGeneration(true)]
-        private static async Task<string> WaiterChainOuterAsync()
+        private static async Task<string> WaiterChainOuterAsync(Task gate)
         {
-            return await WaiterChainSyncBridge();
+            return await WaiterChainSyncBridge(gate);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static Task<string> WaiterChainSyncBridge()
+        [RuntimeAsyncMethodGeneration(false)]
+        private static Task<string> WaiterChainSyncBridge(Task gate)
         {
-            return WaiterChainInnerAsync();
+            return WaiterChainInnerAsync(gate);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [RuntimeAsyncMethodGeneration(true)]
-        private static async Task<string> WaiterChainInnerAsync()
+        private static async Task<string> WaiterChainInnerAsync(Task gate)
         {
-            await Task.Delay(1);
+            await gate;
             return Environment.StackTrace;
         }
 
@@ -1006,13 +1080,16 @@ namespace System.Diagnostics.Tests
         public void EnvironmentStackTrace_DeepSyncBridgeWaiterChain()
         {
             var options = new RemoteInvokeOptions();
-            options.StartInfo.EnvironmentVariables["DOTNET_StackTraceAsyncBehavior"] = "1";
+            options.StartInfo.EnvironmentVariables["DOTNET_EnableAsyncStackTraces"] = "1";
             RemoteExecutor.Invoke(static () =>
             {
                 if (!PlatformDetection.IsRuntimeAsyncSupported)
                     return;
 
-                string stackTrace = DeepWaiterOuterAsync().GetAwaiter().GetResult();
+                var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Task<string> task = DeepWaiterOuterAsync(gate.Task);
+                gate.SetResult();
+                string stackTrace = task.GetAwaiter().GetResult();
 
                 Assert.Contains(nameof(DeepWaiterHandlerAsync), stackTrace);
                 Assert.Contains(nameof(DeepWaiterMiddleAsync), stackTrace);
@@ -1025,35 +1102,37 @@ namespace System.Diagnostics.Tests
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [RuntimeAsyncMethodGeneration(true)]
-        private static async Task<string> DeepWaiterOuterAsync()
+        private static async Task<string> DeepWaiterOuterAsync(Task gate)
         {
-            return await DeepWaiterSyncLayer1();
+            return await DeepWaiterSyncLayer1(gate);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static Task<string> DeepWaiterSyncLayer1()
+        [RuntimeAsyncMethodGeneration(false)]
+        private static Task<string> DeepWaiterSyncLayer1(Task gate)
         {
-            return DeepWaiterMiddleAsync();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        [RuntimeAsyncMethodGeneration(true)]
-        private static async Task<string> DeepWaiterMiddleAsync()
-        {
-            return await DeepWaiterSyncLayer2();
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        private static Task<string> DeepWaiterSyncLayer2()
-        {
-            return DeepWaiterHandlerAsync();
+            return DeepWaiterMiddleAsync(gate);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         [RuntimeAsyncMethodGeneration(true)]
-        private static async Task<string> DeepWaiterHandlerAsync()
+        private static async Task<string> DeepWaiterMiddleAsync(Task gate)
         {
-            await Task.Delay(1);
+            return await DeepWaiterSyncLayer2(gate);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(false)]
+        private static Task<string> DeepWaiterSyncLayer2(Task gate)
+        {
+            return DeepWaiterHandlerAsync(gate);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        [RuntimeAsyncMethodGeneration(true)]
+        private static async Task<string> DeepWaiterHandlerAsync(Task gate)
+        {
+            await gate;
             return Environment.StackTrace;
         }
     }

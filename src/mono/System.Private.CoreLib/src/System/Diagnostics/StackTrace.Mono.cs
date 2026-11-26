@@ -39,7 +39,7 @@ namespace System.Diagnostics
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
             Justification = "StackFrame.GetMethod is getting compared to null but nothing else on it is touched.")]
         [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        private void InitializeForCurrentThread(int skipFrames, bool needFileInfo)
+        private void InitializeForCurrentThread(int skipFrames, bool needFileInfo, StackTraceOptions options = StackTraceOptions.None)
         {
             skipFrames += 2; // Current method + parent ctor
 

@@ -200,18 +200,27 @@ namespace System.Diagnostics
         public const int METHODS_TO_SKIP = 0;
         public StackTrace() { }
         public StackTrace(bool fNeedFileInfo) { }
+        public StackTrace(bool fNeedFileInfo, System.Diagnostics.StackTraceOptions options) { }
         public StackTrace(System.Collections.Generic.IEnumerable<System.Diagnostics.StackFrame> frames) { }
         public StackTrace(System.Diagnostics.StackFrame frame) { }
+        public StackTrace(System.Diagnostics.StackTraceOptions options) { }
         public StackTrace(System.Exception e) { }
         public StackTrace(System.Exception e, bool fNeedFileInfo) { }
         public StackTrace(System.Exception e, int skipFrames) { }
         public StackTrace(System.Exception e, int skipFrames, bool fNeedFileInfo) { }
         public StackTrace(int skipFrames) { }
         public StackTrace(int skipFrames, bool fNeedFileInfo) { }
+        public StackTrace(int skipFrames, bool fNeedFileInfo, System.Diagnostics.StackTraceOptions options) { }
         public virtual int FrameCount { get { throw null; } }
         public virtual System.Diagnostics.StackFrame? GetFrame(int index) { throw null; }
         public virtual System.Diagnostics.StackFrame[] GetFrames() { throw null; }
         public override string ToString() { throw null; }
+    }
+    [System.FlagsAttribute]
+    public enum StackTraceOptions
+    {
+        None = 0,
+        IncludeAsyncFrames = 1,
     }
 }
 namespace System.Diagnostics.SymbolStore
